@@ -60,6 +60,8 @@ from .walkforward import (
 from .gateway import AgentGateway
 # Agent memory
 from .memory import AgentMemory
+# ERC-8004 on-chain identity + reputation
+from .erc8004 import ERC8004Agent, TradeIntentSigner, ERC8004Pipeline
 # Phase 4: config, reconciliation, structured logging
 from .config import TradingConfig
 from .reconciliation import BalanceReconciler
@@ -122,4 +124,6 @@ __all__ = [
     # Checkpoint, rate limiting, demo
     "Checkpoint", "APIRateLimiter", "get_api_limiter",
     "DemoScout", "MultiAssetDemoScout",
+    # ERC-8004 on-chain identity + reputation
+    "ERC8004Agent", "TradeIntentSigner", "ERC8004Pipeline",
 ]

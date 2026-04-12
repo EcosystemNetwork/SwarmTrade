@@ -41,7 +41,7 @@ class KrakenAPIConfig:
     api_key: str = ""
     api_secret: str = ""
     tier: str = "starter"                    # starter | intermediate | pro
-    use_rest_api: bool = True                # True = direct REST, False = CLI
+    use_rest_api: bool = False               # False = CLI primary, True = REST primary
     base_url: str = "https://api.kraken.com"
 
 
@@ -146,7 +146,7 @@ class TradingConfig:
         cfg.kraken.api_secret = os.getenv("KRAKEN_PRIVATE_KEY", cfg.kraken.api_secret)
         cfg.kraken.tier = os.getenv("KRAKEN_TIER", cfg.kraken.tier)
         cfg.kraken.use_rest_api = os.getenv(
-            "KRAKEN_USE_REST_API", "1").lower() in ("1", "true", "yes")
+            "KRAKEN_USE_REST_API", "0").lower() in ("1", "true", "yes")
 
         # Circuit breaker
         cfg.circuit_breaker.max_drawdown_usd = float(

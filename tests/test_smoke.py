@@ -13,7 +13,8 @@ def _mock_args(db: Path, kill: Path, duration: float = 6.0) -> argparse.Namespac
         db=str(db), kill_switch=str(kill), ws=False, poll_interval=2.0,
         dashboard=False, no_advanced=True, web=False, web_port=8080,
         max_positions=5, hard_stop=0.05, trail_stop=0.03, max_hold=3600.0,
-        capital=10000.0, max_alloc=50.0, gateway=False,
+        capital=10000.0, max_alloc=50.0, gateway=False, gateway_key=None,
+        erc8004=False, erc8004_network="sepolia", demo=False,
     )
 
 

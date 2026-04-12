@@ -1,7 +1,8 @@
 """Kraken integration: live market data scout and trade executor.
 
-Supports both direct REST API (via kraken_api.py) and CLI fallback.
-Direct API is preferred — lower latency, no subprocess dependency.
+Supports both Kraken CLI (primary) and direct REST API (fallback).
+CLI is preferred — hackathon requirement, built-in MCP server, paper sandbox.
+REST API provides lower latency fallback when CLI is unavailable.
 
 Production hardening:
 - Exponential backoff on REST polling errors
@@ -119,28 +120,30 @@ async def _run_cli(*args: str, timeout: float = _CLI_TIMEOUT) -> dict | list | s
 
 async def validate_api_keys() -> tuple[bool, str]:
     """Pre-flight check: verify Kraken API keys are valid.
-    Tries direct REST API first, falls back to CLI.
+    Tries Kraken CLI first (primary), falls back to REST API.
     Returns (ok, message)."""
+    # CLI primary
+    try:
+        result = await _run_cli("balance", timeout=10.0)
+        if isinstance(result, dict):
+            return True, f"API keys valid, {len(result)} assets in balance (Kraken CLI)"
+        return True, "API keys valid (Kraken CLI)"
+    except FileNotFoundError:
+        log.debug("Kraken CLI not found in PATH, trying REST API")
+    except RuntimeError as e:
+        log.debug("Kraken CLI validation failed, trying REST API: %s", e)
+
+    # REST API fallback
     client = get_client()
     if client._cfg.api_key and client._cfg.api_secret:
         try:
             ok, msg = await client.validate_keys()
             if ok:
-                return True, msg + " (REST API)"
-            # Fall through to CLI if REST fails
+                return True, msg + " (REST API fallback)"
         except Exception as e:
-            log.debug("REST API validation failed, trying CLI: %s", e)
+            return False, f"Both CLI and REST API validation failed: {e}"
 
-    # CLI fallback
-    try:
-        result = await _run_cli("balance", timeout=10.0)
-        if isinstance(result, dict):
-            return True, f"API keys valid, {len(result)} assets in balance (CLI)"
-        return True, "API keys valid (CLI)"
-    except RuntimeError as e:
-        return False, f"API key validation failed: {e}"
-    except FileNotFoundError:
-        return False, "'kraken' CLI not found in PATH and no REST API keys configured"
+    return False, "'kraken' CLI not found and no REST API keys configured"
 
 
 def _compute_backoff(attempt: int) -> float:
@@ -153,13 +156,13 @@ def _compute_backoff(attempt: int) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Market Data Scout — polls Kraken REST ticker with exponential backoff
+# Market Data Scout — polls Kraken ticker via CLI (primary) or REST (fallback)
 # ---------------------------------------------------------------------------
 class KrakenScout:
     """Polls Kraken ticker for real market prices.
 
-    Uses direct REST API by default (low latency, no subprocess).
-    Falls back to CLI if REST client has no API keys configured.
+    Uses Kraken CLI as primary data source (hackathon requirement).
+    Falls back to REST API if CLI is unavailable.
 
     Production features:
     - Exponential backoff on consecutive errors (2s -> 4s -> 8s -> ... -> 60s max)
@@ -223,13 +226,28 @@ class KrakenScout:
         return prices
 
     async def run(self):
-        use_rest = bool(self._client._cfg.api_key) or True  # public endpoint, no key needed
-        mode = "REST API" if use_rest else "CLI"
+        # Detect whether CLI is available at startup
+        self._cli_available = True
+        try:
+            await _run_cli("--version", timeout=5.0)
+        except (FileNotFoundError, RuntimeError):
+            self._cli_available = False
+            log.info("Kraken CLI not found — falling back to REST API")
+
+        mode = "Kraken CLI" if self._cli_available else "REST API"
         log.info("KrakenScout starting: pairs=%s interval=%.1fs mode=%s",
                  self.pairs, self.interval, mode)
         while not self._stop:
             try:
-                prices = await self._fetch_via_rest()
+                # CLI primary, REST fallback
+                if self._cli_available:
+                    try:
+                        prices = await self._fetch_via_cli()
+                    except Exception as cli_err:
+                        log.debug("CLI tick failed, falling back to REST: %s", cli_err)
+                        prices = await self._fetch_via_rest()
+                else:
+                    prices = await self._fetch_via_rest()
 
                 snap = MarketSnapshot(
                     ts=time.time(),
@@ -540,9 +558,10 @@ _KRAKEN_SPOT_PAIRS = {
 
 
 class KrakenExecutor:
-    """Executes trades via Kraken REST API (paper or live mode).
+    """Executes trades via Kraken CLI (paper or live mode).
 
-    Uses direct REST API by default, falls back to CLI subprocess.
+    Uses Kraken CLI as primary execution layer (hackathon requirement).
+    Falls back to REST API when CLI is unavailable.
 
     Production features:
     - Retry with exponential backoff for retryable errors
@@ -698,58 +717,60 @@ class KrakenExecutor:
             price = spec.stop_price
             price2 = spec.limit_price
 
-        # Try direct REST API first
-        has_keys = bool(self._client._cfg.api_key and self._client._cfg.api_secret)
-        if has_keys:
-            try:
-                result = await self._client.add_order(
-                    pair=pair,
-                    side=side,
-                    order_type=order_type,
-                    volume=volume,
-                    price=price,
-                    price2=price2,
-                    oflags=oflags,
-                    timeinforce=spec.time_in_force if spec else None,
-                    expiretm=spec.expire_time if spec else None,
-                    cl_ord_id=intent.id,
-                    close_ordertype=spec.close_order_type if spec else None,
-                    close_price=spec.close_price if spec else None,
-                    close_price2=spec.close_price2 if spec else None,
-                    validate=self.paper,
-                    display_volume=spec.display_volume if spec else None,
-                )
-                txid = ""
-                txid_list = result.get("txid", [])
-                if isinstance(txid_list, list) and txid_list:
-                    txid = txid_list[0]
-                elif isinstance(txid_list, str):
-                    txid = txid_list
-                if txid:
-                    self._order_txids[intent.id] = txid
-
-                price_info = f" @{price}" if price else ""
-                log.info("ORDER %s %s %s %.6f%s %s -> txid=%s (REST API)",
-                         order_type, side, pair, volume, price_info,
-                         "VALIDATE" if self.paper else "LIVE", txid)
-                return {"txid": txid, "descr": result.get("descr", {})}
-            except RuntimeError as e:
-                if not self.paper:
-                    raise
-                log.warning("REST API order failed, trying CLI: %s", e)
-
-        # CLI fallback (market orders only)
+        # Try Kraken CLI first (primary execution layer)
         volume_str = f"{volume:.6f}"
-        cli_type = "market"  # CLI only supports market reliably
-        if self.paper:
-            result = await _run_cli("paper", side, pair, volume_str, "--type", cli_type)
-        else:
-            result = await _run_cli("order", side, pair, volume_str,
-                                    "--type", cli_type, "--yes")
+        cli_type = "market"  # CLI supports market orders reliably
+        try:
+            if self.paper:
+                result = await _run_cli("paper", side, pair, volume_str, "--type", cli_type)
+            else:
+                result = await _run_cli("order", side, pair, volume_str,
+                                        "--type", cli_type, "--yes")
 
-        log.info("ORDER %s %s %s %s -> %s (CLI)", side, pair, volume_str,
-                 "PAPER" if self.paper else "LIVE", result)
-        return result if isinstance(result, dict) else {"txid": str(result)}
+            log.info("ORDER %s %s %s %s -> %s (Kraken CLI)", side, pair, volume_str,
+                     "PAPER" if self.paper else "LIVE", result)
+            return result if isinstance(result, dict) else {"txid": str(result)}
+        except FileNotFoundError:
+            log.debug("Kraken CLI not found, falling back to REST API")
+        except RuntimeError as e:
+            log.warning("Kraken CLI order failed, falling back to REST API: %s", e)
+
+        # REST API fallback
+        has_keys = bool(self._client._cfg.api_key and self._client._cfg.api_secret)
+        if not has_keys:
+            raise RuntimeError("Kraken CLI unavailable and no REST API keys configured")
+
+        result = await self._client.add_order(
+            pair=pair,
+            side=side,
+            order_type=order_type,
+            volume=volume,
+            price=price,
+            price2=price2,
+            oflags=oflags,
+            timeinforce=spec.time_in_force if spec else None,
+            expiretm=spec.expire_time if spec else None,
+            cl_ord_id=intent.id,
+            close_ordertype=spec.close_order_type if spec else None,
+            close_price=spec.close_price if spec else None,
+            close_price2=spec.close_price2 if spec else None,
+            validate=self.paper,
+            display_volume=spec.display_volume if spec else None,
+        )
+        txid = ""
+        txid_list = result.get("txid", [])
+        if isinstance(txid_list, list) and txid_list:
+            txid = txid_list[0]
+        elif isinstance(txid_list, str):
+            txid = txid_list
+        if txid:
+            self._order_txids[intent.id] = txid
+
+        price_info = f" @{price}" if price else ""
+        log.info("ORDER %s %s %s %.6f%s %s -> txid=%s (REST API fallback)",
+                 order_type, side, pair, volume, price_info,
+                 "VALIDATE" if self.paper else "LIVE", txid)
+        return {"txid": txid, "descr": result.get("descr", {})}
 
     @staticmethod
     def _to_kraken_pair(asset_in: str, asset_out: str) -> str:

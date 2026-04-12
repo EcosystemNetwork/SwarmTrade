@@ -85,6 +85,7 @@ from .gateway import AgentGateway
 from .checkpoint import Checkpoint
 from .demo import DemoScout, MultiAssetDemoScout
 from .memory import AgentMemory
+from .erc8004 import ERC8004Pipeline
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -174,6 +175,11 @@ def parse_args() -> argparse.Namespace:
                    help="Enable state checkpointing for crash recovery")
     p.add_argument("--checkpoint-path", type=str, default="swarm_checkpoint.json",
                    help="Checkpoint file path (default: swarm_checkpoint.json)")
+    p.add_argument("--erc8004", action="store_true",
+                   help="Enable ERC-8004 on-chain identity, reputation, and validation")
+    p.add_argument("--erc8004-network", type=str, default="sepolia",
+                   choices=["sepolia", "mainnet", "base"],
+                   help="ERC-8004 network (default: sepolia)")
     return p.parse_args()
 
 
@@ -521,13 +527,36 @@ async def run(args: argparse.Namespace):
             log.info("  Gateway API: http://localhost:%d/api/gateway/connect", gw_port)
             log.info("  Gateway WS:  ws://localhost:%d/ws/agent", gw_port)
 
+    # ── ERC-8004 On-Chain Identity + Reputation ──────────────────
+    erc8004 = None
+    private_key = os.getenv("PRIVATE_KEY", "")
+    if args.erc8004 or private_key:
+        if private_key:
+            erc8004 = ERC8004Pipeline(
+                bus, private_key=private_key,
+                network=getattr(args, "erc8004_network", "sepolia"),
+            )
+            try:
+                await erc8004.start()
+                log.info("ERC-8004 ONLINE: %s on %s",
+                         erc8004.status().get("address", "?"),
+                         erc8004.status().get("network", "?"))
+                log.info("  Agent ID: %s", erc8004.status().get("agent_id"))
+                log.info("  Identity Registry: %s",
+                         erc8004.status().get("identity_registry"))
+            except Exception as e:
+                log.warning("ERC-8004 startup failed (continuing without): %s", e)
+                erc8004 = None
+        else:
+            log.warning("--erc8004 enabled but PRIVATE_KEY not set; skipping on-chain integration")
+
     # ── Web Dashboard ──────────────────────────────────────────
     if args.web:
         web_dash = WebDashboard(
             bus, state, db_path=Path(args.db),
             kill_switch=kill_switch, port=args.web_port,
             wallet=wallet, gateway=gateway,
-            memory=memory,
+            memory=memory, erc8004=erc8004,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
@@ -598,6 +627,8 @@ async def run(args: argparse.Namespace):
     import json as _json
     log.info("POSITIONS %s", _json.dumps(pos_mgr.summary(), indent=2))
     log.info("WALLET %s", _json.dumps(wallet.summary(), indent=2))
+    if erc8004:
+        log.info("ERC-8004 %s", _json.dumps(erc8004.status(), indent=2))
 
     # Print paper account summary
     if args.mode == "paper":

@@ -576,17 +576,27 @@ class AgentGateway:
                 "retry_after": 60,
             }, status=429)
 
-        body = await request.json()
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+
+        # Support nested "data"/"payload" keys
+        signal_body = body.get("data", body.get("payload", body))
 
         # Parse based on protocol
-        if agent.protocol == "openclaw":
-            parsed = self._parse_openclaw_signal(body)
-        elif agent.protocol == "hermes":
-            parsed = self._parse_hermes_signal(body)
-        elif agent.protocol == "ironclaw":
-            parsed = self._parse_ironclaw_signal(body)
-        else:
-            parsed = self._parse_raw_signal(body)
+        try:
+            if agent.protocol == "openclaw":
+                parsed = self._parse_openclaw_signal(signal_body)
+            elif agent.protocol == "hermes":
+                parsed = self._parse_hermes_signal(signal_body)
+            elif agent.protocol == "ironclaw":
+                parsed = self._parse_ironclaw_signal(signal_body)
+            else:
+                parsed = self._parse_raw_signal(signal_body)
+        except Exception as e:
+            log.warning("Signal parse error from %s: %s", agent.agent_id, e)
+            return web.json_response({"error": f"signal parse error: {e}"}, status=400)
 
         # Build internal Signal
         signal = Signal(
@@ -780,12 +790,25 @@ class AgentGateway:
                 })
                 return
 
-            if agent.protocol == "openclaw":
-                parsed = self._parse_openclaw_signal(data)
-            elif agent.protocol == "hermes":
-                parsed = self._parse_hermes_signal(data)
-            else:
-                parsed = self._parse_raw_signal(data)
+            # Extract signal payload — support nested "data"/"payload" keys
+            signal_body = data.get("data", data.get("payload", data))
+
+            try:
+                if agent.protocol == "openclaw":
+                    parsed = self._parse_openclaw_signal(signal_body)
+                elif agent.protocol == "hermes":
+                    parsed = self._parse_hermes_signal(signal_body)
+                elif agent.protocol == "ironclaw":
+                    parsed = self._parse_ironclaw_signal(signal_body)
+                else:
+                    parsed = self._parse_raw_signal(signal_body)
+            except Exception as e:
+                log.warning("Signal parse error from %s: %s", agent.agent_id, e)
+                await ws.send_json({
+                    "type": "error",
+                    "message": f"signal parse error: {e}",
+                })
+                return
 
             signal = Signal(
                 agent_id=agent.agent_id,

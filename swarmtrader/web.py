@@ -86,7 +86,7 @@ class WebDashboard:
     def __init__(self, bus: Bus, state: dict, db_path: Path,
                  kill_switch, host: str = "0.0.0.0", port: int = 8080,
                  wallet=None, gateway: AgentGateway | None = None,
-                 memory=None):
+                 memory=None, erc8004=None):
         self.bus = bus
         self.state = state
         self.db_path = db_path
@@ -96,6 +96,7 @@ class WebDashboard:
         self.wallet = wallet  # WalletManager instance (optional)
         self.gateway = gateway  # AgentGateway instance (optional)
         self.memory = memory  # AgentMemory instance (optional)
+        self.erc8004 = erc8004  # ERC8004Pipeline instance (optional)
         self._clients: set[web.WebSocketResponse] = set()
         self._runner: web.AppRunner | None = None
 
@@ -469,6 +470,7 @@ class WebDashboard:
                 "wallet": self.wallet.summary() if self.wallet else None,
                 "thoughts": self.memory.get_thoughts(30) if self.memory else [],
                 "gateway": self._gateway_snapshot(),
+                "erc8004": self.erc8004.status() if self.erc8004 else {"enabled": False},
             },
         }
         await ws.send_str(json.dumps(snapshot))
@@ -875,6 +877,15 @@ class WebDashboard:
                                    "reason": "dashboard_pause"})
             return web.json_response({"ok": True, "paused": True})
 
+    # ── ERC-8004 On-Chain Status ─────────────────────────────────────
+
+    async def _handle_erc8004_status(self, request: web.Request) -> web.Response:
+        """GET /api/erc8004 — on-chain identity, reputation, and validation status."""
+        if not self.erc8004:
+            return web.json_response({"enabled": False})
+        status = self.erc8004.status()
+        return web.json_response({"enabled": True, **status})
+
     # ── Gateway Management (frontend-facing) ───────────────────────
 
     async def _handle_gateway_status(self, request: web.Request) -> web.Response:
@@ -986,6 +997,8 @@ class WebDashboard:
         app.router.add_post("/api/cancel-all", self._handle_cancel_all)
         app.router.add_post("/api/flatten", self._handle_flatten)
         app.router.add_post("/api/pause", self._handle_pause)
+        # ── ERC-8004 on-chain status ──────────────────────────────
+        app.router.add_get("/api/erc8004", self._handle_erc8004_status)
         # ── Gateway management (frontend-facing) ───────────────────
         app.router.add_get("/api/gateway/status", self._handle_gateway_status)
         app.router.add_post("/api/gateway/ui/connect", self._handle_gateway_connect_agent)
