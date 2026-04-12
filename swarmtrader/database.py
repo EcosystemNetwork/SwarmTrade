@@ -68,6 +68,91 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     note        TEXT,
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Social trading layer
+CREATE TABLE IF NOT EXISTS agent_profiles (
+    agent_id            TEXT PRIMARY KEY,
+    display_name        TEXT NOT NULL,
+    bio                 TEXT DEFAULT '',
+    avatar_seed         TEXT DEFAULT '',
+    visibility          TEXT DEFAULT 'public',
+    strategy_tags       JSONB DEFAULT '[]',
+    strategy_description TEXT DEFAULT '',
+    referral_code       TEXT UNIQUE,
+    verified            BOOLEAN DEFAULT FALSE,
+    total_trades        INTEGER DEFAULT 0,
+    winning_trades      INTEGER DEFAULT 0,
+    total_pnl           DOUBLE PRECISION DEFAULT 0,
+    max_drawdown        DOUBLE PRECISION DEFAULT 0,
+    sharpe_ratio        DOUBLE PRECISION DEFAULT 0,
+    reputation_score    DOUBLE PRECISION DEFAULT 0,
+    best_trade_pnl      DOUBLE PRECISION DEFAULT 0,
+    worst_trade_pnl     DOUBLE PRECISION DEFAULT 0,
+    followers_count     INTEGER DEFAULT 0,
+    copiers_count       INTEGER DEFAULT 0,
+    total_copy_capital  DOUBLE PRECISION DEFAULT 0,
+    total_earned_fees   DOUBLE PRECISION DEFAULT 0,
+    total_referral_earnings DOUBLE PRECISION DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS copy_relations (
+    id                  TEXT PRIMARY KEY,
+    copier_id           TEXT NOT NULL,
+    leader_id           TEXT NOT NULL,
+    active              BOOLEAN DEFAULT TRUE,
+    allocation          DOUBLE PRECISION DEFAULT 1000,
+    max_trade_size      DOUBLE PRECISION DEFAULT 500,
+    size_multiplier     DOUBLE PRECISION DEFAULT 1.0,
+    copy_longs          BOOLEAN DEFAULT TRUE,
+    copy_shorts         BOOLEAN DEFAULT TRUE,
+    max_daily_loss      DOUBLE PRECISION DEFAULT 100,
+    min_confidence      DOUBLE PRECISION DEFAULT 0.3,
+    management_fee_pct  DOUBLE PRECISION DEFAULT 2.0,
+    performance_fee_pct DOUBLE PRECISION DEFAULT 20.0,
+    high_water_mark     DOUBLE PRECISION DEFAULT 0,
+    total_copied_trades INTEGER DEFAULT 0,
+    total_pnl           DOUBLE PRECISION DEFAULT 0,
+    total_fees_paid     DOUBLE PRECISION DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS social_follows (
+    follower_id         TEXT NOT NULL,
+    leader_id           TEXT NOT NULL,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (follower_id, leader_id)
+);
+
+CREATE TABLE IF NOT EXISTS referral_links (
+    code                TEXT PRIMARY KEY,
+    referrer_id         TEXT NOT NULL,
+    tier1_pct           DOUBLE PRECISION DEFAULT 10.0,
+    tier2_pct           DOUBLE PRECISION DEFAULT 3.0,
+    total_referrals     INTEGER DEFAULT 0,
+    total_earnings      DOUBLE PRECISION DEFAULT 0,
+    active_referrals    INTEGER DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS social_feed (
+    id                  TEXT PRIMARY KEY,
+    event_type          TEXT NOT NULL,
+    agent_id            TEXT NOT NULL,
+    target_id           TEXT DEFAULT '',
+    data                JSONB DEFAULT '{}',
+    ts                  DOUBLE PRECISION NOT NULL,
+    likes               INTEGER DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agent_achievements (
+    agent_id            TEXT NOT NULL,
+    achievement_id      TEXT NOT NULL,
+    unlocked_at         TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (agent_id, achievement_id)
+);
 """
 
 POSTGRES_INDEXES = [
@@ -78,6 +163,19 @@ POSTGRES_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_intents_ts ON intents(ts)",
     "CREATE INDEX IF NOT EXISTS idx_wallet_txs_ts ON wallet_transactions(ts)",
     "CREATE INDEX IF NOT EXISTS idx_wallet_txs_type ON wallet_transactions(tx_type)",
+    # Social trading indexes
+    "CREATE INDEX IF NOT EXISTS idx_profiles_reputation ON agent_profiles(reputation_score DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_profiles_referral ON agent_profiles(referral_code)",
+    "CREATE INDEX IF NOT EXISTS idx_copy_relations_leader ON copy_relations(leader_id)",
+    "CREATE INDEX IF NOT EXISTS idx_copy_relations_copier ON copy_relations(copier_id)",
+    "CREATE INDEX IF NOT EXISTS idx_copy_relations_active ON copy_relations(active)",
+    "CREATE INDEX IF NOT EXISTS idx_follows_leader ON social_follows(leader_id)",
+    "CREATE INDEX IF NOT EXISTS idx_follows_follower ON social_follows(follower_id)",
+    "CREATE INDEX IF NOT EXISTS idx_referral_referrer ON referral_links(referrer_id)",
+    "CREATE INDEX IF NOT EXISTS idx_feed_ts ON social_feed(ts DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_feed_agent ON social_feed(agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_feed_type ON social_feed(event_type)",
+    "CREATE INDEX IF NOT EXISTS idx_achievements_agent ON agent_achievements(agent_id)",
 ]
 
 SQLITE_SCHEMA = [
@@ -92,6 +190,43 @@ SQLITE_SCHEMA = [
         key TEXT PRIMARY KEY, value TEXT)""",
     """CREATE TABLE IF NOT EXISTS wallet_transactions(
         ts REAL, tx_type TEXT, amount REAL, note TEXT)""",
+    # Social trading tables
+    """CREATE TABLE IF NOT EXISTS agent_profiles(
+        agent_id TEXT PRIMARY KEY, display_name TEXT, bio TEXT DEFAULT '',
+        avatar_seed TEXT DEFAULT '', visibility TEXT DEFAULT 'public',
+        strategy_tags TEXT DEFAULT '[]', strategy_description TEXT DEFAULT '',
+        referral_code TEXT UNIQUE, verified INTEGER DEFAULT 0,
+        total_trades INTEGER DEFAULT 0, winning_trades INTEGER DEFAULT 0,
+        total_pnl REAL DEFAULT 0, max_drawdown REAL DEFAULT 0,
+        sharpe_ratio REAL DEFAULT 0, reputation_score REAL DEFAULT 0,
+        best_trade_pnl REAL DEFAULT 0, worst_trade_pnl REAL DEFAULT 0,
+        followers_count INTEGER DEFAULT 0, copiers_count INTEGER DEFAULT 0,
+        total_copy_capital REAL DEFAULT 0, total_earned_fees REAL DEFAULT 0,
+        total_referral_earnings REAL DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS copy_relations(
+        id TEXT PRIMARY KEY, copier_id TEXT, leader_id TEXT,
+        active INTEGER DEFAULT 1, allocation REAL DEFAULT 1000,
+        max_trade_size REAL DEFAULT 500, size_multiplier REAL DEFAULT 1.0,
+        copy_longs INTEGER DEFAULT 1, copy_shorts INTEGER DEFAULT 1,
+        max_daily_loss REAL DEFAULT 100, min_confidence REAL DEFAULT 0.3,
+        management_fee_pct REAL DEFAULT 2.0, performance_fee_pct REAL DEFAULT 20.0,
+        high_water_mark REAL DEFAULT 0, total_copied_trades INTEGER DEFAULT 0,
+        total_pnl REAL DEFAULT 0, total_fees_paid REAL DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS social_follows(
+        follower_id TEXT, leader_id TEXT,
+        PRIMARY KEY (follower_id, leader_id))""",
+    """CREATE TABLE IF NOT EXISTS referral_links(
+        code TEXT PRIMARY KEY, referrer_id TEXT,
+        tier1_pct REAL DEFAULT 10.0, tier2_pct REAL DEFAULT 3.0,
+        total_referrals INTEGER DEFAULT 0, total_earnings REAL DEFAULT 0,
+        active_referrals INTEGER DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS social_feed(
+        id TEXT PRIMARY KEY, event_type TEXT, agent_id TEXT,
+        target_id TEXT DEFAULT '', data TEXT DEFAULT '{}',
+        ts REAL, likes INTEGER DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS agent_achievements(
+        agent_id TEXT, achievement_id TEXT,
+        PRIMARY KEY (agent_id, achievement_id))""",
 ]
 
 

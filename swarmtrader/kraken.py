@@ -533,6 +533,33 @@ class OrderTracker:
                     })
                     completed.append(intent_id)
 
+        # Detect stuck orders (submitted but never appeared in open/closed)
+        now = time.time()
+        for intent_id, info in list(self._tracked.items()):
+            if info["status"] == "submitted" and now - info["submitted_at"] > 300:
+                log.error("STUCK ORDER: %s (txid=%s) submitted %.0fs ago but never appeared — querying",
+                          intent_id, info["txid"], now - info["submitted_at"])
+                try:
+                    if info["txid"]:
+                        result = await self._client.query_orders([info["txid"]])
+                        order_info = result.get(info["txid"], {})
+                        status = order_info.get("status", "unknown")
+                        log.info("STUCK ORDER resolved: %s status=%s", intent_id, status)
+                        if status in ("closed", "canceled", "expired"):
+                            info["status"] = "filled" if status == "closed" else status
+                            await self.bus.publish(f"order.{info['status']}", {
+                                "intent_id": intent_id, "txid": info["txid"],
+                                "filled_qty": float(order_info.get("vol_exec", 0)),
+                                "side": info["side"], "asset": info["asset"],
+                            })
+                            completed.append(intent_id)
+                    else:
+                        log.warning("STUCK ORDER: %s has no txid — marking as lost", intent_id)
+                        info["status"] = "error"
+                        completed.append(intent_id)
+                except Exception as e:
+                    log.warning("STUCK ORDER query failed for %s: %s", intent_id, e)
+
         # Clean up completed orders (keep for 30s for late events)
         for intent_id in completed:
             asyncio.get_event_loop().call_later(
@@ -585,6 +612,8 @@ class KrakenExecutor:
     """
 
     MAX_RETRIES = 3
+    STUCK_ORDER_TIMEOUT = 300.0  # 5 minutes
+    DEAD_MAN_SWITCH_INTERVAL = 60  # seconds — heartbeat to Kraken
 
     def __init__(self, bus: Bus, kill_switch, paper: bool = True,
                  portfolio: PortfolioTracker | None = None,
@@ -597,6 +626,9 @@ class KrakenExecutor:
         self._pending_orders: dict[str, OrderStatus] = {}  # intent_id -> status
         self._order_txids: dict[str, str] = {}  # intent_id -> kraken txid
         self._executed_intents: set[str] = set()  # idempotency guard
+        self._last_balance: dict[str, float] = {}  # cached exchange balances
+        self._balance_ts: float = 0.0
+        self._dms_task: asyncio.Task | None = None  # dead man's switch heartbeat
         bus.subscribe("exec.simulated", self._on_sim)
         bus.subscribe("market.snapshot", self._on_snap)
 
@@ -606,6 +638,83 @@ class KrakenExecutor:
         "ADA": 5.0, "DOT": 0.1, "LINK": 0.2, "AVAX": 0.1,
         "DOGE": 20.0, "MATIC": 5.0, "LTC": 0.01,
     }
+
+    # Kraken balance key normalization
+    _BALANCE_MAP = {
+        "XXBT": "BTC", "XETH": "ETH", "ZUSD": "USD", "XLTC": "LTC",
+        "XXRP": "XRP", "XDOGE": "DOGE", "XXLM": "XLM",
+    }
+
+    async def start(self):
+        """Post-init async setup: crash recovery + dead man's switch."""
+        await self._recover_inflight_orders()
+        if not self.paper:
+            self._dms_task = asyncio.create_task(self._dead_man_switch_loop())
+
+    async def _recover_inflight_orders(self):
+        """On startup, check for orphaned orders on Kraken and cancel them."""
+        has_keys = bool(self._client._cfg.api_key and self._client._cfg.api_secret)
+        if not has_keys:
+            return
+        try:
+            result = await self._client.get_open_orders()
+            open_orders = result.get("open", {})
+            if open_orders:
+                count = len(open_orders)
+                log.warning("RECOVERY: found %d orphaned orders on Kraken — cancelling", count)
+                await self._client.cancel_all()
+                log.info("RECOVERY: cancelled %d orphaned orders", count)
+                await self.bus.publish("safety.recovery", {
+                    "action": "cancel_orphans",
+                    "count": count,
+                    "txids": list(open_orders.keys()),
+                })
+        except Exception as e:
+            log.warning("RECOVERY: failed to check orphaned orders: %s", e)
+
+    async def _dead_man_switch_loop(self):
+        """Heartbeat to Kraken: auto-cancel all orders if we go offline."""
+        while True:
+            try:
+                await self._client.cancel_all_after(self.DEAD_MAN_SWITCH_INTERVAL + 30)
+                log.debug("Dead man's switch heartbeat sent (%ds)", self.DEAD_MAN_SWITCH_INTERVAL + 30)
+            except Exception as e:
+                log.warning("Dead man's switch heartbeat failed: %s", e)
+            await asyncio.sleep(self.DEAD_MAN_SWITCH_INTERVAL)
+
+    async def _refresh_balance(self):
+        """Fetch exchange balances (cached for 30s)."""
+        if time.time() - self._balance_ts < 30:
+            return
+        try:
+            raw = await self._client.get_balance()
+            self._last_balance = {}
+            for key, val in raw.items():
+                asset = self._BALANCE_MAP.get(key, key)
+                self._last_balance[asset] = float(val)
+            self._balance_ts = time.time()
+        except Exception as e:
+            log.warning("Balance refresh failed: %s", e)
+
+    async def _verify_balance(self, asset: str, required: float, side: str) -> bool:
+        """Pre-order balance check against exchange."""
+        await self._refresh_balance()
+        if not self._last_balance:
+            log.warning("No balance data — allowing order (balance check skipped)")
+            return True
+        if side == "buy":
+            available = self._last_balance.get("USD", 0.0)
+            if available < required:
+                log.error("PRE-ORDER BLOCKED: need $%.2f USD but exchange has $%.2f",
+                          required, available)
+                return False
+        else:
+            available = self._last_balance.get(asset, 0.0)
+            if available < required:
+                log.error("PRE-ORDER BLOCKED: need %.6f %s but exchange has %.6f",
+                          required, asset, available)
+                return False
+        return True
 
     async def _on_snap(self, snap: MarketSnapshot):
         self.portfolio.update_prices(snap.prices)
@@ -652,6 +761,17 @@ class KrakenExecutor:
             pos = self.portfolio.get(asset)
             if pos.quantity < 1e-3:
                 await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0, "no_position")
+                return
+
+        # Pre-order exchange balance verification (live/paper only)
+        if not self.paper:
+            balance_ok = await self._verify_balance(
+                asset, intent.amount_in if buying else volume,
+                "buy" if buying else "sell",
+            )
+            if not balance_ok:
+                await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0,
+                                   "insufficient_exchange_balance")
                 return
 
         # Track order state

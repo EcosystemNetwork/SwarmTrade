@@ -387,6 +387,13 @@ class KrakenRESTClient:
 
         return await self._private("AddOrder", data)
 
+    async def query_orders(self, txids: list[str], trades: bool = False) -> dict:
+        """Query order status by txid(s). Returns details even for closed orders."""
+        data: dict = {"txid": ",".join(txids)}
+        if trades:
+            data["trades"] = True
+        return await self._private("QueryOrders", data)
+
     async def cancel_order(self, txid: str) -> dict:
         """Cancel a single open order by transaction ID or cl_ord_id."""
         return await self._private("CancelOrder", {"txid": txid})

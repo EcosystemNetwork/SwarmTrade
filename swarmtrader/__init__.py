@@ -86,6 +86,48 @@ from .pyth_oracle import PythOracle
 from .dex_quotes import DEXQuoteProvider
 from .strategy_privacy import StrategyPrivacyManager
 from .capital_allocator import CapitalAllocator
+# ETHGlobal-inspired agentic trading modules
+from .smart_money import SmartMoneyAgent, TrackedWallet, SmartMoneyFlow
+from .x402_payments import X402PaymentGateway, PaymentLedger, PricingTier
+from .lp_manager import LPRebalanceManager, LPPosition
+from .yield_aggregator import YieldAggregator, YieldPool, VaultPosition
+from .agent_policies import AgentPolicyEngine, AgentPolicy, policy_check
+from .hardware_signer import HardwareSigningPipeline, HotWalletSigner, LedgerSigner
+from .polymarket import PolymarketAgent
+from .alpha_swarm import (
+    AlphaHunter, SentimentFilter, RiskScreener, SwarmCoordinator,
+    setup_alpha_swarm, AlphaOpportunity,
+)
+from .agent_registry import AgentRegistry, AgentIdentity
+# Multi-exchange + arbitrage
+from .exchanges import (
+    ExchangeClient, BinanceClient, CoinbaseClient, OKXClient, BybitClient,
+    get_exchange, list_exchanges, get_all_tickers, Ticker, OrderResult, Balance,
+)
+from .arb_executor import ArbScanner, ArbExecutor
+# Moon Dev tech — Hyperliquid, Jupiter, BirdEye, Backtester, Social, Learning
+from .hyperliquid import (
+    HyperliquidAgent, HyperliquidExecutor, HyperliquidClient,
+    HyperliquidWSClient, hyperliquid_venue_config,
+)
+from .backtester import (
+    BacktesterAgent, BacktestEngine, HistoricalDataFetcher,
+    BacktestResult, STRATEGIES as BACKTEST_STRATEGIES,
+    MomentumStrategy, MeanReversionStrategy, RSIMomentumStrategy,
+    DCAStrategy, BreakoutStrategy,
+)
+from .jupiter import (
+    JupiterExecutor, JupiterClient, JupiterPriceScout, jupiter_venue_config,
+)
+from .birdeye import BirdEyeAgent, BirdEyeClient
+from .social_agents import (
+    XMonitorAgent, DiscordAgent, TelegramAgent, SocialAggregator,
+)
+from .agent_learning import LearningCoordinator
+from .dex_multi import (
+    MultiDEXScanner, SushiSwapQuoter, AerodromeQuoter, CurveQuoter,
+    PancakeSwapQuoter, RaydiumQuoter, OrcaQuoter, DEXQuote,
+)
 
 __all__ = [
     "Bus", "MarketSnapshot", "Signal", "TradeIntent", "RiskVerdict", "ExecutionReport",
@@ -153,4 +195,26 @@ __all__ = [
     # Competition features
     "parse_strategy", "apply_strategy", "STRATEGY_PRESETS",
     "PythOracle", "DEXQuoteProvider", "StrategyPrivacyManager", "CapitalAllocator",
+    # ETHGlobal-inspired agentic trading modules
+    "SmartMoneyAgent", "TrackedWallet", "SmartMoneyFlow",
+    "X402PaymentGateway", "PaymentLedger", "PricingTier",
+    "LPRebalanceManager", "LPPosition",
+    "YieldAggregator", "YieldPool", "VaultPosition",
+    "AgentPolicyEngine", "AgentPolicy", "policy_check",
+    "HardwareSigningPipeline", "HotWalletSigner", "LedgerSigner",
+    "PolymarketAgent",
+    "AlphaHunter", "SentimentFilter", "RiskScreener", "SwarmCoordinator",
+    "setup_alpha_swarm", "AlphaOpportunity",
+    "AgentRegistry", "AgentIdentity",
+    # Moon Dev tech
+    "HyperliquidAgent", "HyperliquidExecutor", "HyperliquidClient",
+    "HyperliquidWSClient", "hyperliquid_venue_config",
+    "BacktesterAgent", "BacktestEngine", "HistoricalDataFetcher",
+    "BacktestResult", "BACKTEST_STRATEGIES",
+    "MomentumStrategy", "MeanReversionStrategy", "RSIMomentumStrategy",
+    "DCAStrategy", "BreakoutStrategy",
+    "JupiterExecutor", "JupiterClient", "JupiterPriceScout", "jupiter_venue_config",
+    "BirdEyeAgent", "BirdEyeClient",
+    "XMonitorAgent", "DiscordAgent", "TelegramAgent", "SocialAggregator",
+    "LearningCoordinator",
 ]

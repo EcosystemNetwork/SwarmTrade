@@ -173,6 +173,84 @@ class DEXQuoteProvider:
 
             await asyncio.sleep(self.interval)
 
+    async def get_quotes(self, asset: str, amount_usd: float = 1000.0) -> list[dict]:
+        """Get DEX quotes for an asset from all available sources.
+
+        Returns a list of quote dicts, each with at minimum:
+            source, price, fee_estimate, chain
+        Used by ArbScanner for cross-venue comparison.
+        """
+        quotes: list[dict] = []
+
+        # 1inch quote
+        q = await self.get_quote("USDC", asset, amount_usd)
+        if q and q.get("effective_price", 0) > 0:
+            quotes.append({
+                "source": "1inch",
+                "price": q["effective_price"],
+                "fee_estimate": 0.003,  # ~30bps typical
+                "chain": f"evm:{self.chain_id}",
+                "to_amount": q.get("to_amount", 0),
+            })
+
+        # Jupiter (Solana) quote — free public API, no key required
+        if asset.upper() in ("SOL", "ETH", "BTC"):
+            jup = await self._get_jupiter_quote(asset, amount_usd)
+            if jup:
+                quotes.append(jup)
+
+        return quotes
+
+    async def _get_jupiter_quote(self, asset: str, amount_usd: float) -> dict | None:
+        """Fetch quote from Jupiter (Solana DEX aggregator)."""
+        # Jupiter token mints
+        mints = {
+            "SOL": "So11111111111111111111111111111111111111112",
+            "ETH": "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",  # wETH on Solana
+            "BTC": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",  # wBTC on Solana
+        }
+        usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        output_mint = mints.get(asset.upper())
+        if not output_mint:
+            return None
+
+        amount_lamports = int(amount_usd * 1e6)  # USDC has 6 decimals
+
+        session = await self._ensure_session()
+        try:
+            url = "https://quote-api.jup.ag/v6/quote"
+            params = {
+                "inputMint": usdc_mint,
+                "outputMint": output_mint,
+                "amount": str(amount_lamports),
+                "slippageBps": "50",
+            }
+            async with session.get(url, params=params,
+                                   timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+
+            out_amount = int(data.get("outAmount", 0))
+            if out_amount <= 0:
+                return None
+
+            # SOL has 9 decimals, wETH/wBTC have 8
+            decimals = 9 if asset.upper() == "SOL" else 8
+            out_qty = out_amount / (10 ** decimals)
+            price = amount_usd / out_qty if out_qty > 0 else 0
+
+            return {
+                "source": "jupiter",
+                "price": price,
+                "fee_estimate": 0.002,  # ~20bps typical on Jupiter
+                "chain": "solana",
+                "to_amount": out_qty,
+            }
+        except Exception as e:
+            log.debug("Jupiter quote failed for %s: %s", asset, e)
+            return None
+
     @property
     def latest_quotes(self) -> dict[str, dict]:
         return dict(self._quotes)

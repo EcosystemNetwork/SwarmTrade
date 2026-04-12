@@ -115,6 +115,40 @@ tailwind.config = {
   .tab-inactive { color: #64748b; border-bottom: 2px solid transparent; }
   .tab-inactive:hover { color: #94a3b8; background: rgba(255,255,255,0.02); }
 
+  /* Ambient scan line — live terminal feel */
+  @keyframes scanline { 0% { top: -2px; } 100% { top: 100%; } }
+  body::after {
+    content: ''; position: fixed; left: 0; right: 0; height: 2px; z-index: 9999;
+    background: linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.06) 30%, rgba(34,197,94,0.04) 70%, transparent 100%);
+    animation: scanline 8s linear infinite; pointer-events: none; opacity: 0.7;
+  }
+
+  /* Subtle grid overlay for depth */
+  .bg-surface {
+    background-image: radial-gradient(circle at 1px 1px, rgba(30,41,59,0.15) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* Glow accents for active elements */
+  .text-accent { text-shadow: 0 0 8px rgba(34,197,94,0.3); }
+  .text-electric { text-shadow: 0 0 8px rgba(59,130,246,0.3); }
+  .text-danger { text-shadow: 0 0 8px rgba(239,68,68,0.3); }
+
+  /* Empty state upgrade */
+  .empty-state-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, rgba(30,41,59,0.5), rgba(30,41,59,0.2));
+    border: 1px solid rgba(51,65,85,0.3);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
+  }
+
+  /* Left sidebar active group glow */
+  .agent-group-header:hover { background: rgba(30,41,59,0.4); }
+
+  /* Pipeline connector animation */
+  @keyframes data-flow { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
+  .pipeline-arrow.arrow-active { color: #3b82f6; animation: data-flow 1.5s ease-in-out infinite; }
+
   /* Signal bar — neon glow */
   .signal-track { height: 3px; background: rgba(30,41,59,0.6); border-radius: 2px; position: relative; overflow: visible; }
   .signal-fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
@@ -220,16 +254,20 @@ tailwind.config = {
   }
   .pipeline-step.step-active { background: rgba(59,130,246,0.08); }
   .pipeline-step .step-icon {
-    width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center;
-    justify-content: center; border: 2px solid #334155; background: #111520; transition: all 0.3s;
+    width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center;
+    justify-content: center; border: 1px solid rgba(51,65,85,0.4);
+    background: linear-gradient(135deg, rgba(17,21,32,0.9), rgba(12,16,24,0.9));
+    transition: all 0.3s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
   }
   .pipeline-step.step-active .step-icon {
-    border-color: #3b82f6; background: rgba(59,130,246,0.15);
-    box-shadow: 0 0 12px rgba(59,130,246,0.2);
+    border-color: rgba(59,130,246,0.5);
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(59,130,246,0.05));
+    box-shadow: 0 0 16px rgba(59,130,246,0.15), 0 0 1px rgba(59,130,246,0.3) inset;
   }
   .pipeline-step.step-done .step-icon {
-    border-color: #22c55e; background: rgba(34,197,94,0.15);
-    box-shadow: 0 0 12px rgba(34,197,94,0.2);
+    border-color: rgba(34,197,94,0.5);
+    background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.05));
+    box-shadow: 0 0 16px rgba(34,197,94,0.15), 0 0 1px rgba(34,197,94,0.3) inset;
   }
   .pipeline-arrow { color: #334155; font-size: 16px; display: flex; align-items: center; padding: 0 2px; margin-top: -6px; }
   .pipeline-arrow.arrow-active { color: #3b82f6; }
@@ -495,6 +533,13 @@ tailwind.config = {
         Gateway
       </span>
     </button>
+    <button id="social-toggle-btn" class="kill-btn kill-btn-idle" style="background:rgba(168,85,247,0.15);color:#c084fc;border-color:rgba(168,85,247,0.3)" onclick="toggleSocialPanel()">
+      <span class="flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-xs">group</span>
+        Social
+        <span id="social-copiers-badge" class="hidden text-[8px] bg-purple-500/30 text-purple-300 rounded-full px-1.5 py-0.5 font-mono">0</span>
+      </span>
+    </button>
     <div class="h-5 w-px bg-border"></div>
     <button id="kill-btn" class="kill-btn kill-btn-idle" onclick="toggleKillSwitch()">
       <span class="flex items-center gap-1.5">
@@ -513,7 +558,7 @@ tailwind.config = {
 <div class="flex pt-12 h-screen pb-7 bg-void gap-px">
 
   <!-- LEFT SIDEBAR: Agent Swarm -->
-  <aside class="w-[250px] flex flex-col shrink-0 overflow-hidden bg-surface border-r border-border">
+  <aside class="w-[250px] flex flex-col shrink-0 overflow-hidden border-r border-border" style="background: linear-gradient(180deg, #0c1018 0%, #080c14 100%)">
     <div class="panel-header">
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-accent text-sm" style="font-variation-settings:'FILL' 1">hub</span>
@@ -535,7 +580,7 @@ tailwind.config = {
   <main class="flex-1 flex flex-col overflow-hidden gap-px">
 
     <!-- Pipeline Overview Strip -->
-    <div class="bg-surface border-b border-border px-4 py-2 shrink-0">
+    <div class="border-b px-4 py-2.5 shrink-0" style="background: linear-gradient(180deg, rgba(15,19,28,0.9) 0%, rgba(12,16,24,0.95) 100%); border-color: rgba(30,41,59,0.4);">
       <div class="flex items-center gap-1" id="pipeline-strip">
         <div class="pipeline-step step-active" id="pipe-market" data-tip="Scouts pull live market data every tick">
           <div class="step-icon"><span class="material-symbols-outlined text-sm text-electric">wifi_tethering</span></div>
@@ -570,8 +615,8 @@ tailwind.config = {
     </div>
 
     <!-- Price + PnL Charts Area -->
-    <div class="flex-[6] bg-surface relative flex flex-col overflow-hidden border-b border-border">
-      <div class="flex justify-between items-center px-4 py-2.5 border-b border-border/50">
+    <div class="flex-[6] relative flex flex-col overflow-hidden border-b" style="background: rgba(12,16,24,0.6); border-color: rgba(30,41,59,0.4);">
+      <div class="flex justify-between items-center px-4 py-2.5" style="border-bottom: 1px solid rgba(30,41,59,0.3); background: linear-gradient(90deg, rgba(12,16,24,0.8) 0%, rgba(15,19,28,0.6) 100%)">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-electric text-sm">candlestick_chart</span>
@@ -579,7 +624,7 @@ tailwind.config = {
           </div>
           <div class="h-4 w-px bg-border"></div>
           <div class="font-mono">
-            <span class="text-xl font-bold text-white" id="main-price">--</span>
+            <span class="text-xl font-bold text-white" id="main-price" style="text-shadow: 0 0 20px rgba(255,255,255,0.1)">--</span>
             <span class="text-xs font-mono ml-2" id="price-delta"></span>
           </div>
         </div>
@@ -793,7 +838,7 @@ tailwind.config = {
 </div>
 
 <!-- ═══ BOTTOM BAR ═══ -->
-<footer class="fixed bottom-0 w-full h-7 z-50 flex items-center px-3 gap-4 overflow-hidden bg-surface border-t border-border font-mono text-[9px]">
+<footer class="fixed bottom-0 w-full h-7 z-50 flex items-center px-3 gap-4 overflow-hidden border-t font-mono text-[9px]" style="background: linear-gradient(180deg, rgba(12,16,24,0.95) 0%, rgba(8,10,16,0.98) 100%); border-color: rgba(30,41,59,0.4); backdrop-filter: blur(12px);">
   <div class="flex items-center gap-2 text-accent shrink-0">
     <div class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></div>
     <span class="font-semibold uppercase" id="sys-status">SYS_INIT</span>
@@ -999,6 +1044,205 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ═══ SOCIAL TRADING PANEL ═══ -->
+<div id="social-overlay" class="gw-overlay" onclick="toggleSocialPanel()"></div>
+<div id="social-panel" class="gw-panel" style="max-width:860px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b;background:linear-gradient(180deg,rgba(30,41,59,0.5) 0%,transparent 100%)">
+    <div class="flex items-center gap-2">
+      <span class="material-symbols-outlined text-purple-400 text-base">group</span>
+      <span class="font-body text-[11px] font-semibold uppercase tracking-wider text-purple-400">Social Trading</span>
+      <span class="panel-desc">copy trades, earn fees, build reputation</span>
+    </div>
+    <button onclick="toggleSocialPanel()" class="text-muted hover:text-white transition-colors" style="background:none;border:none;cursor:pointer">
+      <span class="material-symbols-outlined text-lg">close</span>
+    </button>
+  </div>
+
+  <!-- Social tabs -->
+  <div class="flex items-center border-b border-border/50 px-2 bg-surface/50">
+    <button onclick="switchSocialTab('feed')" id="stab-feed" class="px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-purple-400 border-b-2 border-purple-400">Feed</button>
+    <button onclick="switchSocialTab('leaderboard')" id="stab-leaderboard" class="px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-muted border-b-2 border-transparent">Leaderboard</button>
+    <button onclick="switchSocialTab('copy')" id="stab-copy" class="px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-muted border-b-2 border-transparent">Copy Trading</button>
+    <button onclick="switchSocialTab('referrals')" id="stab-referrals" class="px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-muted border-b-2 border-transparent">Referrals</button>
+    <button onclick="switchSocialTab('achievements')" id="stab-achievements" class="px-3 py-2 text-[9px] font-semibold uppercase tracking-wide text-muted border-b-2 border-transparent">Achievements</button>
+    <div class="ml-auto flex items-center gap-3 pr-2">
+      <div class="flex items-center gap-1.5 text-[9px] font-mono">
+        <span class="text-muted">Agents:</span>
+        <span class="text-purple-400 font-bold" id="social-total-agents">0</span>
+      </div>
+      <div class="flex items-center gap-1.5 text-[9px] font-mono">
+        <span class="text-muted">Copy Capital:</span>
+        <span class="text-accent font-bold" id="social-total-capital">$0</span>
+      </div>
+      <div class="flex items-center gap-1.5 text-[9px] font-mono">
+        <span class="text-muted">Fees Paid:</span>
+        <span class="text-amber font-bold" id="social-total-fees">$0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto">
+
+    <!-- FEED TAB -->
+    <div id="social-tab-feed" class="p-4 space-y-3">
+      <div class="flex items-center gap-2 mb-3">
+        <select id="feed-filter" class="bg-s-low border border-border rounded px-2 py-1 text-[10px] font-mono text-muted" onchange="loadSocialFeed()">
+          <option value="">All Events</option>
+          <option value="trade">Trades</option>
+          <option value="copy_trade">Copy Trades</option>
+          <option value="follow">Follows</option>
+          <option value="achievement">Achievements</option>
+          <option value="payout">Payouts</option>
+          <option value="referral">Referrals</option>
+        </select>
+        <input id="feed-agent-filter" class="bg-s-low border border-border rounded px-2 py-1 text-[10px] font-mono text-muted flex-1" placeholder="Filter by agent ID..." onchange="loadSocialFeed()">
+      </div>
+      <div id="social-feed-list" class="space-y-2">
+        <div class="empty-state" style="padding:32px 12px">
+          <div class="empty-state-icon" style="width:40px;height:40px"><span class="material-symbols-outlined text-purple-400/50 text-xl">forum</span></div>
+          <div class="text-sm font-medium text-muted">No social activity yet</div>
+          <div class="text-xs text-muted-dim">Create a profile and start trading to see activity here</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD TAB -->
+    <div id="social-tab-leaderboard" class="p-4 hidden">
+      <div class="flex items-center gap-2 mb-3">
+        <select id="lb-category" class="bg-s-low border border-border rounded px-2 py-1 text-[10px] font-mono text-muted" onchange="renderSocialLeaderboard()">
+          <option value="top_reputation">Reputation</option>
+          <option value="top_pnl">Top PnL</option>
+          <option value="top_win_rate">Win Rate</option>
+          <option value="most_followed">Most Followed</option>
+          <option value="most_copied">Most Copied</option>
+          <option value="top_earners">Top Earners</option>
+        </select>
+      </div>
+      <div id="social-lb-table" class="space-y-1"></div>
+    </div>
+
+    <!-- COPY TRADING TAB -->
+    <div id="social-tab-copy" class="p-4 hidden">
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Start Copying Form -->
+        <div class="panel p-4 space-y-3">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-accent mb-2">Start Copying an Agent</div>
+          <div class="space-y-2">
+            <div>
+              <label class="text-[9px] text-muted uppercase font-semibold">Leader Agent ID</label>
+              <input id="copy-leader" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1" placeholder="e.g. momentum, ml, rsi">
+            </div>
+            <div>
+              <label class="text-[9px] text-muted uppercase font-semibold">Your Agent ID</label>
+              <input id="copy-copier" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1" placeholder="e.g. my_agent">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[9px] text-muted uppercase font-semibold">Allocation ($)</label>
+                <input id="copy-allocation" type="number" value="1000" min="10" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1">
+              </div>
+              <div>
+                <label class="text-[9px] text-muted uppercase font-semibold">Size Multiplier</label>
+                <input id="copy-multiplier" type="number" value="1.0" step="0.1" min="0.1" max="10" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[9px] text-muted uppercase font-semibold">Max Trade ($)</label>
+                <input id="copy-max-trade" type="number" value="500" min="1" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1">
+              </div>
+              <div>
+                <label class="text-[9px] text-muted uppercase font-semibold">Max Daily Loss ($)</label>
+                <input id="copy-max-loss" type="number" value="100" min="1" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[9px] text-muted uppercase font-semibold">Mgmt Fee %</label>
+                <input id="copy-mgmt-fee" type="number" value="2.0" step="0.5" min="0" max="10" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1">
+              </div>
+              <div>
+                <label class="text-[9px] text-muted uppercase font-semibold">Perf Fee %</label>
+                <input id="copy-perf-fee" type="number" value="20" step="1" min="0" max="50" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1">
+              </div>
+            </div>
+            <div class="flex items-center gap-4 text-[10px] text-muted">
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="copy-longs" checked class="w-3 h-3 rounded border-border bg-s-low text-accent"> Copy Longs
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="copy-shorts" checked class="w-3 h-3 rounded border-border bg-s-low text-accent"> Copy Shorts
+              </label>
+            </div>
+            <div>
+              <label class="text-[9px] text-muted uppercase font-semibold">Referral Code (optional)</label>
+              <input id="copy-referral" class="w-full bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white mt-1" placeholder="SW-XXXXXXXX">
+            </div>
+            <button onclick="startCopying()" class="w-full py-2 bg-accent/20 text-accent border border-accent/30 rounded text-[10px] font-semibold uppercase tracking-wider hover:bg-accent/30 transition-colors">
+              Start Copying
+            </button>
+          </div>
+        </div>
+        <!-- Active Copy Relations -->
+        <div class="panel p-4">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-electric mb-3">Active Copy Relations</div>
+          <div id="copy-relations-list" class="space-y-2">
+            <div class="text-[10px] text-muted-dim text-center py-4">No active copy relations</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REFERRALS TAB -->
+    <div id="social-tab-referrals" class="p-4 hidden">
+      <div class="grid grid-cols-2 gap-4">
+        <div class="panel p-4 space-y-3">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-amber mb-2">Your Referral Code</div>
+          <div class="flex items-center gap-2">
+            <input id="referral-agent-id" class="bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white flex-1" placeholder="Enter your agent ID">
+            <button onclick="loadReferralStats()" class="px-3 py-1.5 bg-amber/20 text-amber border border-amber/30 rounded text-[10px] font-semibold hover:bg-amber/30 transition-colors">Load</button>
+          </div>
+          <div id="referral-info" class="space-y-2 mt-3">
+            <div class="text-[10px] text-muted-dim text-center py-4">Enter your agent ID to see referral stats</div>
+          </div>
+        </div>
+        <div class="panel p-4">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-purple-400 mb-3">How Referrals Work</div>
+          <div class="space-y-3 text-[10px] text-muted leading-relaxed">
+            <div class="flex items-start gap-2">
+              <span class="text-amber font-bold text-lg leading-none">1</span>
+              <div><span class="text-white font-semibold">Share your referral code</span> — Every agent gets a unique SW-XXXXXXXX code when they create a profile.</div>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-amber font-bold text-lg leading-none">2</span>
+              <div><span class="text-white font-semibold">Earn Tier 1 (10%)</span> — When someone uses your code and starts copy trading, you earn 10% of all performance fees they pay.</div>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-amber font-bold text-lg leading-none">3</span>
+              <div><span class="text-white font-semibold">Earn Tier 2 (3%)</span> — If your referrals refer others, you earn 3% of those fees too. Two-tier passive income.</div>
+            </div>
+            <div class="p-2.5 rounded bg-amber/5 border border-amber/20 text-amber/80 text-[9px] mt-2">
+              Example: Agent A copies Agent B (pays $100 in perf fees). If Agent A used your referral code, you earn $10. If the agent who referred you gets 3% tier-2, they earn $3.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACHIEVEMENTS TAB -->
+    <div id="social-tab-achievements" class="p-4 hidden">
+      <div class="flex items-center gap-2 mb-3">
+        <input id="achievements-agent-id" class="bg-s-low border border-border rounded px-2 py-1.5 text-[11px] font-mono text-white" placeholder="Agent ID">
+        <button onclick="loadAchievements()" class="px-3 py-1.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded text-[10px] font-semibold hover:bg-purple-500/30 transition-colors">Load</button>
+      </div>
+      <div id="achievements-grid" class="grid grid-cols-3 gap-2">
+        <div class="text-[10px] text-muted-dim text-center py-4 col-span-3">Enter an agent ID to view achievements</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════
 // Swarm Trade Dashboard — WebSocket Client
@@ -1010,6 +1254,7 @@ const S = {
   uptime: 0, killSwitch: false, priceHistory: [], startPrice: null,
   pnlHistory: [], portfolioAlloc: {},
   thoughts: [], memorySessions: [],
+  social: { feed: [], leaderboard: {}, stats: {} },
 };
 
 // ── Onboarding ────────────────────────────────────────────────
@@ -1311,6 +1556,8 @@ function handleMessage(msg) {
     case "agents_update":
       S.agents = msg.data.agents || S.agents; renderAgents(); break;
     case "thought": handleThought(msg.data); break;
+    case "social_feed": handleSocialFeedEvent(msg.data); break;
+    case "social_copy": handleSocialCopyEvent(msg.data); break;
   }
 }
 
@@ -1325,6 +1572,7 @@ function handleSnapshot(d) {
   S.pnlHistory = [S.dailyPnl]; updatePnlChart();
   if (d.wallet) updatePortfolioChart(d.wallet);
   if (d.thoughts) { S.thoughts = d.thoughts; renderThoughts(); }
+  if (d.social?.enabled) { S.social = d.social; updateSocialStats(); }
   handleGatewaySnapshot(d);
 }
 
@@ -2106,6 +2354,394 @@ function loadMemory() {
 
 // Store the token from URL or empty
 const wsToken = new URLSearchParams(window.location.search).get("token") || "";
+
+// ═══════════════════════════════════════════════════════════════
+// Social Trading Panel
+// ═══════════════════════════════════════════════════════════════
+
+let socialPanelOpen = false;
+let activeSocialTab = "feed";
+
+function toggleSocialPanel() {
+  socialPanelOpen = !socialPanelOpen;
+  document.getElementById("social-overlay").style.display = socialPanelOpen ? "block" : "none";
+  document.getElementById("social-panel").classList.toggle("gw-panel-open", socialPanelOpen);
+  if (socialPanelOpen) {
+    loadSocialFeed();
+    loadSocialLeaderboard();
+  }
+}
+
+function switchSocialTab(tab) {
+  activeSocialTab = tab;
+  ["feed", "leaderboard", "copy", "referrals", "achievements"].forEach(t => {
+    const panel = document.getElementById("social-tab-" + t);
+    const btn = document.getElementById("stab-" + t);
+    if (t === tab) {
+      panel.classList.remove("hidden");
+      btn.classList.add("text-purple-400", "border-purple-400");
+      btn.classList.remove("text-muted", "border-transparent");
+    } else {
+      panel.classList.add("hidden");
+      btn.classList.remove("text-purple-400", "border-purple-400");
+      btn.classList.add("text-muted", "border-transparent");
+    }
+  });
+  if (tab === "feed") loadSocialFeed();
+  if (tab === "leaderboard") loadSocialLeaderboard();
+}
+
+function updateSocialStats() {
+  const stats = S.social.stats || {};
+  document.getElementById("social-total-agents").textContent = stats.total_agents || 0;
+  document.getElementById("social-total-capital").textContent = "$" + (stats.total_copy_capital || 0).toLocaleString();
+  document.getElementById("social-total-fees").textContent = "$" + (stats.total_performance_fees || 0).toFixed(2);
+  const badge = document.getElementById("social-copiers-badge");
+  if (stats.active_copy_relations > 0) {
+    badge.classList.remove("hidden");
+    badge.textContent = stats.active_copy_relations;
+  }
+}
+
+function loadSocialFeed() {
+  const filter = document.getElementById("feed-filter")?.value || "";
+  const agentFilter = document.getElementById("feed-agent-filter")?.value || "";
+  let url = "/api/social/feed?limit=50";
+  if (filter) url += "&type=" + encodeURIComponent(filter);
+  if (agentFilter) url += "&agent_id=" + encodeURIComponent(agentFilter);
+  fetch(url)
+    .then(r => r.json())
+    .then(data => renderSocialFeed(data.feed || []))
+    .catch(() => {});
+}
+
+const FEED_ICONS = {
+  trade: "candlestick_chart", copy_trade: "content_copy", follow: "person_add",
+  unfollow: "person_remove", achievement: "emoji_events", payout: "payments",
+  referral: "link", milestone: "flag", strategy_update: "tune",
+};
+const FEED_COLORS = {
+  trade: "#3b82f6", copy_trade: "#22c55e", follow: "#a855f7",
+  unfollow: "#64748b", achievement: "#f59e0b", payout: "#22c55e",
+  referral: "#f97316", milestone: "#3b82f6", strategy_update: "#6366f1",
+};
+
+function renderSocialFeed(feed) {
+  const list = document.getElementById("social-feed-list");
+  if (!feed.length) {
+    list.innerHTML = `<div class="empty-state" style="padding:32px 12px">
+      <div class="empty-state-icon" style="width:40px;height:40px"><span class="material-symbols-outlined text-purple-400/50 text-xl">forum</span></div>
+      <div class="text-sm font-medium text-muted">No activity yet</div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = feed.reverse().map(e => {
+    const icon = FEED_ICONS[e.event_type] || "circle";
+    const color = FEED_COLORS[e.event_type] || "#64748b";
+    const time = new Date(e.ts * 1000).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    let detail = "";
+    const d = e.data || {};
+    switch(e.event_type) {
+      case "trade":
+        const pnlColor = (d.pnl || 0) >= 0 ? "#22c55e" : "#ef4444";
+        detail = `<span style="color:${pnlColor}">${d.pnl >= 0 ? '+' : ''}$${(d.pnl||0).toFixed(2)}</span> | WR: ${d.win_rate||0}% | Trade #${d.trade_number||0}`;
+        if (d.streak > 0) detail += ` | <span class="text-accent">${d.streak} streak</span>`;
+        break;
+      case "copy_trade":
+        if (d.action === "started_copying") detail = `Now copying <span class="text-white">${d.leader_name||d.leader_id}</span> with $${d.allocation} | Fees: ${d.fee_structure}`;
+        else if (d.action === "stopped_copying") detail = `Stopped copying ${d.leader_id} | PnL: $${d.total_pnl} | Fees: $${d.total_fees_paid}`;
+        else if (d.action === "trade_copied") detail = `Copied ${d.direction} ${d.asset} $${d.amount} from <span class="text-white">${d.leader_id}</span>`;
+        break;
+      case "follow":
+        detail = `Followed <span class="text-white">${d.leader_name||d.leader_id}</span>`;
+        break;
+      case "achievement":
+        detail = `Unlocked <span class="text-amber font-semibold">${d.name}</span> — ${d.description}`;
+        break;
+      case "payout":
+        detail = `Earned <span class="text-accent">$${(d.amount||0).toFixed(2)}</span> ${d.type} fee`;
+        if (d.tier) detail += ` (Tier ${d.tier})`;
+        break;
+      case "referral":
+        detail = `Referred <span class="text-white">${d.referred_agent}</span> via ${d.code}`;
+        break;
+      default:
+        detail = JSON.stringify(d).substring(0, 100);
+    }
+    return `<div class="flex items-start gap-2.5 p-2.5 rounded bg-s-low/50 border border-border/30 hover:bg-s-mid/50 transition-colors">
+      <div class="w-6 h-6 rounded flex items-center justify-center shrink-0 mt-0.5" style="background:${color}15;border:1px solid ${color}30">
+        <span class="material-symbols-outlined text-xs" style="color:${color}">${icon}</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[10px] font-semibold text-white">${e.agent_id}</span>
+          ${e.target_id ? '<span class="text-muted-dim text-[9px]">→ ' + e.target_id + '</span>' : ''}
+          <span class="ml-auto text-[8px] font-mono text-muted-dim">${time}</span>
+        </div>
+        <div class="text-[10px] text-muted mt-0.5">${detail}</div>
+        <div class="flex items-center gap-3 mt-1.5">
+          <button onclick="likeFeedEvent('${e.id}')" class="flex items-center gap-1 text-[9px] text-muted-dim hover:text-accent transition-colors" style="background:none;border:none;cursor:pointer">
+            <span class="material-symbols-outlined text-[10px]">thumb_up</span> ${e.likes || 0}
+          </button>
+          <span class="text-[9px] text-muted-dim flex items-center gap-1">
+            <span class="material-symbols-outlined text-[10px]">chat_bubble</span> ${(e.comments||[]).length}
+          </span>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function handleSocialFeedEvent(data) {
+  S.social.feed = S.social.feed || [];
+  S.social.feed.push(data);
+  if (S.social.feed.length > 100) S.social.feed = S.social.feed.slice(-100);
+  if (socialPanelOpen && activeSocialTab === "feed") {
+    renderSocialFeed(S.social.feed.slice(-50));
+  }
+}
+
+function handleSocialCopyEvent(data) {
+  // Refresh stats on copy events
+  fetch("/api/social/stats").then(r => r.json()).then(stats => {
+    S.social.stats = stats;
+    updateSocialStats();
+  }).catch(() => {});
+}
+
+function loadSocialLeaderboard() {
+  fetch("/api/social/leaderboard")
+    .then(r => r.json())
+    .then(data => {
+      S.social.leaderboard = data;
+      renderSocialLeaderboard();
+    })
+    .catch(() => {});
+}
+
+function renderSocialLeaderboard() {
+  const container = document.getElementById("social-lb-table");
+  const category = document.getElementById("lb-category")?.value || "top_reputation";
+  const lb = S.social.leaderboard?.categories?.[category] || [];
+
+  if (!lb.length) {
+    container.innerHTML = '<div class="text-[10px] text-muted-dim text-center py-8">No agents ranked yet. Create profiles to populate the leaderboard.</div>';
+    return;
+  }
+
+  container.innerHTML = lb.map((p, i) => {
+    const rankColors = ["#f59e0b", "#94a3b8", "#cd7f32"];
+    const rankColor = i < 3 ? rankColors[i] : "#475569";
+    const pnlColor = p.total_pnl >= 0 ? "#22c55e" : "#ef4444";
+    return `<div class="flex items-center gap-3 p-3 rounded bg-s-low/50 border border-border/30 hover:bg-s-mid/50 transition-colors">
+      <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-mono font-bold text-xs" style="background:${rankColor}20;color:${rankColor};border:1px solid ${rankColor}40">
+        ${i + 1}
+      </div>
+      <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style="background:linear-gradient(135deg,#3b82f620,#a855f720);border:1px solid #3b82f630">
+        <span class="font-mono font-bold text-[10px] text-white">${(p.display_name || "?")[0].toUpperCase()}</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[11px] font-semibold text-white truncate">${p.display_name}</span>
+          ${p.verified ? '<span class="material-symbols-outlined text-electric text-[10px]" style="font-variation-settings:\'FILL\' 1">verified</span>' : ''}
+          <span class="text-[8px] font-mono text-muted-dim">${p.agent_id}</span>
+        </div>
+        <div class="flex items-center gap-3 mt-0.5 text-[9px] font-mono">
+          <span style="color:${pnlColor}">${p.total_pnl >= 0 ? '+' : ''}$${p.total_pnl.toFixed(2)}</span>
+          <span class="text-muted">${p.win_rate}% WR</span>
+          <span class="text-muted">${p.total_trades} trades</span>
+          <span class="text-muted">${p.followers_count} followers</span>
+          <span class="text-muted">${p.copiers_count} copiers</span>
+        </div>
+      </div>
+      <div class="flex flex-col items-end gap-0.5 shrink-0">
+        <div class="text-[9px] font-mono text-amber">${p.reputation_score.toFixed(0)} rep</div>
+        <div class="text-[8px] font-mono text-muted-dim">$${p.total_earned_fees.toFixed(2)} earned</div>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button onclick="socialFollow('${p.agent_id}')" class="px-2 py-1 rounded text-[8px] font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/25 hover:bg-purple-500/25 transition-colors" style="cursor:pointer">Follow</button>
+        <button onclick="socialCopyQuick('${p.agent_id}')" class="px-2 py-1 rounded text-[8px] font-semibold bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 transition-colors" style="cursor:pointer">Copy</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function socialFollow(leaderId) {
+  const myId = prompt("Enter your agent ID to follow " + leaderId + ":");
+  if (!myId) return;
+  fetch("/api/social/follow", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + wsToken },
+    body: JSON.stringify({ follower_id: myId, leader_id: leaderId }),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) loadSocialLeaderboard();
+  }).catch(() => {});
+}
+
+function socialCopyQuick(leaderId) {
+  document.getElementById("copy-leader").value = leaderId;
+  switchSocialTab("copy");
+}
+
+function startCopying() {
+  const body = {
+    copier_id: document.getElementById("copy-copier").value.trim(),
+    leader_id: document.getElementById("copy-leader").value.trim(),
+    allocation: parseFloat(document.getElementById("copy-allocation").value) || 1000,
+    size_multiplier: parseFloat(document.getElementById("copy-multiplier").value) || 1.0,
+    max_trade_size: parseFloat(document.getElementById("copy-max-trade").value) || 500,
+    max_daily_loss: parseFloat(document.getElementById("copy-max-loss").value) || 100,
+    management_fee_pct: parseFloat(document.getElementById("copy-mgmt-fee").value) || 2.0,
+    performance_fee_pct: parseFloat(document.getElementById("copy-perf-fee").value) || 20.0,
+    copy_longs: document.getElementById("copy-longs").checked,
+    copy_shorts: document.getElementById("copy-shorts").checked,
+    referral_code: document.getElementById("copy-referral").value.trim(),
+  };
+  if (!body.copier_id || !body.leader_id) {
+    alert("Both copier and leader agent IDs are required");
+    return;
+  }
+  fetch("/api/social/copy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + wsToken },
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      alert("Now copying " + body.leader_id + "! Allocation: $" + body.allocation);
+      loadCopyRelations();
+    } else {
+      alert("Error: " + (d.error || "unknown"));
+    }
+  }).catch(e => alert("Failed: " + e.message));
+}
+
+function loadCopyRelations() {
+  // Load from leaderboard which has copier info
+  const agentId = document.getElementById("copy-copier")?.value?.trim();
+  if (!agentId) return;
+  fetch("/api/social/profile/" + encodeURIComponent(agentId))
+    .then(r => r.json())
+    .then(data => {
+      const list = document.getElementById("copy-relations-list");
+      const copying = data.copying || [];
+      if (!copying.length) {
+        list.innerHTML = '<div class="text-[10px] text-muted-dim text-center py-4">Not copying anyone yet</div>';
+        return;
+      }
+      list.innerHTML = copying.map(r => `
+        <div class="p-2.5 rounded bg-s-low/50 border border-border/30">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-[10px] font-semibold text-white">${r.leader_name || r.leader_id}</span>
+            <button onclick="stopCopying('${r.copier_id}','${r.leader_id}')" class="text-[8px] text-danger hover:text-danger-dim cursor-pointer" style="background:none;border:none">Stop</button>
+          </div>
+          <div class="flex items-center gap-3 mt-1 text-[9px] font-mono text-muted">
+            <span>$${r.allocation} alloc</span>
+            <span>${r.total_copied_trades} trades</span>
+            <span class="${r.total_pnl >= 0 ? 'text-accent' : 'text-danger'}">${r.total_pnl >= 0 ? '+' : ''}$${r.total_pnl.toFixed(2)}</span>
+            <span class="text-amber">$${r.total_fees_paid.toFixed(2)} fees</span>
+          </div>
+        </div>
+      `).join("");
+    })
+    .catch(() => {});
+}
+
+function stopCopying(copierId, leaderId) {
+  if (!confirm("Stop copying " + leaderId + "?")) return;
+  fetch("/api/social/copy/stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + wsToken },
+    body: JSON.stringify({ copier_id: copierId, leader_id: leaderId }),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) loadCopyRelations();
+  }).catch(() => {});
+}
+
+function loadReferralStats() {
+  const agentId = document.getElementById("referral-agent-id").value.trim();
+  if (!agentId) return;
+  fetch("/api/social/referral/" + encodeURIComponent(agentId))
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById("referral-info");
+      if (data.error) {
+        container.innerHTML = `<div class="text-[10px] text-muted-dim text-center py-4">${data.error}. Create a profile first.</div>`;
+        return;
+      }
+      container.innerHTML = `
+        <div class="p-3 rounded bg-s-low border border-amber/20">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[9px] text-muted uppercase font-semibold">Your Code</span>
+            <button onclick="navigator.clipboard.writeText('${data.code}')" class="text-[8px] text-amber hover:text-amber/80 cursor-pointer" style="background:none;border:none">Copy</button>
+          </div>
+          <div class="font-mono text-lg font-bold text-amber tracking-wider">${data.code}</div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-3">
+          <div class="kpi-card text-center">
+            <div class="kpi-label">Referrals</div>
+            <div class="kpi-value text-purple-400">${data.total_referrals}</div>
+          </div>
+          <div class="kpi-card text-center">
+            <div class="kpi-label">Active</div>
+            <div class="kpi-value text-accent">${data.active_referrals}</div>
+          </div>
+          <div class="kpi-card text-center">
+            <div class="kpi-label">Earned</div>
+            <div class="kpi-value text-amber">$${data.total_earnings.toFixed(2)}</div>
+          </div>
+        </div>
+        <div class="mt-3 text-[9px] text-muted">
+          <div>Tier 1: ${data.tier1_pct}% of fees from direct referrals</div>
+          <div>Tier 2: ${data.tier2_pct}% of fees from their referrals</div>
+          <div class="mt-1 text-muted-dim">Copy capital from referrals: $${data.active_copy_capital.toFixed(2)}</div>
+        </div>
+        ${data.referred_agents?.length ? '<div class="mt-3 text-[9px] font-mono text-muted"><div class="font-semibold uppercase mb-1">Referred Agents</div>' + data.referred_agents.map(a => '<div class="text-white">' + a + '</div>').join("") + '</div>' : ''}
+      `;
+    })
+    .catch(() => {});
+}
+
+function loadAchievements() {
+  const agentId = document.getElementById("achievements-agent-id").value.trim();
+  if (!agentId) return;
+  fetch("/api/social/achievements/" + encodeURIComponent(agentId))
+    .then(r => r.json())
+    .then(data => {
+      const grid = document.getElementById("achievements-grid");
+      const achievements = data.achievements || [];
+      grid.innerHTML = achievements.map(a => {
+        const unlocked = a.unlocked;
+        const borderColor = unlocked ? "#f59e0b" : "#1e293b";
+        const bgColor = unlocked ? "rgba(245,158,11,0.05)" : "rgba(15,23,42,0.5)";
+        const textColor = unlocked ? "#fbbf24" : "#475569";
+        const ACHIEVEMENT_ICONS = {
+          sword: "swords", rocket: "rocket_launch", shield: "shield", money: "attach_money",
+          dollar: "paid", gem: "diamond", fire: "local_fire_department", lightning: "bolt",
+          star: "star", crown: "crown", copy: "content_copy", building: "apartment",
+          link: "link", coins: "toll", vault: "lock", target: "my_location",
+          chart: "show_chart", trophy: "emoji_events",
+        };
+        const icon = ACHIEVEMENT_ICONS[a.icon] || "emoji_events";
+        return `<div class="p-3 rounded border" style="background:${bgColor};border-color:${borderColor}40">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="material-symbols-outlined text-sm" style="color:${textColor};${unlocked ? "font-variation-settings:'FILL' 1" : ''}">${icon}</span>
+            <span class="font-mono text-[10px] font-bold" style="color:${textColor}">${a.name}</span>
+          </div>
+          <div class="text-[9px] ${unlocked ? 'text-muted' : 'text-muted-dim'}">${a.desc}</div>
+          ${unlocked ? '<div class="text-[8px] text-accent mt-1 font-mono">UNLOCKED</div>' : ''}
+        </div>`;
+      }).join("");
+    })
+    .catch(() => {});
+}
+
+function likeFeedEvent(eventId) {
+  fetch("/api/social/like", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + wsToken },
+    body: JSON.stringify({ event_id: eventId }),
+  }).then(() => loadSocialFeed()).catch(() => {});
+}
 
 // ── Init ──────────────────────────────────────────────────────
 initChartJs(); connect();

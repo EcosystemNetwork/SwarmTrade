@@ -91,6 +91,25 @@ from .demo import DemoScout, MultiAssetDemoScout
 from .memory import AgentMemory
 from .erc8004 import ERC8004Pipeline
 from .uniswap import UniswapExecutor, uniswap_venue_config
+# Moon Dev tech
+from .hyperliquid import HyperliquidAgent, HyperliquidExecutor
+from .backtester import BacktesterAgent
+from .jupiter import JupiterExecutor, JupiterPriceScout
+from .birdeye import BirdEyeAgent
+from .social_agents import XMonitorAgent, DiscordAgent, TelegramAgent, SocialAggregator
+from .agent_learning import LearningCoordinator
+from .smart_money import SmartMoneyAgent
+from .x402_payments import X402PaymentGateway
+from .lp_manager import LPRebalanceManager
+from .yield_aggregator import YieldAggregator
+from .agent_policies import AgentPolicyEngine, AgentPolicy, policy_check
+from .hardware_signer import HardwareSigningPipeline
+from .polymarket import PolymarketAgent
+from .alpha_swarm import setup_alpha_swarm
+from .agent_registry import AgentRegistry
+from .arb_executor import ArbScanner, ArbExecutor
+from .dex_quotes import DEXQuoteProvider
+from .dex_multi import MultiDEXScanner
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -447,9 +466,49 @@ async def run(args: argparse.Namespace):
     oc = OnChainAgent(bus, assets=assets, interval=300.0)
     supervisor.register("onchain", oc.run, stale_after=600.0, stoppable=oc)
 
-    # ── Cross-Exchange Arbitrage ───────────────────────────────
+    # ── Cross-Exchange Arbitrage (monitoring via CoinGecko) ────
     arb = ArbitrageAgent(bus, assets=assets, interval=120.0)
     supervisor.register("arbitrage", arb.run, stale_after=300.0, stoppable=arb)
+
+    # ── Multi-Venue Arb Scanner + Executor (CEX + DEX) ────────
+    # DEX quote provider (1inch + Jupiter)
+    dex_provider = DEXQuoteProvider(
+        bus, chain_id=int(os.getenv("DEX_CHAIN_ID", "8453")),  # Base by default
+        api_key=os.getenv("ONEINCH_API_KEY", ""),
+        interval=15.0,
+    )
+    supervisor.register("dex_quotes", dex_provider.run,
+                        stale_after=60.0, stoppable=dex_provider)
+
+    # Arb scanner — polls all CEXs + DEXs for price discrepancies
+    arb_scanner = ArbScanner(
+        bus, assets=assets, interval=10.0,
+        min_spread_bps=15.0,  # only arb if > 15bps net profit
+        max_arb_usd=float(os.getenv("SWARM_ARB_MAX_USD", "2000")),
+        dex_provider=dex_provider,
+    )
+    arb_scanner._kraken_client = kraken_client
+    supervisor.register("arb_scanner", arb_scanner.run,
+                        stale_after=30.0, stoppable=arb_scanner)
+
+    # Arb executor — simultaneously buys cheap + sells expensive
+    arb_exec = ArbExecutor(
+        bus, kraken_client=kraken_client,
+        max_concurrent=2, cooldown_seconds=30.0,
+        max_size_usd=float(os.getenv("SWARM_ARB_MAX_USD", "1000")),
+        kill_switch=kill_switch,
+    )
+
+    log.info("Multi-venue arbitrage: scanner(10s) + executor(CEX+DEX) + DEX quotes(1inch+Jupiter)")
+
+    # ── Multi-DEX Scanner (SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca) ──
+    dex_chains = [int(c) for c in os.getenv("DEX_CHAINS", "1,8453,42161").split(",")]
+    multi_dex = MultiDEXScanner(
+        bus, assets=assets, chains=dex_chains, interval=30.0,
+    )
+    supervisor.register("multi_dex", multi_dex.run,
+                        stale_after=90.0, stoppable=multi_dex)
+    log.info("Multi-DEX scanner: SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca across chains %s", dex_chains)
 
     # ── Extended Data Feeds ───────────────────────────────────
 
@@ -490,6 +549,126 @@ async def run(args: argparse.Namespace):
     for asset in assets:
         MLSignalAgent(bus, asset=asset, retrain_interval=500, min_samples=200)
     log.info("ML signal agents enabled for: %s", assets)
+
+    # ── Smart Money Wallet Tracking (Shadow pattern) ──────────
+    smart_money = SmartMoneyAgent(bus, assets=assets, interval=180.0)
+    supervisor.register("smart_money", smart_money.run, stale_after=360.0, stoppable=smart_money)
+    log.info("Smart money tracking: %d wallets for %s", len(smart_money.wallets), assets)
+
+    # ── Polymarket Prediction Market Signals ──────────────────
+    polymarket = PolymarketAgent(bus, assets=assets, interval=300.0)
+    supervisor.register("polymarket", polymarket.run, stale_after=600.0, stoppable=polymarket)
+    log.info("Polymarket prediction signals enabled for: %s", assets)
+
+    # ── Yield Aggregator (DeFi Llama + auto-compound) ─────────
+    yield_agg = YieldAggregator(
+        bus, assets=["ETH", "USDC", "WBTC"],
+        chains=["Ethereum", "Base", "Arbitrum"],
+        min_apy=2.0, scan_interval=600.0, harvest_interval=3600.0,
+    )
+    supervisor.register("yield_agg", yield_agg.run, stale_after=1200.0, stoppable=yield_agg)
+    log.info("Yield aggregator: scanning DeFi Llama for top pools")
+
+    # ── Alpha Swarm (multi-agent opportunity detection) ───────
+    alpha_components = setup_alpha_swarm(
+        bus, min_agents_agree=3, window_s=300.0, min_conviction=0.4,
+    )
+    log.info("Alpha swarm: hunter -> sentiment -> risk -> coordinator")
+
+    # ── LP Rebalance Manager (UniRange pattern) ───────────────
+    lp_mgr = LPRebalanceManager(
+        bus, range_bps=500, rebalance_threshold=0.8,
+        min_profit_usd=5.0, check_interval=60.0,
+    )
+    supervisor.register("lp_manager", lp_mgr.run, stale_after=120.0, stoppable=lp_mgr)
+    log.info("LP rebalance manager: %dbps range, auto-rebalance at %.0f%%",
+             lp_mgr.range_bps, lp_mgr.rebalance_threshold * 100)
+
+    # ── Agent Policy Engine (per-agent spending limits) ───────
+    policy_engine = AgentPolicyEngine(bus, default_daily_cap=args.capital * 0.1)
+    log.info("Agent policy engine: default daily cap=$%.0f", args.capital * 0.1)
+
+    # ── Agent Registry (Unstoppable Domains identity) ─────────
+    agent_registry = AgentRegistry(
+        bus, owner_address=os.getenv("WALLET_ADDRESS", ""),
+        chain_id=int(os.getenv("AGENT_REGISTRY_CHAIN", "8453")),
+        ud_api_key=os.getenv("UD_API_KEY", ""),
+    )
+    agent_registry.register_internal_agents()
+    log.info("Agent registry: %d agents registered on %s",
+             len(agent_registry.agents), agent_registry._domain_base)
+
+    # ── Private Key (used by hardware signer, x402, ERC-8004) ──
+    private_key = os.getenv("PRIVATE_KEY", "")
+
+    # ── Hardware Signing Pipeline (Maki/LeAgent pattern) ──────
+    hw_signer = HardwareSigningPipeline(
+        bus,
+        auto_approve_usd=float(os.getenv("HARDWARE_APPROVE_USD", "500")),
+        signer_mode=os.getenv("HARDWARE_SIGNER_MODE", "hot_wallet"),
+        private_key=private_key,
+    )
+    log.info("Hardware signer: mode=%s auto_approve=$%.0f",
+             hw_signer.signer_mode, hw_signer.auto_approve_usd)
+
+    # ── x402 Payment Gateway (agent-to-agent commerce) ────────
+    x402 = None
+    if private_key:
+        x402 = X402PaymentGateway(bus, private_key=private_key)
+        await x402.start()
+        log.info("x402 payment gateway: %d services, address=%s",
+                 len(x402.ledger.services), x402._address or "sim-mode")
+
+    # ── Hyperliquid DEX (perps data + execution) ────────────────
+    hl_agent = HyperliquidAgent(bus, assets=assets, interval=15.0)
+    supervisor.register("hyperliquid", hl_agent.run, stale_after=45.0, stoppable=hl_agent)
+    if os.getenv("HYPERLIQUID_WALLET_KEY"):
+        hl_executor = HyperliquidExecutor(bus)
+        log.info("Hyperliquid: data + execution enabled")
+    else:
+        log.info("Hyperliquid: data-only mode (no wallet key)")
+
+    # ── Backtester (RBI: Research → Backtest → Implement) ─────
+    backtester = BacktesterAgent(
+        bus, assets=assets, interval=3600.0,
+        min_sharpe=0.5, min_win_rate=0.45, max_drawdown=25.0,
+    )
+    supervisor.register("backtester", backtester.run, stale_after=7200.0, stoppable=backtester)
+    log.info("Backtester: 10 strategies × %d assets, walk-forward + Monte Carlo", len(assets))
+
+    # ── Jupiter DEX (Solana execution) ────────────────────────
+    sol_tokens = ["SOL", "JUP", "BONK", "WIF", "PYTH", "JTO", "RAY"]
+    jup_scout = JupiterPriceScout(bus, tokens=sol_tokens, interval=10.0)
+    supervisor.register("jupiter_prices", jup_scout.run, stale_after=30.0, stoppable=jup_scout)
+    if os.getenv("SOLANA_PRIVATE_KEY"):
+        jup_executor = JupiterExecutor(bus, wallet_address=os.getenv("SOLANA_WALLET_ADDRESS"))
+        log.info("Jupiter: Solana execution enabled (%d tokens)", len(sol_tokens))
+    else:
+        log.info("Jupiter: price feeds only (no Solana key)")
+
+    # ── BirdEye (Solana token analytics) ──────────────────────
+    if os.getenv("BIRDEYE_API_KEY"):
+        birdeye = BirdEyeAgent(bus, tokens=sol_tokens, interval=30.0)
+        supervisor.register("birdeye", birdeye.run, stale_after=90.0, stoppable=birdeye)
+        log.info("BirdEye: Solana analytics for %s", sol_tokens)
+
+    # ── Social Media Agents (X/Discord/Telegram) ─────────────
+    if os.getenv("X_BEARER_TOKEN"):
+        x_monitor = XMonitorAgent(bus, assets=assets, interval=60.0)
+        supervisor.register("x_monitor", x_monitor.run, stale_after=180.0, stoppable=x_monitor)
+        log.info("X/Twitter monitor enabled for: %s", assets)
+    discord_agent = DiscordAgent(bus)
+    telegram_agent = TelegramAgent(bus)
+    social_agg = SocialAggregator(bus, assets=assets)
+    log.info("Social agents: Discord=%s Telegram=%s",
+             "ON" if discord_agent._enabled else "OFF",
+             "ON" if telegram_agent._enabled else "OFF")
+
+    # ── Agent Learning Coordinator ────────────────────────────
+    learning = LearningCoordinator(bus, analysis_interval=300.0)
+    supervisor.register("learning", learning.run, stale_after=600.0, stoppable=learning)
+    log.info("Learning coordinator: exploration=%.0f%%, analysis every 5min",
+             learning.exploration_rate * 100)
 
     # ── Strategy ────────────────────────────────────────────────
     tokens = set(assets) | {"USD", "USDC", "USDT"}
@@ -576,6 +755,7 @@ async def run(args: argparse.Namespace):
         RiskAgent(bus, "factor_exposure", factor_exposure_check(factor_model, max_exposure=3.0)),
         RiskAgent(bus, "rebalance", rebalance_check(portfolio_opt, max_drift_pct=0.15)),
         RiskAgent(bus, "sor_venues", sor_venue_check(sor, min_venues=2)),
+        RiskAgent(bus, "agent_policy", policy_check(policy_engine)),
     ]
     Coordinator(bus, n_risk_agents=len(risks))
 
@@ -597,14 +777,31 @@ async def run(args: argparse.Namespace):
     if args.mode == "mock":
         Executor(bus, kill_switch=kill_switch, dry_run=True, portfolio=portfolio)
     else:
-        KrakenExecutor(bus, kill_switch=kill_switch, paper=(args.mode == "paper"),
-                       portfolio=portfolio, client=kraken_client)
-        # Order lifecycle tracker — polls for fill confirmation
+        kraken_executor = KrakenExecutor(
+            bus, kill_switch=kill_switch, paper=(args.mode == "paper"),
+            portfolio=portfolio, client=kraken_client,
+        )
+        # Crash recovery: cancel orphaned orders + start dead man's switch
+        await kraken_executor.start()
+        log.info("KrakenExecutor started (paper=%s, dead_man_switch=%s)",
+                 args.mode == "paper", args.mode == "live")
+
+        # Order lifecycle tracker — polls for fill confirmation + stuck detection
         from .kraken import OrderTracker
         order_tracker = OrderTracker(bus, client=kraken_client, poll_interval=2.0)
         supervisor.register("order_tracker", order_tracker.run,
                             stale_after=10.0, stoppable=order_tracker)
         log.info("Order lifecycle tracker enabled (poll=2s)")
+
+        # Exchange balance reconciliation — detects drift every 60s
+        from .reconciliation import BalanceReconciler
+        balance_recon = BalanceReconciler(
+            bus, portfolio, wallet, interval=60.0,
+            max_drift_usd=5.0, max_drift_pct=0.02,
+        )
+        supervisor.register("balance_reconciler", balance_recon.run,
+                            stale_after=120.0, stoppable=balance_recon)
+        log.info("Balance reconciler enabled (interval=60s, max_drift=$5/2%%)")
 
     Auditor(bus, db=db, state=state, portfolio=portfolio)
 
@@ -642,7 +839,6 @@ async def run(args: argparse.Namespace):
 
     # ── ERC-8004 On-Chain Identity + Reputation ──────────────────
     erc8004 = None
-    private_key = os.getenv("PRIVATE_KEY", "")
     if args.erc8004 or private_key:
         if private_key:
             erc8004 = ERC8004Pipeline(
@@ -691,15 +887,39 @@ async def run(args: argparse.Namespace):
         from .capital_allocator import CapitalAllocator
         cap_alloc = CapitalAllocator(bus, total_capital=args.capital)
 
+        # Social trading engine
+        from .social_trading import SocialTradingEngine
+        social = SocialTradingEngine(bus, db=db)
+
         web_dash = WebDashboard(
             bus, state, db=db,
             kill_switch=kill_switch, port=args.web_port,
             wallet=wallet, gateway=gateway,
             strategist=strategist, capital_allocator=cap_alloc,
             memory=memory, erc8004=erc8004, uniswap=uniswap,
+            social=social,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
+
+        # Auto-register built-in agents with social profiles
+        agent_profiles = [
+            ("momentum", "Momentum", ["momentum", "trend"], "Rate-of-change momentum over 20-period window"),
+            ("mean_rev", "Mean Reversion", ["mean-reversion", "z-score"], "Z-score reversion detection over 50 periods"),
+            ("vol", "Volatility", ["volatility", "regime"], "Volatility regime detection and sizing"),
+            ("rsi", "RSI Agent", ["technical", "oscillator"], "Relative Strength Index signals"),
+            ("macd", "MACD Agent", ["technical", "crossover"], "MACD crossover detection"),
+            ("bollinger", "Bollinger Agent", ["technical", "squeeze"], "Bollinger Band squeeze and breakout"),
+            ("ichimoku", "Ichimoku Agent", ["technical", "cloud"], "Ichimoku Cloud trend analysis"),
+            ("ml", "ML Signal", ["machine-learning", "adaptive"], "Online gradient-boosted decision trees"),
+            ("whale", "Whale Tracker", ["on-chain", "whale"], "Large BTC/ETH transaction monitoring"),
+            ("news", "News Sentiment", ["sentiment", "news"], "CryptoPanic news analysis"),
+            ("confluence", "Confluence", ["meta", "multi-signal"], "Multi-group signal agreement scoring"),
+        ]
+        for aid, name, tags, desc in agent_profiles:
+            social.create_profile(aid, name, strategy_tags=tags, strategy_description=desc)
+        log.info("Social trading: %d agent profiles registered", len(agent_profiles))
+
         if gateway:
             log.info("  Gateway API: http://localhost:%d/api/gateway/connect", args.web_port)
 
@@ -784,6 +1004,16 @@ async def run(args: argparse.Namespace):
         log.info("ERC-8004 %s", _json.dumps(erc8004.status(), indent=2))
     if uniswap:
         log.info("UNISWAP %s", _json.dumps(uniswap.status(), indent=2))
+    log.info("SMART_MONEY %s", _json.dumps(smart_money.summary(), indent=2))
+    log.info("YIELD %s", _json.dumps(yield_agg.summary(), indent=2))
+    log.info("LP_MANAGER %s", _json.dumps(lp_mgr.summary(), indent=2))
+    log.info("POLICIES %s", _json.dumps(policy_engine.summary(), indent=2))
+    log.info("REGISTRY %s", _json.dumps(agent_registry.summary(), indent=2))
+    log.info("SIGNER %s", _json.dumps(hw_signer.status(), indent=2))
+    if x402:
+        log.info("X402 %s", _json.dumps(x402.status(), indent=2))
+    log.info("ALPHA_SWARM %s", _json.dumps(alpha_components["coordinator"].summary(), indent=2))
+    log.info("POLYMARKET %s", _json.dumps(polymarket.summary(), indent=2))
 
     # Print paper account summary
     if args.mode == "paper":

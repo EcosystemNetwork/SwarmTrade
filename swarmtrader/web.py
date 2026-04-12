@@ -11,6 +11,7 @@ from aiohttp import web
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
 from .report import load_from_db, generate_html_report
 from .gateway import AgentGateway, ConnectedAgent
+from .social_trading import SocialTradingEngine
 
 log = logging.getLogger("swarm.web")
 
@@ -51,7 +52,8 @@ async def auth_middleware(request: web.Request, handler):
 
     # Allow static assets, health check, and HTML pages without auth
     if (path.startswith("/static/") or path == "/health"
-            or path == "/" or path == "/slides" or path == "/report"):
+            or path == "/" or path == "/slides" or path == "/report"
+            or (path.startswith("/api/social/") and request.method == "GET")):
         return await handler(request)
 
     # Gateway endpoints authenticate via their own API key mechanism
@@ -99,7 +101,8 @@ class WebDashboard:
                  kill_switch=None, host: str = "0.0.0.0", port: int = 8080,
                  wallet=None, gateway: AgentGateway | None = None,
                  strategist=None, capital_allocator=None,
-                 memory=None, erc8004=None, uniswap=None):
+                 memory=None, erc8004=None, uniswap=None,
+                 social=None):
         self.bus = bus
         self.state = state
         self.db = db  # Database instance
@@ -113,6 +116,7 @@ class WebDashboard:
         self.uniswap = uniswap  # UniswapExecutor instance (optional)
         self.strategist = strategist  # Strategist instance (for NLP config)
         self.capital_allocator = capital_allocator  # CapitalAllocator (leaderboard)
+        self.social = social  # SocialTradingEngine instance (optional)
         self._privacy_mgr = None  # lazy init
         self._pyth_oracle = None  # lazy init
         self._clients: set[web.WebSocketResponse] = set()
@@ -161,6 +165,7 @@ class WebDashboard:
         bus.subscribe("wallet.low_funds", self._on_wallet_low_funds)
         bus.subscribe("wallet.rebalance", self._on_wallet_rebalance)
         bus.subscribe("memory.thought", self._on_thought)
+        bus.subscribe("social.feed", self._on_social_feed)
 
         self._init_agents()
 
@@ -430,6 +435,9 @@ class WebDashboard:
     async def _on_thought(self, data: dict):
         await self._broadcast("thought", data)
 
+    async def _on_social_feed(self, data: dict):
+        await self._broadcast("social_feed", data)
+
     # ── Quantitative system event handlers ─────────────────────────
 
     async def _on_var_update(self, data: dict):
@@ -490,6 +498,7 @@ class WebDashboard:
                 "gateway": self._gateway_snapshot(),
                 "erc8004": self.erc8004.status() if self.erc8004 else {"enabled": False},
                 "uniswap": self.uniswap.status() if self.uniswap else {"enabled": False},
+                "social": self.social.snapshot() if self.social else {"enabled": False},
             },
         }
         await ws.send_str(json.dumps(snapshot))
@@ -1162,6 +1171,224 @@ class WebDashboard:
         await self._broadcast("agents_update", {"agents": self.agents})
         return web.json_response({"disconnected": agent_id})
 
+    # ── Social Trading Endpoints ─────────────────────────────────────
+
+    async def _handle_social_profiles(self, request: web.Request) -> web.Response:
+        """GET /api/social/profiles — ranked public agent profiles."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        sort_by = request.query.get("sort", "total_pnl")
+        limit = min(100, max(1, int(request.query.get("limit", "50"))))
+        return web.json_response({
+            "profiles": self.social.get_public_profiles(sort_by=sort_by, limit=limit),
+        })
+
+    async def _handle_social_profile(self, request: web.Request) -> web.Response:
+        """GET /api/social/profile/{agent_id} — single agent profile."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        agent_id = request.match_info["agent_id"]
+        profile = self.social.get_profile(agent_id)
+        if not profile:
+            return web.json_response({"error": "profile not found"}, status=404)
+        return web.json_response({
+            "profile": profile.public_dict(),
+            "achievements": self.social.get_achievements(agent_id),
+            "followers": list(self.social.followers.get(agent_id, set()))[:100],
+            "following": list(self.social.following.get(agent_id, set()))[:100],
+            "copiers": self.social.get_copiers(agent_id),
+            "copying": self.social.get_copying(agent_id),
+        })
+
+    async def _handle_social_create_profile(self, request: web.Request) -> web.Response:
+        """POST /api/social/profile — create or update an agent profile."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        agent_id = body.get("agent_id", "").strip()
+        display_name = body.get("display_name", "").strip()
+        if not agent_id or not display_name:
+            return web.json_response({"error": "agent_id and display_name required"}, status=400)
+        profile = self.social.create_profile(
+            agent_id=agent_id,
+            display_name=display_name,
+            bio=body.get("bio", ""),
+            strategy_tags=body.get("strategy_tags", []),
+            strategy_description=body.get("strategy_description", ""),
+            visibility=body.get("visibility", "public"),
+        )
+        return web.json_response({"ok": True, "profile": profile.public_dict()})
+
+    async def _handle_social_follow(self, request: web.Request) -> web.Response:
+        """POST /api/social/follow — follow an agent."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        follower_id = body.get("follower_id", "").strip()
+        leader_id = body.get("leader_id", "").strip()
+        if not follower_id or not leader_id:
+            return web.json_response({"error": "follower_id and leader_id required"}, status=400)
+        ok = self.social.follow(follower_id, leader_id)
+        return web.json_response({"ok": ok})
+
+    async def _handle_social_unfollow(self, request: web.Request) -> web.Response:
+        """POST /api/social/unfollow — unfollow an agent."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        follower_id = body.get("follower_id", "").strip()
+        leader_id = body.get("leader_id", "").strip()
+        if not follower_id or not leader_id:
+            return web.json_response({"error": "follower_id and leader_id required"}, status=400)
+        ok = self.social.unfollow(follower_id, leader_id)
+        return web.json_response({"ok": ok})
+
+    async def _handle_social_copy_start(self, request: web.Request) -> web.Response:
+        """POST /api/social/copy — start copying an agent's trades."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        copier_id = body.get("copier_id", "").strip()
+        leader_id = body.get("leader_id", "").strip()
+        if not copier_id or not leader_id:
+            return web.json_response({"error": "copier_id and leader_id required"}, status=400)
+
+        allocation = _safe_float(body.get("allocation", 1000), min_val=10, max_val=1_000_000)
+        if allocation is None:
+            return web.json_response({"error": "allocation must be $10-$1M"}, status=400)
+
+        rel = self.social.start_copying(
+            copier_id=copier_id,
+            leader_id=leader_id,
+            allocation=allocation,
+            size_multiplier=_safe_float(body.get("size_multiplier", 1.0), min_val=0.01, max_val=10.0) or 1.0,
+            max_trade_size=_safe_float(body.get("max_trade_size", 500), min_val=1, max_val=100_000) or 500.0,
+            max_daily_loss=_safe_float(body.get("max_daily_loss", 100), min_val=1, max_val=100_000) or 100.0,
+            min_confidence=_safe_float(body.get("min_confidence", 0.3), min_val=0, max_val=1.0) or 0.3,
+            management_fee_pct=_safe_float(body.get("management_fee_pct", 2.0), min_val=0, max_val=10) or 2.0,
+            performance_fee_pct=_safe_float(body.get("performance_fee_pct", 20.0), min_val=0, max_val=50) or 20.0,
+            copy_longs=body.get("copy_longs", True),
+            copy_shorts=body.get("copy_shorts", True),
+            referral_code=body.get("referral_code", ""),
+        )
+        if not rel:
+            return web.json_response({"error": "cannot copy (same agent or already copying)"}, status=400)
+
+        await self._broadcast("social_copy", {
+            "action": "started",
+            "copier_id": copier_id,
+            "leader_id": leader_id,
+            "allocation": allocation,
+        })
+        return web.json_response({"ok": True, "relation": rel.to_dict()})
+
+    async def _handle_social_copy_stop(self, request: web.Request) -> web.Response:
+        """POST /api/social/copy/stop — stop copying an agent."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        copier_id = body.get("copier_id", "").strip()
+        leader_id = body.get("leader_id", "").strip()
+        if not copier_id or not leader_id:
+            return web.json_response({"error": "copier_id and leader_id required"}, status=400)
+        ok = self.social.stop_copying(copier_id, leader_id)
+        if ok:
+            await self._broadcast("social_copy", {
+                "action": "stopped",
+                "copier_id": copier_id,
+                "leader_id": leader_id,
+            })
+        return web.json_response({"ok": ok})
+
+    async def _handle_social_feed(self, request: web.Request) -> web.Response:
+        """GET /api/social/feed — global social feed."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        limit = min(100, max(1, int(request.query.get("limit", "50"))))
+        event_type = request.query.get("type", None)
+        agent_id = request.query.get("agent_id", None)
+        return web.json_response({
+            "feed": self.social.get_feed(limit=limit, event_type=event_type, agent_id=agent_id),
+        })
+
+    async def _handle_social_feed_personal(self, request: web.Request) -> web.Response:
+        """GET /api/social/feed/{agent_id} — personalized feed for an agent."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        agent_id = request.match_info["agent_id"]
+        limit = min(100, max(1, int(request.query.get("limit", "50"))))
+        return web.json_response({
+            "feed": self.social.get_personalized_feed(agent_id, limit=limit),
+        })
+
+    async def _handle_social_leaderboard(self, request: web.Request) -> web.Response:
+        """GET /api/social/leaderboard — enhanced social leaderboard."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        return web.json_response(self.social.social_leaderboard())
+
+    async def _handle_social_referral(self, request: web.Request) -> web.Response:
+        """GET /api/social/referral/{agent_id} — referral stats for an agent."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        agent_id = request.match_info["agent_id"]
+        return web.json_response(self.social.get_referral_stats(agent_id))
+
+    async def _handle_social_search(self, request: web.Request) -> web.Response:
+        """GET /api/social/search — search agent profiles."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        query = request.query.get("q", "")
+        tags = request.query.get("tags", "").split(",") if request.query.get("tags") else None
+        min_trades = int(request.query.get("min_trades", "0"))
+        min_win_rate = float(request.query.get("min_win_rate", "0"))
+        sort_by = request.query.get("sort", "reputation")
+        return web.json_response({
+            "results": self.social.search_agents(
+                query=query, tags=tags, min_trades=min_trades,
+                min_win_rate=min_win_rate, sort_by=sort_by,
+            ),
+        })
+
+    async def _handle_social_stats(self, request: web.Request) -> web.Response:
+        """GET /api/social/stats — global platform stats."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        return web.json_response(self.social.platform_stats())
+
+    async def _handle_social_comment(self, request: web.Request) -> web.Response:
+        """POST /api/social/comment — add a comment to a feed event."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        event_id = body.get("event_id", "").strip()
+        agent_id = body.get("agent_id", "").strip()
+        text = body.get("text", "").strip()
+        if not event_id or not agent_id or not text:
+            return web.json_response({"error": "event_id, agent_id, and text required"}, status=400)
+        ok = self.social.add_comment(event_id, agent_id, text)
+        return web.json_response({"ok": ok})
+
+    async def _handle_social_like(self, request: web.Request) -> web.Response:
+        """POST /api/social/like — like a feed event."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        body = await request.json()
+        event_id = body.get("event_id", "").strip()
+        if not event_id:
+            return web.json_response({"error": "event_id required"}, status=400)
+        ok = self.social.like_event(event_id)
+        return web.json_response({"ok": ok})
+
+    async def _handle_social_achievements(self, request: web.Request) -> web.Response:
+        """GET /api/social/achievements/{agent_id} — agent achievements."""
+        if not self.social:
+            return web.json_response({"error": "social trading not enabled"}, status=404)
+        agent_id = request.match_info["agent_id"]
+        return web.json_response({
+            "achievements": self.social.get_achievements(agent_id),
+        })
+
     # ── Server Lifecycle ────────────────────────────────────────────
 
     async def start(self):
@@ -1215,6 +1442,23 @@ class WebDashboard:
         app.router.add_get("/api/gateway/status", self._handle_gateway_status)
         app.router.add_post("/api/gateway/ui/connect", self._handle_gateway_connect_agent)
         app.router.add_post("/api/gateway/ui/disconnect", self._handle_gateway_disconnect_agent)
+        # ── Social trading ────────────────────────────────────────
+        app.router.add_get("/api/social/profiles", self._handle_social_profiles)
+        app.router.add_get("/api/social/profile/{agent_id}", self._handle_social_profile)
+        app.router.add_post("/api/social/profile", self._handle_social_create_profile)
+        app.router.add_post("/api/social/follow", self._handle_social_follow)
+        app.router.add_post("/api/social/unfollow", self._handle_social_unfollow)
+        app.router.add_post("/api/social/copy", self._handle_social_copy_start)
+        app.router.add_post("/api/social/copy/stop", self._handle_social_copy_stop)
+        app.router.add_get("/api/social/feed", self._handle_social_feed)
+        app.router.add_get("/api/social/feed/{agent_id}", self._handle_social_feed_personal)
+        app.router.add_get("/api/social/leaderboard", self._handle_social_leaderboard)
+        app.router.add_get("/api/social/referral/{agent_id}", self._handle_social_referral)
+        app.router.add_get("/api/social/search", self._handle_social_search)
+        app.router.add_get("/api/social/stats", self._handle_social_stats)
+        app.router.add_post("/api/social/comment", self._handle_social_comment)
+        app.router.add_post("/api/social/like", self._handle_social_like)
+        app.router.add_get("/api/social/achievements/{agent_id}", self._handle_social_achievements)
         # ── Agent Gateway routes (external agent API) ──────────────
         if self.gateway:
             self.gateway.register_routes(app)
