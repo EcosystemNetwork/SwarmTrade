@@ -3,27 +3,33 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Swarm Trade // Command Center</title>
+<title>Swarm Trade — Command Center</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script>
 tailwind.config = {
   darkMode: "class",
   theme: {
     extend: {
       colors: {
-        void: "#0a0e17",
-        surface: "#0f131c",
-        "s-low": "#181b25",
-        "s-mid": "#1c1f29",
-        "s-high": "#262a34",
-        "s-top": "#31353f",
-        neon: "#00ff88",
-        electric: "#00d4ff",
-        amber: "#ffaa00",
-        signal: "#ff3366",
-        muted: "#6b7280",
+        void: "#06080d",
+        surface: "#0c1018",
+        "s-low": "#111520",
+        "s-mid": "#161a26",
+        "s-high": "#1c2030",
+        "s-top": "#252938",
+        accent: "#22c55e",
+        "accent-dim": "#16a34a",
+        electric: "#3b82f6",
+        "electric-dim": "#2563eb",
+        amber: "#f59e0b",
+        danger: "#ef4444",
+        "danger-dim": "#dc2626",
+        muted: "#64748b",
+        "muted-dim": "#475569",
+        border: "#1e293b",
+        "border-light": "#334155",
       },
       fontFamily: {
         mono: ["JetBrains Mono", "monospace"],
@@ -35,130 +41,352 @@ tailwind.config = {
 }
 </script>
 <style>
-  body { background: #0a0e17; color: #dfe2ef; font-family: 'Inter', sans-serif; }
-  .scan-lines {
-    background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.15) 50%),
-                linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.01), rgba(0,0,255,0.03));
-    background-size: 100% 2px, 3px 100%;
-    pointer-events: none;
+  *, *::before, *::after { box-sizing: border-box; }
+  body { background: #06080d; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+
+  /* Panel system */
+  .panel {
+    background: #0c1018;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    overflow: hidden;
   }
-  .glow-green { box-shadow: inset 0 0 8px rgba(0,255,136,0.12), 0 0 4px rgba(0,255,136,0.08); }
-  .glow-blue { box-shadow: inset 0 0 8px rgba(0,212,255,0.12), 0 0 4px rgba(0,212,255,0.08); }
-  .glow-red { box-shadow: inset 0 0 8px rgba(255,51,102,0.2), 0 0 6px rgba(255,51,102,0.15); }
-  @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-  .pulse { animation: pulse-dot 1.5s ease-in-out infinite; }
-  @keyframes ticker { from { transform: translateX(100%); } to { transform: translateX(-200%); } }
-  .ticker-scroll { animation: ticker 90s linear infinite; }
-  .tab-active { color: #00ff88; border-bottom: 2px solid #00ff88; background: rgba(0,255,136,0.05); }
-  .tab-inactive { color: #6b7280; }
-  .tab-inactive:hover { color: #9ca3af; background: rgba(255,255,255,0.03); }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0f131c; }
-  ::-webkit-scrollbar-thumb { background: #31353f; }
-  .signal-bar { position: relative; height: 6px; background: #1c1f29; }
-  .signal-fill-pos { position: absolute; top:0; bottom:0; left:50%; background: #00ff88; }
-  .signal-fill-neg { position: absolute; top:0; bottom:0; right:50%; background: #ff3366; }
-  .signal-center { position: absolute; top:0; bottom:0; left:50%; width:1px; background:#4b5563; }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: linear-gradient(180deg, rgba(30,41,59,0.5) 0%, transparent 100%);
+    border-bottom: 1px solid #1e293b;
+    user-select: none;
+  }
+  .panel-header-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  /* KPI card */
+  .kpi-card {
+    background: rgba(15,23,42,0.6);
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 8px 14px;
+  }
+  .kpi-label { font-size: 9px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
+  .kpi-value { font-size: 14px; font-weight: 700; font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+
+  /* Status dot */
+  @keyframes pulse-ring { 0% { opacity:0.6; transform:scale(1); } 100% { opacity:0; transform:scale(2.2); } }
+  .status-pulse { position: relative; }
+  .status-pulse::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    background: inherit;
+    animation: pulse-ring 1.8s ease-out infinite;
+  }
+
+  /* Agent tree */
+  .agent-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid rgba(30,41,59,0.5);
+    background: rgba(15,23,42,0.3);
+  }
+  .agent-group-header:hover { background: rgba(30,41,59,0.4); }
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 5px 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #94a3b8;
+    cursor: default;
+    transition: background 0.15s;
+    border-left: 2px solid transparent;
+  }
+  .agent-row:hover { background: rgba(30,41,59,0.3); }
+  .agent-row.active { background: rgba(34,197,94,0.06); border-left-color: #22c55e; color: #e2e8f0; }
+
+  /* Tabs */
+  .tab-active {
+    color: #e2e8f0;
+    border-bottom: 2px solid #3b82f6;
+    background: rgba(59,130,246,0.06);
+  }
+  .tab-inactive { color: #64748b; border-bottom: 2px solid transparent; }
+  .tab-inactive:hover { color: #94a3b8; background: rgba(255,255,255,0.02); }
+
+  /* Signal bar */
+  .signal-track { height: 4px; background: #1e293b; border-radius: 2px; position: relative; overflow: hidden; }
+  .signal-fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; transition: width 0.4s ease; }
+  .signal-fill-pos { left: 50%; background: linear-gradient(90deg, #22c55e, #4ade80); }
+  .signal-fill-neg { right: 50%; background: linear-gradient(270deg, #ef4444, #f87171); }
+  .signal-center-mark { position: absolute; top: -1px; bottom: -1px; left: 50%; width: 1px; background: #475569; }
+
+  /* Table */
+  .data-table { width: 100%; text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .data-table thead { position: sticky; top: 0; z-index: 10; }
+  .data-table th {
+    padding: 8px 12px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    background: #111520;
+    border-bottom: 1px solid #1e293b;
+  }
+  .data-table td { padding: 8px 12px; border-bottom: 1px solid rgba(30,41,59,0.4); }
+  .data-table tbody tr { transition: background 0.15s; }
+  .data-table tbody tr:hover { background: rgba(59,130,246,0.04); }
+
+  /* Badges */
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 3px; font-size: 9px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .badge-green { background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+  .badge-red { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+  .badge-blue { background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+  .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+
+  /* Data flash */
+  @keyframes data-flash { 0% { background: rgba(59,130,246,0.15); } 100% { background: transparent; } }
+  .flash { animation: data-flash 0.6s ease-out; }
+
+  /* Ticker */
+  @keyframes ticker-scroll { from { transform: translateX(100%); } to { transform: translateX(-200%); } }
+  .ticker-scroll { animation: ticker-scroll 90s linear infinite; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+  /* Status badges in header */
+  .mode-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.06em;
+  }
+
+  /* Kill switch */
+  .kill-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 6px 16px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    transition: all 0.15s;
+    cursor: pointer;
+    border: 1px solid;
+  }
+  .kill-btn-idle {
+    background: rgba(127,29,29,0.3);
+    color: #fca5a5;
+    border-color: rgba(239,68,68,0.3);
+  }
+  .kill-btn-idle:hover {
+    background: rgba(153,27,27,0.5);
+    border-color: rgba(239,68,68,0.5);
+  }
+  .kill-btn-active {
+    background: #dc2626;
+    color: #fff;
+    border-color: #ef4444;
+    box-shadow: 0 0 20px rgba(239,68,68,0.3);
+    animation: pulse-kill 1s ease-in-out infinite;
+  }
+  @keyframes pulse-kill { 0%,100% { opacity:1; } 50% { opacity:0.8; } }
+
+  /* Verdict card */
+  .verdict-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #111520;
+    border-radius: 4px;
+    border-left: 3px solid;
+    transition: background 0.15s;
+  }
+  .verdict-card:hover { background: #161a26; }
+  .verdict-approved { border-left-color: #22c55e; }
+  .verdict-rejected { border-left-color: #ef4444; }
+
+  /* Quorum */
+  .quorum-bar {
+    padding: 10px;
+    border-radius: 4px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Resize handle look */
+  .resize-border { border-color: #1e293b; }
+
+  /* Chart timeframe buttons */
+  .tf-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 3px;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+  .tf-btn:hover { color: #94a3b8; background: rgba(30,41,59,0.5); }
+  .tf-btn.active { color: #e2e8f0; background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.3); }
 </style>
 </head>
 <body class="overflow-hidden select-none">
-<div class="fixed inset-0 scan-lines z-[100] opacity-20"></div>
 
 <!-- ═══ TOP NAV ═══ -->
-<header id="topnav" class="fixed top-0 w-full z-50 flex items-center px-4 justify-between bg-[#050810]/90 backdrop-blur-md h-14 border-b border-neon/20">
-  <div class="flex items-center gap-6">
-    <div class="flex items-center gap-2">
-      <span class="material-symbols-outlined text-neon text-2xl" style="font-variation-settings:'FILL' 1">hub</span>
-      <span class="font-mono font-black text-neon text-lg tracking-tight">SWARM TRADE</span>
+<header id="topnav" class="fixed top-0 w-full z-50 flex items-center px-4 justify-between bg-surface/95 backdrop-blur-xl h-12 border-b border-border">
+  <!-- Left: Brand -->
+  <div class="flex items-center gap-5">
+    <div class="flex items-center gap-2.5">
+      <div class="w-7 h-7 rounded-md bg-accent/10 border border-accent/20 flex items-center justify-center">
+        <span class="material-symbols-outlined text-accent text-base" style="font-variation-settings:'FILL' 1">hub</span>
+      </div>
+      <div>
+        <span class="font-headline font-bold text-white text-sm tracking-tight">Swarm Trade</span>
+      </div>
     </div>
-    <div class="flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest">
-      <span class="px-2 py-1 border border-electric/40 text-electric cursor-default" id="mode-badge">MOCK</span>
+    <div class="h-5 w-px bg-border"></div>
+    <span class="mode-badge border border-electric/30 text-electric bg-electric/10" id="mode-badge">MOCK</span>
+    <div class="flex items-center gap-2 font-mono text-xs">
+      <div class="w-2 h-2 rounded-full bg-accent status-pulse" id="conn-dot"></div>
+      <span class="text-muted text-[10px] font-medium" id="conn-text">CONNECTING</span>
+      <span class="text-muted-dim text-[10px] ml-0.5" id="latency"></span>
     </div>
   </div>
-  <div class="flex items-center gap-6">
-    <div class="flex items-center gap-2 font-mono text-xs">
-      <div class="w-2 h-2 rounded-full bg-neon pulse" id="conn-dot"></div>
-      <span class="text-muted" id="conn-text">CONNECTING</span>
-      <span class="text-muted/50 ml-1" id="latency"></span>
+
+  <!-- Right: KPIs + Controls -->
+  <div class="flex items-center gap-3">
+    <div class="kpi-card flex items-center gap-3">
+      <div>
+        <div class="kpi-label">Daily PnL</div>
+        <div class="kpi-value text-muted" id="daily-pnl">$0.0000</div>
+      </div>
     </div>
-    <div class="font-mono text-right">
-      <div class="text-[9px] text-muted uppercase">Daily PnL</div>
-      <div class="text-sm font-bold" id="daily-pnl">$0.0000</div>
+    <div class="kpi-card">
+      <div class="kpi-label">UTC</div>
+      <div class="kpi-value text-electric text-xs" id="utc-clock">--:--:--</div>
     </div>
-    <div class="font-mono text-right">
-      <div class="text-[9px] text-muted uppercase">UTC</div>
-      <div class="text-sm text-electric" id="utc-clock">--:--:--</div>
-    </div>
-    <button id="kill-btn"
-      class="px-4 py-1.5 font-mono font-bold text-xs border uppercase transition-all duration-75
-             bg-red-900/30 text-red-400 border-red-500/40 hover:bg-red-800/50 hover:border-red-400"
-      onclick="toggleKillSwitch()">
-      KILL SWITCH
+    <div class="h-5 w-px bg-border"></div>
+    <button id="kill-btn" class="kill-btn kill-btn-idle" onclick="toggleKillSwitch()">
+      <span class="flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-xs">power_settings_new</span>
+        Kill Switch
+      </span>
     </button>
   </div>
 </header>
 
 <!-- ═══ MAIN LAYOUT ═══ -->
-<div class="flex pt-14 h-screen pb-8">
+<div class="flex pt-12 h-screen pb-7 bg-void gap-px">
 
   <!-- LEFT SIDEBAR: Agent Swarm -->
-  <aside class="w-[260px] bg-surface border-r border-neon/10 flex flex-col shrink-0 overflow-hidden">
-    <div class="px-4 py-3 border-b border-white/5">
+  <aside class="w-[250px] flex flex-col shrink-0 overflow-hidden panel rounded-none border-t-0 border-l-0 border-b-0" style="border-radius:0">
+    <div class="panel-header">
       <div class="flex items-center gap-2">
-        <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">hub</span>
-        <span class="font-mono text-xs font-bold text-neon uppercase tracking-wider">Agent Swarm</span>
+        <span class="material-symbols-outlined text-accent text-sm" style="font-variation-settings:'FILL' 1">hub</span>
+        <span class="panel-header-title text-accent">Agent Swarm</span>
+      </div>
+      <div class="flex items-center gap-2 text-[9px] font-mono text-muted">
+        <span id="agent-active-count" class="text-accent font-semibold">0</span>
+        <span>/</span>
+        <span id="agent-count">0</span>
       </div>
     </div>
-    <div id="agent-tree" class="flex-1 overflow-y-auto p-3 font-mono text-[11px] space-y-1">
+    <div id="agent-tree" class="flex-1 overflow-y-auto">
       <!-- Populated by JS -->
-    </div>
-    <div class="px-3 py-2 border-t border-white/5">
-      <div class="flex justify-between text-[9px] text-muted font-mono">
-        <span>Agents: <span id="agent-count">0</span></span>
-        <span>Active: <span id="agent-active-count" class="text-neon">0</span></span>
-      </div>
     </div>
   </aside>
 
   <!-- CENTER: Charts + Trades -->
-  <main class="flex-1 flex flex-col overflow-hidden">
+  <main class="flex-1 flex flex-col overflow-hidden gap-px">
 
     <!-- Price + PnL Charts Area -->
-    <div class="flex-[6] border-b border-white/5 bg-s-low relative flex flex-col overflow-hidden">
-      <!-- Header -->
-      <div class="flex justify-between items-start p-4 pb-2">
-        <div class="font-mono">
-          <div class="flex items-center gap-2 text-muted text-[10px] uppercase">
-            <span class="material-symbols-outlined text-xs">trending_up</span>
-            <span id="pair-label">ETH / USD</span>
+    <div class="flex-[6] bg-surface relative flex flex-col overflow-hidden border-b border-border">
+      <!-- Chart Header -->
+      <div class="flex justify-between items-center px-4 py-2.5 border-b border-border/50">
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-electric text-sm">candlestick_chart</span>
+            <span class="font-mono text-xs font-semibold text-muted uppercase" id="pair-label">ETH / USD</span>
           </div>
-          <div class="text-3xl font-black font-headline mt-1" id="main-price">--</div>
-          <div class="text-neon text-xs font-mono" id="price-delta"></div>
+          <div class="h-4 w-px bg-border"></div>
+          <div class="font-mono">
+            <span class="text-xl font-bold text-white" id="main-price">--</span>
+            <span class="text-xs font-mono ml-2" id="price-delta"></span>
+          </div>
         </div>
-        <div class="flex gap-4 text-[10px] font-mono text-muted">
-          <div>Trades: <span class="text-white" id="stat-trades">0</span></div>
-          <div>Win Rate: <span class="text-neon" id="stat-winrate">--</span></div>
-          <div>Gas: <span class="text-electric" id="stat-gas">--</span></div>
+        <div class="flex items-center gap-3">
+          <div class="flex gap-1">
+            <button class="tf-btn active">1m</button>
+            <button class="tf-btn">5m</button>
+            <button class="tf-btn">15m</button>
+            <button class="tf-btn">1H</button>
+          </div>
+          <div class="h-4 w-px bg-border"></div>
+          <div class="flex gap-4 text-[10px] font-mono text-muted">
+            <div>Trades <span class="text-white font-semibold" id="stat-trades">0</span></div>
+            <div>Win Rate <span class="text-accent font-semibold" id="stat-winrate">--</span></div>
+            <div>Gas <span class="text-electric font-semibold" id="stat-gas">--</span></div>
+          </div>
         </div>
       </div>
       <!-- Charts Row -->
-      <div class="flex-1 flex gap-0 min-h-0 px-4 pb-3">
+      <div class="flex-1 flex gap-px min-h-0 bg-void">
         <!-- Price Canvas (left 60%) -->
-        <div class="flex-[6] relative min-h-0">
+        <div class="flex-[6] relative min-h-0 bg-surface p-2">
           <canvas id="price-chart" class="w-full h-full"></canvas>
         </div>
         <!-- PnL + Portfolio (right 40%) -->
-        <div class="flex-[4] flex flex-col gap-2 pl-3 min-h-0">
-          <div class="flex-1 relative bg-surface/50 p-2 min-h-0">
-            <div class="text-[9px] font-mono text-muted uppercase mb-1">Cumulative PnL</div>
+        <div class="flex-[4] flex flex-col gap-px min-h-0">
+          <div class="flex-1 relative bg-surface p-3 min-h-0">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[9px] font-mono text-muted uppercase font-semibold">Cumulative PnL</span>
+              <span class="material-symbols-outlined text-muted text-xs">show_chart</span>
+            </div>
             <canvas id="pnl-chart" class="w-full h-full"></canvas>
           </div>
-          <div class="h-[120px] relative bg-surface/50 p-2 flex items-center">
-            <div class="w-[100px] h-[100px] shrink-0">
+          <div class="h-[130px] relative bg-surface p-3 flex items-center gap-3">
+            <div class="w-[90px] h-[90px] shrink-0">
               <canvas id="portfolio-chart" class="w-full h-full"></canvas>
             </div>
-            <div id="portfolio-legend" class="flex-1 pl-3 font-mono text-[9px] space-y-1 overflow-y-auto max-h-[100px]">
-              <div class="text-muted">No positions</div>
+            <div class="flex-1">
+              <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-2">Allocation</div>
+              <div id="portfolio-legend" class="font-mono text-[9px] space-y-1.5 overflow-y-auto max-h-[80px]">
+                <div class="text-muted">No positions</div>
+              </div>
             </div>
           </div>
         </div>
@@ -166,110 +394,121 @@ tailwind.config = {
     </div>
 
     <!-- Trade Activity -->
-    <div class="flex-[4] flex flex-col bg-s-low overflow-hidden">
-      <div class="flex border-b border-white/5 bg-surface/50 shrink-0">
-        <button class="tab-btn tab-active px-4 py-2 font-mono text-[10px] uppercase" data-tab="intents">
-          Active Intents <span class="text-muted" id="intent-count">[0]</span>
+    <div class="flex-[4] flex flex-col bg-surface overflow-hidden">
+      <div class="flex items-center border-b border-border shrink-0 bg-surface px-1">
+        <button class="tab-btn tab-active px-4 py-2.5 font-body text-[10px] font-semibold uppercase tracking-wide" data-tab="intents">
+          Active Intents <span class="text-muted font-normal ml-1" id="intent-count">0</span>
         </button>
-        <button class="tab-btn tab-inactive px-4 py-2 font-mono text-[10px] uppercase" data-tab="execlog">
-          Execution Log <span class="text-muted" id="exec-count">[0]</span>
+        <button class="tab-btn tab-inactive px-4 py-2.5 font-body text-[10px] font-semibold uppercase tracking-wide" data-tab="execlog">
+          Execution Log <span class="text-muted font-normal ml-1" id="exec-count">0</span>
         </button>
       </div>
       <!-- Intents Tab -->
-      <div id="tab-intents" class="flex-1 overflow-y-auto font-mono">
-        <table class="w-full text-left text-[11px]">
-          <thead class="sticky top-0 bg-s-low text-muted uppercase border-b border-white/5 z-10">
+      <div id="tab-intents" class="flex-1 overflow-y-auto">
+        <table class="data-table">
+          <thead>
             <tr>
-              <th class="p-2.5 font-medium">ID</th>
-              <th class="p-2.5 font-medium">Dir</th>
-              <th class="p-2.5 font-medium">Route</th>
-              <th class="p-2.5 font-medium">Amount</th>
-              <th class="p-2.5 font-medium">TTL</th>
-              <th class="p-2.5 font-medium">Risk</th>
-              <th class="p-2.5 font-medium">Status</th>
+              <th>ID</th>
+              <th>Direction</th>
+              <th>Route</th>
+              <th>Amount</th>
+              <th>TTL</th>
+              <th>Risk</th>
+              <th>Status</th>
             </tr>
           </thead>
-          <tbody id="intents-body" class="divide-y divide-white/5"></tbody>
+          <tbody id="intents-body"></tbody>
         </table>
-        <div id="intents-empty" class="text-center text-muted text-xs py-8">Waiting for trade intents...</div>
+        <div id="intents-empty" class="text-center text-muted text-xs py-10 font-mono">Waiting for trade intents...</div>
       </div>
       <!-- Exec Log Tab -->
-      <div id="tab-execlog" class="flex-1 overflow-y-auto font-mono hidden">
-        <table class="w-full text-left text-[11px]">
-          <thead class="sticky top-0 bg-s-low text-muted uppercase border-b border-white/5 z-10">
+      <div id="tab-execlog" class="flex-1 overflow-y-auto hidden">
+        <table class="data-table">
+          <thead>
             <tr>
-              <th class="p-2.5 font-medium">Time</th>
-              <th class="p-2.5 font-medium">ID</th>
-              <th class="p-2.5 font-medium">Status</th>
-              <th class="p-2.5 font-medium">Tx Hash</th>
-              <th class="p-2.5 font-medium">Fill Price</th>
-              <th class="p-2.5 font-medium">Slippage</th>
-              <th class="p-2.5 font-medium">PnL</th>
+              <th>Time</th>
+              <th>ID</th>
+              <th>Status</th>
+              <th>Tx Hash</th>
+              <th>Fill Price</th>
+              <th>Slippage</th>
+              <th>PnL</th>
             </tr>
           </thead>
-          <tbody id="execlog-body" class="divide-y divide-white/5"></tbody>
+          <tbody id="execlog-body"></tbody>
         </table>
-        <div id="execlog-empty" class="text-center text-muted text-xs py-8">No executions yet...</div>
+        <div id="execlog-empty" class="text-center text-muted text-xs py-10 font-mono">No executions yet...</div>
       </div>
     </div>
   </main>
 
   <!-- RIGHT SIDEBAR: Signals + Risk -->
-  <aside class="w-[300px] bg-surface border-l border-electric/10 flex flex-col shrink-0 overflow-hidden">
+  <aside class="w-[290px] flex flex-col shrink-0 overflow-hidden gap-px bg-void">
     <!-- Signal Analysis -->
-    <div class="flex-1 border-b border-white/5 p-4 overflow-y-auto">
-      <div class="flex items-center justify-between mb-4">
-        <span class="font-mono text-[10px] font-bold text-electric uppercase tracking-widest">Signal Analysis</span>
-        <span class="material-symbols-outlined text-electric text-sm">sensors</span>
-      </div>
-      <div id="signals-panel" class="space-y-4">
-        <!-- Populated by JS -->
-      </div>
-      <!-- Weighted Score -->
-      <div class="mt-4 pt-4 border-t border-white/5">
-        <div class="flex justify-between text-[10px] font-mono text-muted uppercase mb-2">
-          <span>Weighted Score</span>
-          <span class="text-xs font-bold" id="weighted-score">0.00</span>
+    <div class="flex-1 flex flex-col bg-surface overflow-hidden">
+      <div class="panel-header">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-electric text-sm">sensors</span>
+          <span class="panel-header-title text-electric">Signal Analysis</span>
         </div>
-        <div class="signal-bar">
-          <div class="signal-center"></div>
-          <div id="score-fill" class="signal-fill-pos" style="width:0"></div>
+        <span class="font-mono text-[10px] font-semibold" id="weighted-score-header">0.00</span>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3">
+        <div id="signals-panel" class="space-y-4">
+          <!-- Populated by JS -->
         </div>
-        <div class="flex justify-between text-[8px] text-muted/50 mt-1 font-mono">
-          <span>-1.0 SHORT</span>
-          <span class="text-amber">|0.20|</span>
-          <span>LONG +1.0</span>
+        <!-- Weighted Score -->
+        <div class="mt-4 pt-4 border-t border-border">
+          <div class="flex justify-between text-[10px] font-mono text-muted uppercase mb-2">
+            <span class="font-semibold">Composite Score</span>
+            <span class="text-xs font-bold" id="weighted-score">0.00</span>
+          </div>
+          <div class="signal-track">
+            <div class="signal-center-mark"></div>
+            <div id="score-fill" class="signal-fill signal-fill-pos" style="width:0"></div>
+          </div>
+          <div class="flex justify-between text-[8px] text-muted-dim mt-1.5 font-mono">
+            <span>-1.0 SHORT</span>
+            <span class="text-amber text-[9px] font-semibold">|0.20|</span>
+            <span>LONG +1.0</span>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Risk Verdicts -->
-    <div class="flex-1 p-4 overflow-y-auto">
-      <div class="flex items-center justify-between mb-4">
-        <span class="font-mono text-[10px] font-bold text-muted uppercase tracking-widest">Risk Consensus</span>
-        <span class="material-symbols-outlined text-muted text-sm">verified_user</span>
+    <div class="flex-1 flex flex-col bg-surface overflow-hidden">
+      <div class="panel-header">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-amber text-sm">shield</span>
+          <span class="panel-header-title text-amber">Risk Consensus</span>
+        </div>
       </div>
-      <div id="risk-panel" class="space-y-2">
-        <div class="text-center text-muted text-[10px] py-4">Waiting for intents...</div>
+      <div class="flex-1 overflow-y-auto p-3">
+        <div id="risk-panel" class="space-y-2">
+          <div class="text-center text-muted text-[10px] py-6 font-mono">Waiting for intents...</div>
+        </div>
+        <div id="quorum-bar" class="quorum-bar mt-3 hidden"></div>
       </div>
-      <div id="quorum-bar" class="mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase hidden"></div>
     </div>
   </aside>
 </div>
 
 <!-- ═══ BOTTOM BAR ═══ -->
-<footer class="fixed bottom-0 w-full h-8 z-50 flex items-center px-3 gap-6 overflow-hidden bg-[#050810] border-t border-electric/20 font-mono text-[9px] uppercase">
-  <div class="flex items-center gap-2 text-neon shrink-0">
-    <div class="w-1.5 h-1.5 rounded-full bg-neon pulse"></div>
-    <span class="font-bold" id="sys-status">SYS_INIT</span>
+<footer class="fixed bottom-0 w-full h-7 z-50 flex items-center px-3 gap-4 overflow-hidden bg-surface border-t border-border font-mono text-[9px]">
+  <div class="flex items-center gap-2 text-accent shrink-0">
+    <div class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></div>
+    <span class="font-semibold uppercase" id="sys-status">SYS_INIT</span>
   </div>
+  <div class="h-3.5 w-px bg-border shrink-0"></div>
   <div class="flex-1 overflow-hidden whitespace-nowrap">
-    <div class="ticker-scroll flex gap-10 text-muted" id="ticker-content">
+    <div class="ticker-scroll flex gap-8 text-muted" id="ticker-content">
       <span>Initializing Swarm Trade...</span>
     </div>
   </div>
+  <div class="h-3.5 w-px bg-border shrink-0"></div>
   <div class="flex items-center gap-4 text-muted shrink-0">
-    <span>Uptime: <span id="uptime" class="text-electric">00:00</span></span>
+    <span>Uptime <span id="uptime" class="text-electric font-semibold">00:00</span></span>
     <span id="db-status">DB: --</span>
   </div>
 </footer>
@@ -299,8 +538,8 @@ function initChartJs() {
       labels: [],
       datasets: [{
         data: [],
-        borderColor: "#00ff88",
-        backgroundColor: "rgba(0,255,136,0.08)",
+        borderColor: "#22c55e",
+        backgroundColor: "rgba(34,197,94,0.06)",
         borderWidth: 1.5,
         fill: true,
         tension: 0.3,
@@ -314,8 +553,9 @@ function initChartJs() {
       scales: {
         x: { display: false },
         y: {
-          grid: { color: "rgba(255,255,255,0.04)" },
-          ticks: { color: "#6b7280", font: { size: 8, family: "JetBrains Mono" },
+          grid: { color: "rgba(30,41,59,0.5)", lineWidth: 0.5 },
+          border: { display: false },
+          ticks: { color: "#64748b", font: { size: 8, family: "JetBrains Mono" },
                    callback: v => (v >= 0 ? "+" : "") + v.toFixed(2) },
         }
       }
@@ -330,14 +570,14 @@ function initChartJs() {
       labels: ["Cash"],
       datasets: [{
         data: [100],
-        backgroundColor: ["#31353f"],
+        backgroundColor: ["#334155"],
         borderWidth: 0,
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       animation: false,
-      cutout: "65%",
+      cutout: "68%",
       plugins: { legend: { display: false } },
     }
   });
@@ -349,27 +589,24 @@ function updatePnlChart() {
   chart.data.labels = S.pnlHistory.map((_, i) => i);
   chart.data.datasets[0].data = S.pnlHistory;
 
-  // Color based on current PnL
   const current = S.pnlHistory[S.pnlHistory.length - 1] || 0;
   if (current >= 0) {
-    chart.data.datasets[0].borderColor = "#00ff88";
-    chart.data.datasets[0].backgroundColor = "rgba(0,255,136,0.08)";
+    chart.data.datasets[0].borderColor = "#22c55e";
+    chart.data.datasets[0].backgroundColor = "rgba(34,197,94,0.06)";
   } else {
-    chart.data.datasets[0].borderColor = "#ff3366";
-    chart.data.datasets[0].backgroundColor = "rgba(255,51,102,0.08)";
+    chart.data.datasets[0].borderColor = "#ef4444";
+    chart.data.datasets[0].backgroundColor = "rgba(239,68,68,0.06)";
   }
   chart.update();
 }
 
 function updatePortfolioChart(walletData) {
   if (!portfolioChartInstance || !walletData) return;
-  const colors = ["#00ff88", "#00d4ff", "#ffaa00", "#ff3366", "#a855f7", "#f59e0b", "#06b6d4", "#ec4899"];
+  const colors = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#a855f7", "#06b6d4", "#ec4899", "#14b8a6"];
   const labels = [];
   const data = [];
 
-  // Extract allocations from wallet data
   const allocs = walletData.allocations || {};
-  let totalUsed = 0;
   let i = 0;
   const bgColors = [];
   for (const [asset, info] of Object.entries(allocs)) {
@@ -378,7 +615,6 @@ function updatePortfolioChart(walletData) {
       labels.push(asset);
       data.push(val);
       bgColors.push(colors[i % colors.length]);
-      totalUsed += val;
       i++;
     }
   }
@@ -387,7 +623,7 @@ function updatePortfolioChart(walletData) {
   if (cash > 0 || data.length === 0) {
     labels.push("Cash");
     data.push(cash || 100);
-    bgColors.push("#31353f");
+    bgColors.push("#334155");
   }
 
   const chart = portfolioChartInstance;
@@ -399,12 +635,13 @@ function updatePortfolioChart(walletData) {
   // Update legend
   const legend = document.getElementById("portfolio-legend");
   let html = "";
+  const total = data.reduce((a, b) => a + b, 0);
   for (let j = 0; j < labels.length; j++) {
-    const pct = data[j] / data.reduce((a, b) => a + b, 0) * 100;
-    html += `<div class="flex items-center gap-1.5">
-      <div class="w-2 h-2 shrink-0" style="background:${bgColors[j]}"></div>
-      <span class="text-white/70">${labels[j]}</span>
-      <span class="text-muted ml-auto">${pct.toFixed(0)}%</span>
+    const pct = data[j] / total * 100;
+    html += `<div class="flex items-center gap-2">
+      <div class="w-2 h-2 rounded-sm shrink-0" style="background:${bgColors[j]}"></div>
+      <span class="text-slate-300 flex-1">${labels[j]}</span>
+      <span class="text-muted tabular-nums">${pct.toFixed(0)}%</span>
     </div>`;
   }
   legend.innerHTML = html || '<div class="text-muted">No positions</div>';
@@ -428,16 +665,14 @@ function connect() {
 
   ws.onopen = () => {
     wsRetries = 0;
-    document.getElementById("conn-dot").classList.remove("bg-amber");
-    document.getElementById("conn-dot").classList.add("bg-neon");
+    document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-accent status-pulse";
     document.getElementById("conn-text").textContent = "CONNECTED";
     document.getElementById("sys-status").textContent = "SYS_READY";
     if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
   };
 
   ws.onclose = () => {
-    document.getElementById("conn-dot").classList.remove("bg-neon");
-    document.getElementById("conn-dot").classList.add("bg-amber");
+    document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-amber status-pulse";
     wsRetries++;
     if (wsRetries >= 2 && !demoMode) {
       startDemoMode();
@@ -458,13 +693,11 @@ function connect() {
 // ── Demo Mode — runs when no backend is available ────────────
 function startDemoMode() {
   demoMode = true;
-  document.getElementById("conn-dot").classList.remove("bg-amber");
-  document.getElementById("conn-dot").classList.add("bg-neon");
+  document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-accent status-pulse";
   document.getElementById("conn-text").textContent = "DEMO MODE";
   document.getElementById("sys-status").textContent = "DEMO_LIVE";
   document.getElementById("mode-badge").textContent = "DEMO";
-  document.getElementById("mode-badge").classList.remove("border-electric/40", "text-electric");
-  document.getElementById("mode-badge").classList.add("border-neon/40", "text-neon");
+  document.getElementById("mode-badge").className = "mode-badge border border-accent/30 text-accent bg-accent/10";
 
   // Pre-populate agents
   const agentDefs = [
@@ -507,12 +740,10 @@ function startDemoMode() {
     const phase = phases.find(p => tick < p.end);
     price *= Math.exp(phase.drift + phase.vol * rng());
 
-    // Market update
     handleMessage({ type: "market", ts: Date.now()/1000, data: {
       prices: { ETH: +price.toFixed(2) }, gas_gwei: 10 + Math.random() * 30
     }});
 
-    // Signals every 3 ticks
     if (tick % 3 === 0) {
       const agents = ["momentum","mean_rev","rsi","macd","bollinger","vwap","ml"];
       const agent = agents[tick % agents.length];
@@ -525,7 +756,6 @@ function startDemoMode() {
       }});
     }
 
-    // Activate random agents
     const names = Object.keys(S.agents);
     for (let i = 0; i < 5; i++) {
       const a = names[Math.floor(Math.random() * names.length)];
@@ -535,7 +765,6 @@ function startDemoMode() {
     }
     renderAgents();
 
-    // Trade every ~15 ticks
     if (tick % 15 === 10 && tick > 20) {
       const dir = rng() > 0 ? "LONG" : "SHORT";
       const id = Math.random().toString(36).slice(2, 10);
@@ -546,7 +775,6 @@ function startDemoMode() {
         min_out: 0, ttl: Date.now()/1000 + 30, supporting: []
       }});
 
-      // Verdicts
       setTimeout(() => {
         for (const rid of ["size","drawdown","var","stress","compliance"]) {
           handleMessage({ type: "verdict", ts: Date.now()/1000, data: {
@@ -556,7 +784,6 @@ function startDemoMode() {
         }
       }, 500);
 
-      // Execution
       setTimeout(() => {
         const pnl = (rng() * 4);
         handleMessage({ type: "report", ts: Date.now()/1000, data: {
@@ -573,27 +800,13 @@ function startDemoMode() {
 
 function handleMessage(msg) {
   switch (msg.type) {
-    case "snapshot":
-      handleSnapshot(msg.data);
-      break;
-    case "market":
-      handleMarket(msg.data);
-      break;
-    case "signal":
-      handleSignal(msg.data);
-      break;
-    case "intent":
-      handleIntent(msg.data);
-      break;
-    case "verdict":
-      handleVerdict(msg.data);
-      break;
-    case "report":
-      handleReport(msg.data);
-      break;
-    case "wallet":
-      updatePortfolioChart(msg.data);
-      break;
+    case "snapshot": handleSnapshot(msg.data); break;
+    case "market": handleMarket(msg.data); break;
+    case "signal": handleSignal(msg.data); break;
+    case "intent": handleIntent(msg.data); break;
+    case "verdict": handleVerdict(msg.data); break;
+    case "report": handleReport(msg.data); break;
+    case "wallet": updatePortfolioChart(msg.data); break;
     case "kill_switch":
       S.killSwitch = msg.data.enabled;
       updateKillSwitch();
@@ -628,11 +841,8 @@ function handleSnapshot(d) {
     S.priceHistory.push({ t: Date.now(), p: price });
   }
 
-  // Init PnL chart with current value
   S.pnlHistory = [S.dailyPnl];
   updatePnlChart();
-
-  // Init portfolio chart from wallet snapshot
   if (d.wallet) updatePortfolioChart(d.wallet);
 }
 
@@ -648,12 +858,11 @@ function handleMarket(d) {
   const delta = ((price / S.startPrice - 1) * 100);
   const deltaEl = document.getElementById("price-delta");
   deltaEl.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`;
-  deltaEl.className = `text-xs font-mono ${delta >= 0 ? "text-neon" : "text-signal"}`;
+  deltaEl.className = `text-xs font-mono font-semibold ${delta >= 0 ? "text-accent" : "text-danger"}`;
 
   document.getElementById("stat-gas").textContent = `${d.gas_gwei?.toFixed(0) || "--"} gwei`;
   document.getElementById("pair-label").textContent = `${sym} / USD`;
 
-  // Mark DataScout active
   if (S.agents["DataScout"]) {
     S.agents["DataScout"].status = "active";
     S.agents["DataScout"].last_tick = Date.now() / 1000;
@@ -673,7 +882,7 @@ function handleIntent(d) {
   if (S.intents.length > 100) S.intents = S.intents.slice(-100);
   S.verdicts[d.id] = [];
   renderIntents();
-  document.getElementById("intent-count").textContent = `[${S.intents.length}]`;
+  document.getElementById("intent-count").textContent = S.intents.length;
 }
 
 function handleVerdict(d) {
@@ -691,16 +900,14 @@ function handleReport(d) {
   else if (d.status === "filled") S.losses++;
   S.dailyPnl += d.pnl || 0;
 
-  // Mark intent as resolved
   const idx = S.intents.findIndex(i => i.id === d.intent_id);
   if (idx >= 0) S.intents[idx]._status = d.status;
 
   renderReports();
   renderIntents();
   updateStats();
-  document.getElementById("exec-count").textContent = `[${S.reports.length}]`;
+  document.getElementById("exec-count").textContent = S.reports.length;
 
-  // Update PnL chart
   S.pnlHistory.push(S.dailyPnl);
   if (S.pnlHistory.length > 300) S.pnlHistory = S.pnlHistory.slice(-300);
   updatePnlChart();
@@ -708,36 +915,59 @@ function handleReport(d) {
 
 // ── Rendering ─────────────────────────────────────────────────
 
+const roleConfig = {
+  scout:      { icon: "radar",        label: "Scouts",       color: "#3b82f6" },
+  analyst:    { icon: "analytics",    label: "Analysts",     color: "#22c55e" },
+  ta:         { icon: "show_chart",   label: "Technical",    color: "#06b6d4" },
+  ml:         { icon: "psychology",   label: "ML Models",    color: "#a855f7" },
+  external:   { icon: "language",     label: "External",     color: "#f59e0b" },
+  meta:       { icon: "merge",        label: "Meta",         color: "#ec4899" },
+  strategy:   { icon: "architecture", label: "Strategy",     color: "#e2e8f0" },
+  coordinator:{ icon: "hub",          label: "Coordinator",  color: "#22c55e" },
+  risk:       { icon: "shield",       label: "Risk",         color: "#f59e0b" },
+  execution:  { icon: "bolt",         label: "Execution",    color: "#3b82f6" },
+  quant_risk: { icon: "functions",    label: "Quant Risk",   color: "#ef4444" },
+  quant:      { icon: "calculate",    label: "Quant",        color: "#8b5cf6" },
+  portfolio:  { icon: "pie_chart",    label: "Portfolio",    color: "#14b8a6" },
+  compliance: { icon: "gavel",        label: "Compliance",   color: "#f97316" },
+  audit:      { icon: "fact_check",   label: "Audit",        color: "#64748b" },
+  wallet:     { icon: "account_balance_wallet", label: "Wallet", color: "#22d3ee" },
+};
+
 function renderAgents() {
   const el = document.getElementById("agent-tree");
-  const roleIcons = {
-    scout: "search", analyst: "analytics", strategy: "psychology",
-    risk: "security", coordinator: "hub", execution: "bolt", audit: "storage",
-  };
-  const roleColors = {
-    scout: "text-electric", analyst: "text-neon", strategy: "text-white",
-    risk: "text-amber", coordinator: "text-neon", execution: "text-electric", audit: "text-muted",
-  };
-
   const agents = Object.values(S.agents);
-  let html = "";
   let activeCount = 0;
 
+  // Group by role
+  const groups = {};
   for (const a of agents) {
-    const icon = roleIcons[a.role] || "circle";
-    const color = roleColors[a.role] || "text-muted";
-    const isActive = a.status === "active";
-    if (isActive) activeCount++;
-    const age = a.last_tick ? `${Math.max(0, ((Date.now()/1000) - a.last_tick)).toFixed(0)}s` : "--";
+    if (!groups[a.role]) groups[a.role] = [];
+    groups[a.role].push(a);
+    if (a.status === "active") activeCount++;
+  }
 
-    html += `
-      <div class="flex items-center gap-2 px-2 py-1.5 hover:bg-white/3 group cursor-default
-                  ${isActive ? "bg-neon/5 border-l-2 border-neon" : "border-l-2 border-transparent"}">
-        <div class="w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-neon pulse" : "bg-muted/40"}"></div>
-        <span class="material-symbols-outlined text-xs ${color}">${icon}</span>
-        <span class="${isActive ? color : "text-muted/60"} flex-1 truncate">${a.name}</span>
-        <span class="text-[9px] text-muted/40">${age}</span>
+  let html = "";
+  for (const [role, members] of Object.entries(groups)) {
+    const cfg = roleConfig[role] || { icon: "circle", label: role, color: "#64748b" };
+    const activeInGroup = members.filter(m => m.status === "active").length;
+
+    html += `<div class="agent-group-header">
+      <span class="material-symbols-outlined" style="font-size:12px;color:${cfg.color}">${cfg.icon}</span>
+      <span style="color:${cfg.color}">${cfg.label}</span>
+      <span class="ml-auto text-muted-dim">${activeInGroup}/${members.length}</span>
+    </div>`;
+
+    for (const a of members) {
+      const isActive = a.status === "active";
+      const age = a.last_tick ? `${Math.max(0, ((Date.now()/1000) - a.last_tick)).toFixed(0)}s` : "";
+
+      html += `<div class="agent-row ${isActive ? "active" : ""}">
+        <div class="w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-accent" : "bg-muted-dim/40"}"></div>
+        <span class="flex-1 truncate">${a.name}</span>
+        <span class="text-[9px] text-muted-dim">${age}</span>
       </div>`;
+    }
   }
 
   el.innerHTML = html;
@@ -747,8 +977,8 @@ function renderAgents() {
 
 function renderSignals() {
   const panel = document.getElementById("signals-panel");
-  const names = { momentum: "Momentum", mean_rev: "Mean Rev", vol: "Volatility", prism: "PRISM AI" };
-  const colors = { momentum: "neon", mean_rev: "electric", vol: "amber", prism: "purple-400" };
+  const names = { momentum: "Momentum", mean_rev: "Mean Reversion", vol: "Volatility", prism: "PRISM AI" };
+  const colors = { momentum: "#22c55e", mean_rev: "#3b82f6", vol: "#f59e0b", prism: "#a855f7" };
 
   let html = "";
   let weightedScore = 0;
@@ -760,11 +990,11 @@ function renderSignals() {
     const color = colors[key];
     if (!sig) {
       html += `
-        <div class="space-y-1.5 opacity-40">
-          <div class="flex justify-between text-[10px] font-mono uppercase text-muted">
+        <div class="space-y-2 opacity-30">
+          <div class="flex justify-between text-[10px] font-mono text-muted">
             <span>${label}</span><span>--</span>
           </div>
-          <div class="signal-bar"><div class="signal-center"></div></div>
+          <div class="signal-track"><div class="signal-center-mark"></div></div>
         </div>`;
       continue;
     }
@@ -772,50 +1002,52 @@ function renderSignals() {
     const str = sig.strength;
     const conf = sig.confidence;
     const dir = sig.direction.toUpperCase();
-    const dirColor = dir === "LONG" ? "text-neon" : dir === "SHORT" ? "text-signal" : "text-muted";
+    const dirColor = dir === "LONG" ? "text-accent" : dir === "SHORT" ? "text-danger" : "text-muted";
 
-    // Weighted score calc
     if (weights[key]) {
       weightedScore += weights[key] * str * conf;
       totalW += weights[key];
     }
 
     const barWidth = Math.abs(str) * 50;
-    const fillClass = str >= 0 ? "signal-fill-pos" : "signal-fill-neg";
-    const fillStyle = str >= 0 ? `width:${barWidth}%` : `width:${barWidth}%`;
+    const fillClass = str >= 0 ? "signal-fill signal-fill-pos" : "signal-fill signal-fill-neg";
 
     html += `
-      <div class="space-y-1.5">
-        <div class="flex justify-between text-[10px] font-mono uppercase text-muted">
-          <span class="text-${color}">${label}</span>
-          <span class="${dirColor}">${dir} ${str >= 0 ? "+" : ""}${str.toFixed(3)}</span>
+      <div class="space-y-2">
+        <div class="flex justify-between items-center text-[10px] font-mono">
+          <span class="font-semibold" style="color:${color}">${label}</span>
+          <span class="${dirColor} font-semibold">${dir} ${str >= 0 ? "+" : ""}${str.toFixed(3)}</span>
         </div>
-        <div class="signal-bar">
-          <div class="signal-center"></div>
-          <div class="${fillClass}" style="${fillStyle}"></div>
+        <div class="signal-track">
+          <div class="signal-center-mark"></div>
+          <div class="${fillClass}" style="width:${barWidth}%"></div>
         </div>
-        <div class="flex justify-between text-[8px] text-muted/50">
-          <span>STR: ${str >= 0 ? "+" : ""}${str.toFixed(4)}</span>
-          <span>CONF: ${(conf * 100).toFixed(1)}%</span>
+        <div class="flex justify-between text-[8px] text-muted-dim">
+          <span>STR ${str >= 0 ? "+" : ""}${str.toFixed(4)}</span>
+          <span>CONF ${(conf * 100).toFixed(1)}%</span>
         </div>
       </div>`;
   }
 
   panel.innerHTML = html;
 
-  // Update weighted score
   if (totalW > 0) weightedScore /= totalW;
   const scoreEl = document.getElementById("weighted-score");
-  scoreEl.textContent = (weightedScore >= 0 ? "+" : "") + weightedScore.toFixed(4);
-  scoreEl.className = `text-xs font-bold ${weightedScore > 0.2 ? "text-neon" : weightedScore < -0.2 ? "text-signal" : "text-muted"}`;
+  const scoreHeaderEl = document.getElementById("weighted-score-header");
+  const scoreText = (weightedScore >= 0 ? "+" : "") + weightedScore.toFixed(4);
+  scoreEl.textContent = scoreText;
+  scoreHeaderEl.textContent = scoreText;
+  const scoreColor = weightedScore > 0.2 ? "text-accent" : weightedScore < -0.2 ? "text-danger" : "text-muted";
+  scoreEl.className = `text-xs font-bold ${scoreColor}`;
+  scoreHeaderEl.className = `font-mono text-[10px] font-semibold ${scoreColor}`;
 
   const fillEl = document.getElementById("score-fill");
   const absW = Math.min(50, Math.abs(weightedScore) * 50);
   if (weightedScore >= 0) {
-    fillEl.className = "signal-fill-pos";
+    fillEl.className = "signal-fill signal-fill-pos";
     fillEl.style.cssText = `width:${absW}%;left:50%`;
   } else {
-    fillEl.className = "signal-fill-neg";
+    fillEl.className = "signal-fill signal-fill-neg";
     fillEl.style.cssText = `width:${absW}%;right:50%;left:auto`;
   }
 }
@@ -831,7 +1063,6 @@ function renderIntents() {
   }
   empty.classList.add("hidden");
 
-  // Show newest first
   const items = [...S.intents].reverse().slice(0, 30);
   let html = "";
 
@@ -844,35 +1075,34 @@ function renderIntents() {
 
     const ttlLeft = Math.max(0, intent.ttl - Date.now() / 1000);
     const ttlStr = resolved ? "--" : `${ttlLeft.toFixed(0)}s`;
-    const ttlColor = ttlLeft < 3 && !resolved ? "text-signal" : "text-amber";
+    const ttlColor = ttlLeft < 3 && !resolved ? "text-danger" : "text-amber";
 
     let statusBadge;
     if (resolved === "filled") {
-      statusBadge = `<span class="px-1.5 py-0.5 bg-neon/15 text-neon text-[9px] border border-neon/20">FILLED</span>`;
+      statusBadge = `<span class="badge badge-green">Filled</span>`;
     } else if (resolved === "rejected" || rejected > 0) {
-      statusBadge = `<span class="px-1.5 py-0.5 bg-signal/15 text-signal text-[9px] border border-signal/20">REJECTED</span>`;
+      statusBadge = `<span class="badge badge-red">Rejected</span>`;
     } else if (resolved === "expired") {
-      statusBadge = `<span class="px-1.5 py-0.5 bg-amber/15 text-amber text-[9px] border border-amber/20">EXPIRED</span>`;
+      statusBadge = `<span class="badge badge-amber">Expired</span>`;
     } else if (total >= 3 && rejected === 0) {
-      statusBadge = `<span class="px-1.5 py-0.5 bg-neon/15 text-neon text-[9px] border border-neon/20">APPROVED</span>`;
+      statusBadge = `<span class="badge badge-green">Approved</span>`;
     } else {
-      statusBadge = `<span class="px-1.5 py-0.5 bg-electric/15 text-electric text-[9px] border border-electric/20">PENDING</span>`;
+      statusBadge = `<span class="badge badge-blue">Pending</span>`;
     }
 
     const riskStr = total > 0 ? `${approved}/${total}` : "--";
-    const riskColor = rejected > 0 ? "text-signal" : approved >= 3 ? "text-neon" : "text-amber";
-
-    const dirColor = intent.direction === "LONG" ? "text-neon" : "text-signal";
+    const riskColor = rejected > 0 ? "text-danger" : approved >= 3 ? "text-accent" : "text-amber";
+    const dirColor = intent.direction === "LONG" ? "text-accent" : "text-danger";
 
     html += `
-      <tr class="hover:bg-neon/3 cursor-default" onclick="renderRiskPanel('${intent.id}')">
-        <td class="p-2.5 text-electric">${intent.id}</td>
-        <td class="p-2.5 ${dirColor} font-bold">${intent.direction}</td>
-        <td class="p-2.5">${intent.asset_in} <span class="text-muted">→</span> ${intent.asset_out}</td>
-        <td class="p-2.5">$${intent.amount_in.toFixed(2)}</td>
-        <td class="p-2.5 ${ttlColor}">${ttlStr}</td>
-        <td class="p-2.5 ${riskColor}">${riskStr}</td>
-        <td class="p-2.5">${statusBadge}</td>
+      <tr class="cursor-default" onclick="renderRiskPanel('${intent.id}')">
+        <td class="text-electric">${intent.id}</td>
+        <td class="${dirColor} font-semibold">${intent.direction}</td>
+        <td>${intent.asset_in} <span class="text-muted">→</span> ${intent.asset_out}</td>
+        <td class="tabular-nums">$${intent.amount_in.toFixed(2)}</td>
+        <td class="${ttlColor} tabular-nums">${ttlStr}</td>
+        <td class="${riskColor} font-semibold">${riskStr}</td>
+        <td>${statusBadge}</td>
       </tr>`;
   }
   body.innerHTML = html;
@@ -893,8 +1123,8 @@ function renderReports() {
   let html = "";
 
   for (const r of items) {
-    const statusColor = r.status === "filled" ? "text-neon" : r.status === "rejected" ? "text-signal" : "text-amber";
-    const pnlColor = (r.pnl || 0) > 0 ? "text-neon" : (r.pnl || 0) < 0 ? "text-signal" : "text-muted";
+    const statusColor = r.status === "filled" ? "text-accent" : r.status === "rejected" ? "text-danger" : "text-amber";
+    const pnlColor = (r.pnl || 0) > 0 ? "text-accent" : (r.pnl || 0) < 0 ? "text-danger" : "text-muted";
     const tx = r.tx_hash ? (r.tx_hash.length > 16 ? r.tx_hash.slice(0, 14) + "..." : r.tx_hash) : "--";
     const price = r.fill_price ? `$${r.fill_price.toFixed(2)}` : "--";
     const slip = r.slippage != null ? `${(r.slippage * 100).toFixed(2)}%` : "--";
@@ -902,14 +1132,14 @@ function renderReports() {
     const timeStr = new Date().toLocaleTimeString("en-US", { hour12: false });
 
     html += `
-      <tr class="hover:bg-white/3">
-        <td class="p-2.5 text-muted">${timeStr}</td>
-        <td class="p-2.5 text-electric">${r.intent_id}</td>
-        <td class="p-2.5 ${statusColor} font-bold uppercase">${r.status}</td>
-        <td class="p-2.5 text-muted/60">${tx}</td>
-        <td class="p-2.5">${price}</td>
-        <td class="p-2.5 text-muted">${slip}</td>
-        <td class="p-2.5 ${pnlColor} font-bold">${pnl}</td>
+      <tr>
+        <td class="text-muted tabular-nums">${timeStr}</td>
+        <td class="text-electric">${r.intent_id}</td>
+        <td class="${statusColor} font-semibold uppercase">${r.status}</td>
+        <td class="text-muted-dim">${tx}</td>
+        <td class="tabular-nums">${price}</td>
+        <td class="text-muted tabular-nums">${slip}</td>
+        <td class="${pnlColor} font-semibold tabular-nums">${pnl}</td>
       </tr>`;
   }
   body.innerHTML = html;
@@ -921,48 +1151,44 @@ function renderRiskPanel(intentId) {
   const vlist = S.verdicts[intentId];
 
   if (!vlist || vlist.length === 0) {
-    panel.innerHTML = `<div class="text-center text-muted text-[10px] py-4">Waiting for verdicts...</div>`;
+    panel.innerHTML = `<div class="text-center text-muted text-[10px] py-6 font-mono">Waiting for verdicts...</div>`;
     bar.classList.add("hidden");
     return;
   }
 
-  const nameMap = { size: "Size Check", allowlist: "Allowlist", drawdown: "Drawdown" };
+  const nameMap = { size: "Position Size", allowlist: "Allowlist", drawdown: "Drawdown", var: "Value at Risk", stress: "Stress Test", compliance: "Compliance" };
   let html = "";
   let approved = 0;
 
   for (const v of vlist) {
     const label = nameMap[v.agent_id] || v.agent_id;
     const icon = v.approve ? "check_circle" : "cancel";
-    const color = v.approve ? "text-neon" : "text-signal";
-    const borderColor = v.approve ? "border-neon" : "border-signal";
+    const iconColor = v.approve ? "#22c55e" : "#ef4444";
+    const cardClass = v.approve ? "verdict-approved" : "verdict-rejected";
     if (v.approve) approved++;
 
     html += `
-      <div class="p-2.5 bg-s-low border-l-2 ${borderColor} flex items-center justify-between">
+      <div class="verdict-card ${cardClass}">
         <div>
-          <div class="text-[9px] text-muted uppercase">${v.agent_id}</div>
-          <div class="text-[11px] font-bold">${label}</div>
-          <div class="text-[9px] text-muted/60 mt-0.5">${v.reason}</div>
+          <div class="text-[9px] text-muted uppercase font-medium">${v.agent_id}</div>
+          <div class="text-[11px] font-semibold text-slate-200 mt-0.5">${label}</div>
+          <div class="text-[9px] text-muted-dim mt-0.5">${v.reason}</div>
         </div>
-        <div class="flex items-center ${color} text-[10px] font-bold">
-          <span class="material-symbols-outlined text-sm mr-1" style="font-variation-settings:'FILL' 1">${icon}</span>
-          ${v.approve ? "APPROVED" : "REJECTED"}
-        </div>
+        <span class="material-symbols-outlined text-lg" style="font-variation-settings:'FILL' 1;color:${iconColor}">${icon}</span>
       </div>`;
   }
   panel.innerHTML = html;
 
-  // Quorum bar
   const rejected = vlist.length - approved;
   bar.classList.remove("hidden");
   if (rejected > 0) {
-    bar.className = "mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase bg-signal/10 border border-signal/30 text-signal glow-red";
+    bar.className = "quorum-bar mt-3 bg-danger/10 border border-danger/25 text-danger";
     bar.textContent = `VETO — ${rejected} AGENT(S) REJECTED — EXECUTION BLOCKED`;
   } else if (approved >= 3) {
-    bar.className = "mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase bg-neon/10 border border-neon/30 text-neon glow-green";
+    bar.className = "quorum-bar mt-3 bg-accent/10 border border-accent/25 text-accent";
     bar.textContent = `${approved}/${vlist.length} APPROVED — CONSENSUS REACHED`;
   } else {
-    bar.className = "mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase bg-amber/10 border border-amber/30 text-amber";
+    bar.className = "quorum-bar mt-3 bg-amber/10 border border-amber/25 text-amber";
     bar.textContent = `${approved}/${vlist.length} — AWAITING QUORUM`;
   }
 }
@@ -970,7 +1196,7 @@ function renderRiskPanel(intentId) {
 function updateStats() {
   const pnlEl = document.getElementById("daily-pnl");
   pnlEl.textContent = `${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}`;
-  pnlEl.className = `text-sm font-bold ${S.dailyPnl >= 0 ? "text-neon" : "text-signal"}`;
+  pnlEl.className = `kpi-value ${S.dailyPnl >= 0 ? "text-accent" : "text-danger"}`;
 
   document.getElementById("stat-trades").textContent = S.tradeCount;
   const wr = S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--";
@@ -980,11 +1206,17 @@ function updateStats() {
 function updateKillSwitch() {
   const btn = document.getElementById("kill-btn");
   if (S.killSwitch) {
-    btn.className = "px-4 py-1.5 font-mono font-bold text-xs border uppercase transition-all duration-75 bg-red-600 text-white border-red-400 glow-red animate-pulse";
-    btn.textContent = "KILL ACTIVE";
+    btn.className = "kill-btn kill-btn-active";
+    btn.innerHTML = `<span class="flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-xs">power_settings_new</span>
+      Kill Active
+    </span>`;
   } else {
-    btn.className = "px-4 py-1.5 font-mono font-bold text-xs border uppercase transition-all duration-75 bg-red-900/30 text-red-400 border-red-500/40 hover:bg-red-800/50";
-    btn.textContent = "KILL SWITCH";
+    btn.className = "kill-btn kill-btn-idle";
+    btn.innerHTML = `<span class="flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-xs">power_settings_new</span>
+      Kill Switch
+    </span>`;
   }
 }
 
@@ -1014,7 +1246,7 @@ function drawChart() {
   ctx.clearRect(0, 0, w, h);
 
   // Grid
-  ctx.strokeStyle = "rgba(255,255,255,0.03)";
+  ctx.strokeStyle = "rgba(30,41,59,0.4)";
   ctx.lineWidth = 0.5;
   for (let i = 0; i < 8; i++) {
     const y = (h / 8) * i;
@@ -1032,7 +1264,7 @@ function drawChart() {
   const pad = 20;
 
   // Price labels
-  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillStyle = "rgba(148,163,184,0.4)";
   ctx.font = "9px JetBrains Mono";
   ctx.textAlign = "right";
   for (let i = 0; i <= 4; i++) {
@@ -1041,7 +1273,7 @@ function drawChart() {
     ctx.fillText(`$${price.toFixed(2)}`, w - 4, y + 3);
   }
 
-  // Build candlesticks (group every 5 ticks)
+  // Candlesticks
   const candleSize = 5;
   const candles = [];
   for (let i = 0; i < prices.length; i += candleSize) {
@@ -1060,8 +1292,8 @@ function drawChart() {
   candles.forEach((c, i) => {
     const x = 10 + i * ((w - 40) / candles.length) + cw / 2;
     const bullish = c.c >= c.o;
-    const color = bullish ? "#00ff88" : "#ff3366";
-    const colorDim = bullish ? "rgba(0,255,136,0.3)" : "rgba(255,51,102,0.3)";
+    const color = bullish ? "#22c55e" : "#ef4444";
+    const colorDim = bullish ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)";
 
     // Wick
     const wickTop = h - pad - ((c.h - minP) / range) * (h - pad * 2);
@@ -1088,7 +1320,7 @@ function drawChart() {
   const lastPrice = prices[prices.length - 1];
   const priceY = h - pad - ((lastPrice - minP) / range) * (h - pad * 2);
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = "rgba(0,255,136,0.4)";
+  ctx.strokeStyle = "rgba(34,197,94,0.3)";
   ctx.lineWidth = 0.5;
   ctx.beginPath();
   ctx.moveTo(0, priceY);
@@ -1097,12 +1329,17 @@ function drawChart() {
   ctx.setLineDash([]);
 
   // Current price label
-  ctx.fillStyle = "#00ff88";
+  const labelW = 72;
+  const labelH = 18;
+  ctx.fillStyle = "#22c55e";
+  const radius = 3;
+  ctx.beginPath();
+  ctx.roundRect(2, priceY - labelH/2, labelW, labelH, radius);
+  ctx.fill();
+  ctx.fillStyle = "#06080d";
   ctx.font = "bold 10px JetBrains Mono";
   ctx.textAlign = "left";
-  ctx.fillRect(2, priceY - 8, 70, 16);
-  ctx.fillStyle = "#0a0e17";
-  ctx.fillText(`$${lastPrice.toFixed(2)}`, 6, priceY + 3);
+  ctx.fillText(`$${lastPrice.toFixed(2)}`, 8, priceY + 3.5);
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
@@ -1131,11 +1368,11 @@ function updateTicker() {
   const el = document.getElementById("ticker-content");
   const parts = [];
   for (const [sym, price] of Object.entries(S.prices)) {
-    parts.push(`<span><span class="text-electric">${sym}:</span> $${price.toFixed(2)}</span>`);
+    parts.push(`<span><span class="text-electric font-semibold">${sym}</span> $${price.toFixed(2)}</span>`);
   }
   parts.push(`<span>Trades: ${S.tradeCount} | Filled: ${S.wins + S.losses} | Win Rate: ${S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--"}%</span>`);
   parts.push(`<span>PnL: ${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}</span>`);
-  if (S.killSwitch) parts.push(`<span class="text-signal font-bold">KILL SWITCH ACTIVE</span>`);
+  if (S.killSwitch) parts.push(`<span class="text-danger font-bold">KILL SWITCH ACTIVE</span>`);
   el.innerHTML = parts.join("");
 }
 
@@ -1155,9 +1392,8 @@ connect();
 setInterval(updateClock, 1000);
 setInterval(updateTicker, 3000);
 setInterval(updateUptime, 1000);
-setInterval(() => { renderIntents(); }, 1000); // Update TTL countdowns
+setInterval(() => { renderIntents(); }, 1000);
 
-// Resize chart
 window.addEventListener("resize", () => {
   if (S.priceHistory.length > 1) drawChart();
 });
