@@ -1,0 +1,9 @@
+{
+  "buildCommand": "mkdir -p dist && cp swarmtrader/static/index.html dist/index.html && cp swarmtrader/static/slides.html dist/slides.html",
+  "outputDirectory": "dist",
+  "framework": null,
+  "rewrites": [
+    { "source": "/slides", "destination": "/slides.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

@@ -412,24 +412,39 @@ function updatePortfolioChart(walletData) {
 
 let ws = null;
 let reconnectTimer = null;
+let demoMode = false;
+let demoInterval = null;
+let wsRetries = 0;
 
 // ── WebSocket ─────────────────────────────────────────────────
 function connect() {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  try {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
+  } catch (e) {
+    startDemoMode();
+    return;
+  }
 
   ws.onopen = () => {
+    wsRetries = 0;
     document.getElementById("conn-dot").classList.remove("bg-amber");
     document.getElementById("conn-dot").classList.add("bg-neon");
     document.getElementById("conn-text").textContent = "CONNECTED";
     document.getElementById("sys-status").textContent = "SYS_READY";
+    if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
   };
 
   ws.onclose = () => {
     document.getElementById("conn-dot").classList.remove("bg-neon");
     document.getElementById("conn-dot").classList.add("bg-amber");
-    document.getElementById("conn-text").textContent = "RECONNECTING";
-    reconnectTimer = setTimeout(connect, 2000);
+    wsRetries++;
+    if (wsRetries >= 2 && !demoMode) {
+      startDemoMode();
+    } else if (!demoMode) {
+      document.getElementById("conn-text").textContent = "RECONNECTING";
+      reconnectTimer = setTimeout(connect, 2000);
+    }
   };
 
   ws.onerror = () => ws.close();
@@ -438,6 +453,122 @@ function connect() {
     const msg = JSON.parse(e.data);
     handleMessage(msg);
   };
+}
+
+// ── Demo Mode — runs when no backend is available ────────────
+function startDemoMode() {
+  demoMode = true;
+  document.getElementById("conn-dot").classList.remove("bg-amber");
+  document.getElementById("conn-dot").classList.add("bg-neon");
+  document.getElementById("conn-text").textContent = "DEMO MODE";
+  document.getElementById("sys-status").textContent = "DEMO_LIVE";
+  document.getElementById("mode-badge").textContent = "DEMO";
+  document.getElementById("mode-badge").classList.remove("border-electric/40", "text-electric");
+  document.getElementById("mode-badge").classList.add("border-neon/40", "text-neon");
+
+  // Pre-populate agents
+  const agentDefs = [
+    ["DataScout","scout"],["Momentum","analyst"],["MeanReversion","analyst"],
+    ["Volatility","analyst"],["RSI","ta"],["MACD","ta"],["Bollinger","ta"],
+    ["VWAP","ta"],["Ichimoku","ta"],["OrderBook","analyst"],["FundingRate","analyst"],
+    ["Spread","analyst"],["Regime","analyst"],["ML_Signal","ml"],
+    ["News","external"],["Whale","external"],["Confluence","meta"],
+    ["Correlation","analyst"],["MTF","analyst"],
+    ["Strategist","strategy"],["Coordinator","coordinator"],
+    ["RiskAgent_Size","risk"],["RiskAgent_Drawdown","risk"],
+    ["RiskAgent_VaR","risk"],["RiskAgent_Stress","risk"],
+    ["RiskAgent_Compliance","risk"],["Simulator","execution"],
+    ["Executor","execution"],["SmartOrderRouter","execution"],
+    ["VaR_Engine","quant_risk"],["StressTester","quant_risk"],
+    ["FactorModel","quant"],["PnL_Attributor","quant"],
+    ["PortfolioOpt","portfolio"],["DynamicHedger","portfolio"],
+    ["WashTradeDetector","compliance"],["MarginMonitor","compliance"],
+    ["Auditor","audit"],["WalletManager","wallet"],
+  ];
+  for (const [name, role] of agentDefs) {
+    S.agents[name] = { name, role, topic: "", status: "idle", last_tick: null, ticks: 0 };
+  }
+  renderAgents();
+
+  // Simulated price state
+  let price = 2200;
+  let tick = 0;
+  const rng = () => (Math.random() - 0.5) * 2;
+  const phases = [
+    { end: 100, drift: 0.0001, vol: 0.002 },
+    { end: 200, drift: 0.0008, vol: 0.003 },
+    { end: 280, drift: -0.0003, vol: 0.008 },
+    { end: 380, drift: 0.0004, vol: 0.004 },
+    { end: 500, drift: 0.0005, vol: 0.003 },
+    { end: Infinity, drift: 0.0001, vol: 0.002 },
+  ];
+
+  demoInterval = setInterval(() => {
+    const phase = phases.find(p => tick < p.end);
+    price *= Math.exp(phase.drift + phase.vol * rng());
+
+    // Market update
+    handleMessage({ type: "market", ts: Date.now()/1000, data: {
+      prices: { ETH: +price.toFixed(2) }, gas_gwei: 10 + Math.random() * 30
+    }});
+
+    // Signals every 3 ticks
+    if (tick % 3 === 0) {
+      const agents = ["momentum","mean_rev","rsi","macd","bollinger","vwap","ml"];
+      const agent = agents[tick % agents.length];
+      const str = (rng() * 0.5);
+      handleMessage({ type: "signal", ts: Date.now()/1000, data: {
+        agent_id: agent, asset: "ETH",
+        direction: str > 0 ? "long" : "short",
+        strength: +str.toFixed(4), confidence: +(0.4 + Math.random() * 0.5).toFixed(4),
+        rationale: "demo signal"
+      }});
+    }
+
+    // Activate random agents
+    const names = Object.keys(S.agents);
+    for (let i = 0; i < 5; i++) {
+      const a = names[Math.floor(Math.random() * names.length)];
+      S.agents[a].status = "active";
+      S.agents[a].last_tick = Date.now() / 1000;
+      S.agents[a].ticks++;
+    }
+    renderAgents();
+
+    // Trade every ~15 ticks
+    if (tick % 15 === 10 && tick > 20) {
+      const dir = rng() > 0 ? "LONG" : "SHORT";
+      const id = Math.random().toString(36).slice(2, 10);
+      const amt = 200 + Math.random() * 800;
+      handleMessage({ type: "intent", ts: Date.now()/1000, data: {
+        id, direction: dir, asset_in: dir==="LONG"?"USD":"ETH",
+        asset_out: dir==="LONG"?"ETH":"USD", amount_in: +amt.toFixed(2),
+        min_out: 0, ttl: Date.now()/1000 + 30, supporting: []
+      }});
+
+      // Verdicts
+      setTimeout(() => {
+        for (const rid of ["size","drawdown","var","stress","compliance"]) {
+          handleMessage({ type: "verdict", ts: Date.now()/1000, data: {
+            intent_id: id, agent_id: rid, approve: Math.random() > 0.1,
+            reason: "demo check passed"
+          }});
+        }
+      }, 500);
+
+      // Execution
+      setTimeout(() => {
+        const pnl = (rng() * 4);
+        handleMessage({ type: "report", ts: Date.now()/1000, data: {
+          intent_id: id, status: "filled", tx_hash: "0xDEMO" + id,
+          fill_price: +price.toFixed(2), slippage: 0.0005,
+          pnl: +pnl.toFixed(4), note: "demo fill"
+        }});
+      }, 1200);
+    }
+
+    tick++;
+  }, 300);
 }
 
 function handleMessage(msg) {
