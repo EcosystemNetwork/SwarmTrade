@@ -119,7 +119,7 @@ def _pairs_to_assets(pairs: list[str]) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Swarm Trade — AI trading agent swarm",
+        description="Swarm Trade \u2014 AI trading agent swarm",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("mode", nargs="?", default="mock",

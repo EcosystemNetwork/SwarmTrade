@@ -111,7 +111,7 @@ class Dashboard:
 
         # Header
         lines.append(f"{BOLD}{CYAN}{'=' * w}{RST}")
-        lines.append(f"{BOLD}{CYAN}  SWARMTRADER v0.1 — Multi-Agent Autonomous Trading Platform{RST}")
+        lines.append(f"{BOLD}{CYAN}  SWARM TRADE v0.1 — Multi-Agent Autonomous Trading Platform{RST}")
         lines.append(f"{BOLD}{CYAN}{'=' * w}{RST}")
 
         # Status bar

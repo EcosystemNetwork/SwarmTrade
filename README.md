@@ -1,10 +1,10 @@
-# SWARMTRADER
+# SWARM TRADE
 
 **Multi-agent autonomous trading platform** — 50+ cooperative AI agents performing real-time market analysis, risk management, and execution through an async event-driven architecture.
 
 ```
                          ┌──────────────────────────────────────────────────────────────┐
-                         │                    SWARMTRADER ARCHITECTURE                   │
+                         │                    SWARM TRADE ARCHITECTURE                   │
                          └──────────────────────────────────────────────────────────────┘
 
     ┌─────────────────────────────┐
@@ -220,7 +220,7 @@ swarmtrader/
 | Safety | 3 | KillSwitch, CircuitBreaker, PositionFlattener |
 | Infrastructure | 4 | Supervisor, Reconciler, DataQuality, TCA |
 
-## Hackathon Prize Targets
+## Hackathon
 
 | Prize | Our Edge |
 |-------|---------|
