@@ -41,6 +41,17 @@ class Strategist:
         # Research-driven agents
         "liquidation": 0.08,
         "atr_stop": 0.06,
+        # Market intelligence agents
+        "open_interest": 0.07,
+        "fear_greed": 0.05,
+        "social": 0.04,
+        "liquidation_levels": 0.06,
+        "onchain": 0.04,
+        "arbitrage": 0.04,
+        # Citadel-grade quantitative agents
+        "ml": 0.12,
+        "hedge": 0.05,
+        "rebalance": 0.04,
     }
 
     # Regime-specific weight overrides (applied as multipliers)
@@ -52,6 +63,9 @@ class Strategist:
             "vwap": 0.5, "ichimoku": 1.8, "mtf": 2.0, "correlation": 1.0,
             "news": 0.8, "whale": 1.0, "confluence": 1.5, "position": 1.0,
             "liquidation": 0.3, "atr_stop": 1.5,
+            "open_interest": 1.5, "fear_greed": 0.5, "social": 0.5,
+            "liquidation_levels": 0.5, "onchain": 0.8, "arbitrage": 1.0,
+            "ml": 1.8, "hedge": 0.5, "rebalance": 0.3,
         },
         "mean_reverting": {
             "momentum": 0.3, "mean_rev": 2.5, "prism": 1.0,
@@ -60,6 +74,9 @@ class Strategist:
             "vwap": 2.0, "ichimoku": 0.5, "mtf": 0.3, "correlation": 1.5,
             "news": 1.2, "whale": 1.5, "confluence": 1.5, "position": 1.2,
             "liquidation": 2.5, "atr_stop": 1.0,
+            "open_interest": 1.2, "fear_greed": 2.0, "social": 1.5,
+            "liquidation_levels": 2.0, "onchain": 1.2, "arbitrage": 1.5,
+            "ml": 1.5, "hedge": 1.5, "rebalance": 2.0,
         },
         "volatile": {
             "momentum": 0.5, "mean_rev": 0.5, "prism": 1.5,
@@ -68,6 +85,9 @@ class Strategist:
             "vwap": 1.0, "ichimoku": 0.4, "mtf": 0.3, "correlation": 0.5,
             "news": 1.5, "whale": 2.0, "confluence": 1.0, "position": 1.5,
             "liquidation": 2.0, "atr_stop": 1.8,
+            "open_interest": 2.0, "fear_greed": 1.5, "social": 1.0,
+            "liquidation_levels": 2.5, "onchain": 0.8, "arbitrage": 2.0,
+            "ml": 1.2, "hedge": 2.0, "rebalance": 1.5,
         },
     }
 
@@ -100,7 +120,8 @@ class Strategist:
                        "signal.mtf", "signal.correlation",
                        "signal.news", "signal.whale",
                        "signal.confluence", "signal.position",
-                       "signal.liquidation", "signal.atr_stop"):
+                       "signal.liquidation", "signal.atr_stop",
+                       "signal.ml", "signal.hedge", "signal.rebalance"):
             bus.subscribe(topic, self._on_signal)
         bus.subscribe("signal.vol", self._on_vol)
         bus.subscribe("signal.spread", self._on_spread)

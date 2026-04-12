@@ -1,20 +1,71 @@
-"""Web dashboard — aiohttp server with WebSocket for real-time Bus events."""
+"""Web dashboard — aiohttp server with WebSocket for real-time Bus events.
+
+Security: All API and WebSocket endpoints require a bearer token set via
+SWARM_DASHBOARD_TOKEN env var (or auto-generated on startup).
+Static assets (CSS/JS) are unauthenticated.
+"""
 from __future__ import annotations
-import asyncio, json, logging, time, sqlite3
+import asyncio, hashlib, json, logging, os, secrets, time, sqlite3
 from pathlib import Path
 from aiohttp import web
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
 from .report import load_from_db, generate_html_report
+from .gateway import AgentGateway
 
 log = logging.getLogger("swarm.web")
+
+
+def _generate_token() -> str:
+    """Generate a cryptographically random dashboard token."""
+    return secrets.token_urlsafe(32)
+
+
+def _constant_time_compare(a: str, b: str) -> bool:
+    """Constant-time string comparison to prevent timing attacks."""
+    return hashlib.sha256(a.encode()).digest() == hashlib.sha256(b.encode()).digest()
+
+
+@web.middleware
+async def auth_middleware(request: web.Request, handler):
+    """Require Bearer token for all API/WS endpoints.
+
+    Unauthenticated paths: static assets, health check.
+    """
+    path = request.path
+
+    # Allow static assets and health check without auth
+    if path.startswith("/static/") or path == "/health":
+        return await handler(request)
+
+    token = request.app.get("_dashboard_token")
+    if not token:
+        # No token configured — auth disabled (dev mode)
+        return await handler(request)
+
+    # Check Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        provided = auth_header[7:]
+        if _constant_time_compare(provided, token):
+            return await handler(request)
+
+    # Check query param (for WebSocket connections from browsers)
+    provided = request.query.get("token", "")
+    if provided and _constant_time_compare(provided, token):
+        return await handler(request)
+
+    return web.json_response(
+        {"error": "unauthorized", "hint": "Set Authorization: Bearer <token> header"},
+        status=401,
+    )
 
 
 class WebDashboard:
     """Serves the frontend and streams Bus events over WebSocket."""
 
     def __init__(self, bus: Bus, state: dict, db_path: Path,
-                 kill_switch: Path, host: str = "0.0.0.0", port: int = 8080,
-                 wallet=None):
+                 kill_switch, host: str = "0.0.0.0", port: int = 8080,
+                 wallet=None, gateway: AgentGateway | None = None):
         self.bus = bus
         self.state = state
         self.db_path = db_path
@@ -22,6 +73,7 @@ class WebDashboard:
         self.host = host
         self.port = port
         self.wallet = wallet  # WalletManager instance (optional)
+        self.gateway = gateway  # AgentGateway instance (optional)
         self._clients: set[web.WebSocketResponse] = set()
 
         # Cached state for new clients
@@ -46,8 +98,17 @@ class WebDashboard:
                        "signal.whale", "signal.correlation",
                        "signal.rsi", "signal.macd", "signal.bollinger",
                        "signal.vwap", "signal.ichimoku", "signal.mtf",
-                       "signal.liquidation", "signal.atr_stop"):
+                       "signal.liquidation", "signal.atr_stop",
+                       "signal.ml", "signal.hedge", "signal.rebalance"):
             bus.subscribe(topic, self._on_signal)
+        # New quantitative system events
+        bus.subscribe("risk.var", self._on_var_update)
+        bus.subscribe("pnl.attribution", self._on_pnl_attribution)
+        bus.subscribe("sor.routed", self._on_sor_routed)
+        bus.subscribe("tca.update", self._on_tca_update)
+        bus.subscribe("compliance.wash_warning", self._on_compliance_alert)
+        bus.subscribe("compliance.margin_warning", self._on_compliance_alert)
+        bus.subscribe("data.quality_alert", self._on_data_quality)
         bus.subscribe("intent.new", self._on_intent)
         bus.subscribe("risk.verdict", self._on_verdict)
         bus.subscribe("exec.report", self._on_report)
@@ -89,6 +150,28 @@ class WebDashboard:
             ("Liquidation", "research", "signal.liquidation"),
             ("ATR_Stop", "research", "signal.atr_stop"),
             ("RiskAgent_Depth", "risk", "risk.verdict"),
+            # Citadel-grade quantitative agents
+            ("ML_Signal", "ml", "signal.ml"),
+            ("DynamicHedger", "portfolio", "signal.hedge"),
+            ("PortfolioOpt", "portfolio", "signal.rebalance"),
+            ("VaR_Engine", "quant_risk", "risk.var"),
+            ("StressTester", "quant_risk", "risk.stress"),
+            ("SmartOrderRouter", "execution", "sor.routed"),
+            ("IcebergExecutor", "execution", "exec.iceberg"),
+            ("TCA_Tracker", "execution", "tca.update"),
+            ("FactorModel", "quant", "pnl.attribution"),
+            ("PnL_Attributor", "quant", "pnl.attribution"),
+            ("WashTradeDetector", "compliance", "compliance.wash_warning"),
+            ("MarginMonitor", "compliance", "compliance.margin_warning"),
+            ("DataQuality", "infra", "data.quality_alert"),
+            ("Reconciler", "infra", "reconciliation"),
+            # Additional risk agents
+            ("RiskAgent_VaR", "risk", "risk.verdict"),
+            ("RiskAgent_Stress", "risk", "risk.verdict"),
+            ("RiskAgent_Compliance", "risk", "risk.verdict"),
+            ("RiskAgent_FactorExposure", "risk", "risk.verdict"),
+            ("RiskAgent_Rebalance", "risk", "risk.verdict"),
+            ("RiskAgent_SOR", "risk", "risk.verdict"),
         ]
         for name, role, topic in agent_defs:
             self.agents[name] = {
@@ -133,7 +216,8 @@ class WebDashboard:
             "news": "News", "whale": "Whale", "confluence": "Confluence",
             "correlation": "Correlation", "rsi": "RSI", "macd": "MACD",
             "bollinger": "Bollinger", "vwap": "VWAP", "ichimoku": "Ichimoku",
-            "mtf": "MTF",
+            "mtf": "MTF", "ml": "ML_Signal", "hedge": "DynamicHedger",
+            "rebalance": "PortfolioOpt",
             "liquidation": "Liquidation", "atr_stop": "ATR_Stop",
         }
         if sig.agent_id in agent_map:
@@ -169,7 +253,12 @@ class WebDashboard:
 
         agent_map = {"size": "RiskAgent_Size", "allowlist": "RiskAgent_Allowlist",
                      "drawdown": "RiskAgent_Drawdown",
-                     "funds": "RiskAgent_Funds", "allocation": "RiskAgent_Allocation"}
+                     "funds": "RiskAgent_Funds", "allocation": "RiskAgent_Allocation",
+                     "var": "RiskAgent_VaR", "stress": "RiskAgent_Stress",
+                     "compliance": "RiskAgent_Compliance",
+                     "factor_exposure": "RiskAgent_FactorExposure",
+                     "rebalance": "RiskAgent_Rebalance",
+                     "sor_venues": "RiskAgent_SOR"}
         if v.agent_id in agent_map:
             self._set_agent_active(agent_map[v.agent_id])
         self._set_agent_active("Coordinator")
@@ -208,6 +297,34 @@ class WebDashboard:
     async def _on_wallet_rebalance(self, data: dict):
         await self._broadcast("wallet_rebalance", data)
 
+    # ── Quantitative system event handlers ─────────────────────────
+
+    async def _on_var_update(self, data: dict):
+        self._set_agent_active("VaR_Engine")
+        await self._broadcast("var", data)
+
+    async def _on_pnl_attribution(self, data: dict):
+        self._set_agent_active("PnL_Attributor")
+        self._set_agent_active("FactorModel")
+        await self._broadcast("pnl_attribution", data)
+
+    async def _on_sor_routed(self, data: dict):
+        self._set_agent_active("SmartOrderRouter")
+        await self._broadcast("sor_routed", data)
+
+    async def _on_tca_update(self, data: dict):
+        self._set_agent_active("TCA_Tracker")
+        await self._broadcast("tca", data)
+
+    async def _on_compliance_alert(self, data: dict):
+        self._set_agent_active("WashTradeDetector")
+        self._set_agent_active("MarginMonitor")
+        await self._broadcast("compliance_alert", data)
+
+    async def _on_data_quality(self, data: dict):
+        self._set_agent_active("DataQuality")
+        await self._broadcast("data_quality", data)
+
     # ── HTTP Handlers ───────────────────────────────────────────────
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
@@ -233,7 +350,7 @@ class WebDashboard:
                     "wins": self.wins,
                     "losses": self.losses,
                     "uptime": time.time() - self.start_time,
-                    "kill_switch": self.kill_switch.exists(),
+                    "kill_switch": self.kill_switch.active,
                 },
                 "wallet": self.wallet.summary() if self.wallet else None,
             },
@@ -260,10 +377,10 @@ class WebDashboard:
         if action == "kill_switch":
             enabled = cmd.get("enabled", False)
             if enabled:
-                self.kill_switch.touch()
+                self.kill_switch.engage("manual via dashboard")
             else:
-                self.kill_switch.unlink(missing_ok=True)
-            await self._broadcast("kill_switch", {"enabled": self.kill_switch.exists()})
+                self.kill_switch.disengage()
+            await self._broadcast("kill_switch", {"enabled": self.kill_switch.active})
         elif action == "wallet_deposit" and self.wallet:
             amount = float(cmd.get("amount", 0))
             if amount > 0:
@@ -324,7 +441,7 @@ class WebDashboard:
             "wins": self.wins,
             "losses": self.losses,
             "uptime": time.time() - self.start_time,
-            "kill_switch": self.kill_switch.exists(),
+            "kill_switch": self.kill_switch.active,
         })
 
     async def _handle_wallet(self, request: web.Request) -> web.Response:
@@ -396,6 +513,10 @@ class WebDashboard:
         except Exception as e:
             return web.Response(text=f"Error: {e}", status=500)
 
+    async def _handle_health(self, request: web.Request) -> web.Response:
+        """Unauthenticated health check for monitoring."""
+        return web.json_response({"status": "ok", "uptime": time.time() - self.start_time})
+
     async def _handle_slides(self, request: web.Request) -> web.FileResponse:
         slides_path = Path(__file__).parent / "static" / "slides.html"
         if slides_path.exists():
@@ -405,7 +526,16 @@ class WebDashboard:
     # ── Server Lifecycle ────────────────────────────────────────────
 
     async def start(self):
-        app = web.Application()
+        # Auth token: from env, or auto-generate and print to console
+        token = os.environ.get("SWARM_DASHBOARD_TOKEN", "")
+        if not token:
+            token = _generate_token()
+            log.warning("No SWARM_DASHBOARD_TOKEN set — generated: %s", token)
+            log.warning("Set this env var to persist across restarts.")
+
+        app = web.Application(middlewares=[auth_middleware])
+        app["_dashboard_token"] = token
+        app.router.add_get("/health", self._handle_health)
         app.router.add_get("/", self._handle_index)
         app.router.add_get("/ws", self._handle_ws)
         app.router.add_get("/api/history", self._handle_history)
@@ -417,6 +547,10 @@ class WebDashboard:
         app.router.add_get("/api/report", self._handle_report_json)
         app.router.add_get("/report", self._handle_report_html)
         app.router.add_get("/slides", self._handle_slides)
+        # ── Agent Gateway routes ────────────────────────────────────
+        if self.gateway:
+            self.gateway.register_routes(app)
+
         app.router.add_static("/static/",
                               Path(__file__).parent / "static",
                               show_index=False)

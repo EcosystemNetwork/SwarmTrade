@@ -87,6 +87,8 @@ class WalletManager:
         self.starting_capital = starting_capital
         self.cash_balance = starting_capital
         self.peak_equity = starting_capital
+        self._deposits_total: float = 0.0      # lifetime deposits (excl. initial)
+        self._withdrawals_total: float = 0.0   # lifetime withdrawals
         self.reserves: dict[str, FundReserve] = {}
         self.allocations: dict[str, Allocation] = {}
         self.transactions: list[WalletTransaction] = []
@@ -142,6 +144,10 @@ class WalletManager:
 
         if rep.side == "buy" and rep.fill_price and rep.quantity > 0:
             cost = rep.quantity * rep.fill_price + rep.fee_usd
+            if cost > self.cash_balance:
+                log.error("WALLET BUY would make cash negative! cost=%.2f cash=%.2f "
+                          "intent=%s — recording anyway (reconciliation needed)",
+                          cost, self.cash_balance, rep.intent_id)
             self.cash_balance -= cost
             self._record_tx("fee", rep.fee_usd, f"trade fee intent={rep.intent_id}")
             log.info("WALLET buy: spent=%.2f fee=%.4f cash=%.2f",
@@ -195,8 +201,12 @@ class WalletManager:
         return max(0.0, self.cash_balance - reserved)
 
     def total_equity(self) -> float:
-        """Total portfolio value: cash + positions marked to market."""
-        return self.cash_balance + self.portfolio.total_equity()
+        """Total portfolio value: cash + market value of open positions.
+
+        Uses position_market_value (qty * price) rather than mark_to_market
+        (which includes realized PnL and fees already reflected in cash).
+        """
+        return self.cash_balance + self.portfolio.position_market_value()
 
     def drawdown_from_peak(self) -> float:
         """Current drawdown from peak equity (negative value)."""
@@ -223,9 +233,16 @@ class WalletManager:
         return reserve.amount_usd if reserve else 0.0
 
     def deposit(self, amount_usd: float, note: str = "") -> float:
-        """Add funds to wallet. Returns new cash balance."""
+        """Add funds to wallet. Returns new cash balance.
+
+        Note: deposits increase cash but NOT starting_capital, so return %
+        calculations remain accurate (returns are measured against the
+        original capital, adjusted only by a separate _deposits_total tracker).
+        """
         self.cash_balance += amount_usd
-        self.starting_capital += amount_usd
+        self._deposits_total += amount_usd
+        # Adjust peak equity so deposit doesn't create phantom drawdown
+        self.peak_equity = max(self.peak_equity, self.total_equity())
         self._record_tx("deposit", amount_usd, note or "manual deposit")
         self._save_state()
         log.info("WALLET deposit: +%.2f cash=%.2f", amount_usd, self.cash_balance)
@@ -238,6 +255,7 @@ class WalletManager:
                         amount_usd, self.available_cash())
             return None
         self.cash_balance -= amount_usd
+        self._withdrawals_total += amount_usd
         self._record_tx("withdrawal", amount_usd, note or "manual withdrawal")
         self._save_state()
         log.info("WALLET withdraw: -%.2f cash=%.2f", amount_usd, self.cash_balance)
@@ -295,10 +313,7 @@ class WalletManager:
             "starting_capital": round(self.starting_capital, 2),
             "peak_equity": round(self.peak_equity, 2),
             "drawdown_pct": round(self.drawdown_from_peak(), 2),
-            "return_pct": round(
-                ((equity - self.starting_capital) / self.starting_capital * 100.0)
-                if self.starting_capital > 0 else 0.0, 2
-            ),
+            "return_pct": round(self._return_pct(), 2),
             "portfolio": self.portfolio.summary(),
             "allocations": {
                 a: {
@@ -318,6 +333,19 @@ class WalletManager:
         }
 
     # ── Internal ───────────────────────────────────────────────────
+
+    def _return_pct(self) -> float:
+        """Return % adjusted for deposits/withdrawals (time-weighted approx).
+
+        return = (equity - starting_capital - deposits + withdrawals) /
+                 (starting_capital + deposits) * 100
+        """
+        invested = self.starting_capital + self._deposits_total
+        if invested <= 0:
+            return 0.0
+        equity = self.total_equity()
+        net_flow = self._deposits_total - self._withdrawals_total
+        return (equity - self.starting_capital - net_flow) / invested * 100.0
 
     def _update_allocations(self):
         """Recompute current allocation percentages."""
@@ -375,6 +403,8 @@ class WalletManager:
                 "cash_balance": self.cash_balance,
                 "starting_capital": self.starting_capital,
                 "peak_equity": self.peak_equity,
+                "deposits_total": self._deposits_total,
+                "withdrawals_total": self._withdrawals_total,
                 "allocations": {
                     a: {"target_pct": al.target_pct, "max_pct": al.max_pct}
                     for a, al in self.allocations.items()
@@ -408,6 +438,8 @@ class WalletManager:
                 self.cash_balance = saved.get("cash_balance", self.starting_capital)
                 self.starting_capital = saved.get("starting_capital", self.starting_capital)
                 self.peak_equity = saved.get("peak_equity", self.peak_equity)
+                self._deposits_total = saved.get("deposits_total", 0.0)
+                self._withdrawals_total = saved.get("withdrawals_total", 0.0)
                 for asset, cfg in saved.get("allocations", {}).items():
                     self.allocations[asset] = Allocation(
                         asset=asset,

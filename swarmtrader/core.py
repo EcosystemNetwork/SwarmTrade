@@ -150,6 +150,18 @@ class PortfolioTracker:
             if pos.quantity > 1e-9
         )
 
+    def position_market_value(self) -> float:
+        """Sum of (quantity * current_price) for all open positions.
+
+        Use this for wallet equity calculations where cash already accounts
+        for cost basis and fees. total_equity() double-counts when added to cash.
+        """
+        return sum(
+            pos.quantity * self.last_prices.get(asset, pos.avg_entry)
+            for asset, pos in self.positions.items()
+            if pos.quantity > 1e-9
+        )
+
     def total_realized_pnl(self) -> float:
         return sum(pos.realized_pnl for pos in self.positions.values())
 

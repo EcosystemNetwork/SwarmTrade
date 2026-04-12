@@ -11,6 +11,7 @@ from .core import (
     Bus, TradeIntent, ExecutionReport, MarketSnapshot,
     PortfolioTracker, QUOTE_ASSETS,
 )
+from .safety import KillSwitch
 
 log = logging.getLogger("swarm")
 
@@ -64,7 +65,7 @@ class Executor:
     """Dry-run executor with real position tracking via PortfolioTracker.
     PnL comes from actual price deltas, not signal proxies."""
 
-    def __init__(self, bus: Bus, kill_switch: Path, dry_run: bool = True,
+    def __init__(self, bus: Bus, kill_switch: "KillSwitch", dry_run: bool = True,
                  portfolio: PortfolioTracker | None = None):
         self.bus = bus
         self.kill_switch = kill_switch
@@ -78,7 +79,7 @@ class Executor:
 
     async def _on_sim(self, payload):
         intent, eff_price = payload
-        if self.kill_switch.exists():
+        if self.kill_switch.active:
             await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0, "kill_switch")
             return
         if eff_price is None:

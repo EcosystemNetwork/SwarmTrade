@@ -43,6 +43,9 @@ from . import (
     PRISMSignalAgent,
     NewsAgent,
     WhaleAgent,
+    # Market intelligence
+    OpenInterestAgent, FearGreedAgent, SocialSentimentAgent,
+    LiquidationAgent, OnChainAgent, ArbitrageAgent,
     # Intelligence
     MultiTimeframeMomentum,
     CorrelationAgent,
@@ -55,11 +58,30 @@ from . import (
     TWAPExecutor,
     # Dashboard
     Dashboard,
+    # Quantitative risk (Citadel-grade)
+    VaREngine, var_check,
+    StressTester, stress_check,
+    # Smart order routing + microstructure
+    SmartOrderRouter, sor_venue_check,
+    IcebergExecutor, ExecutionQualityTracker,
+    # ML signal
+    MLSignalAgent, ml_model_check,
+    # Factor model + PnL attribution
+    FactorModel, PnLAttributor, FactorRiskModel, factor_exposure_check,
+    # Portfolio optimization
+    PortfolioOptAgent, rebalance_check,
+    # Compliance + data quality
+    WashTradingDetector, PositionLimitChecker, MarginMonitor,
+    Reconciler, DataQualityMonitor, compliance_check,
+    # Walk-forward + TCA
+    TransactionCostAnalyzer,
 )
 from .automation import AgentSupervisor, build_scheduler
 from .core import PortfolioTracker
+from .safety import KillSwitch
 from .wallet import WalletManager, funds_check, allocation_check
 from .web import WebDashboard
+from .gateway import AgentGateway
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -139,6 +161,10 @@ def parse_args() -> argparse.Namespace:
                    help="Starting capital in USD (default: 10000)")
     p.add_argument("--max-alloc", type=float, default=50.0,
                    help="Max allocation per asset in %% (default: 50)")
+    p.add_argument("--gateway", action="store_true",
+                   help="Enable agent gateway for external AI agents (OpenClaw/Hermes)")
+    p.add_argument("--gateway-key", type=str, default=None,
+                   help="Master key for agent gateway (auto-generated if omitted)")
     return p.parse_args()
 
 
@@ -155,7 +181,7 @@ async def run(args: argparse.Namespace):
 
     bus = Bus()
     state: dict = {"daily_pnl": 0.0, "trade_count": 0, "total_fees": 0.0}
-    kill_switch = Path(args.kill_switch)
+    kill_switch = KillSwitch(Path(args.kill_switch))
     portfolio = PortfolioTracker()
 
     assets = _pairs_to_assets(args.pairs)
@@ -258,6 +284,43 @@ async def run(args: argparse.Namespace):
                             stale_after=90.0, stoppable=prism)
         log.info("PRISM AI signals enabled for: %s", assets)
 
+    # ── Open Interest (futures only) ──────────────────────────
+    if args.mode != "mock" and not args.no_advanced:
+        for asset in assets:
+            futures_sym = ASSET_CONFIG.get(asset, {}).get("futures", f"PF_{asset}USD")
+            oi = OpenInterestAgent(bus, symbol=futures_sym, asset=asset, interval=60.0)
+            supervisor.register(f"oi_{asset}", oi.run, stale_after=180.0, stoppable=oi)
+        log.info("Open Interest agents enabled for: %s", assets)
+
+    # ── Fear & Greed Index ─────────────────────────────────────
+    fg = FearGreedAgent(bus, assets=assets, interval=300.0)
+    supervisor.register("fear_greed", fg.run, stale_after=600.0, stoppable=fg)
+
+    # ── Social Sentiment ───────────────────────────────────────
+    social = SocialSentimentAgent(bus, assets=assets, interval=300.0)
+    supervisor.register("social", social.run, stale_after=600.0, stoppable=social)
+
+    # ── Liquidation Levels (futures only) ──────────────────────
+    if args.mode != "mock" and not args.no_advanced:
+        for asset in assets:
+            futures_sym = ASSET_CONFIG.get(asset, {}).get("futures", f"PF_{asset}USD")
+            liq = LiquidationAgent(bus, asset=asset, futures_symbol=futures_sym, interval=30.0)
+            supervisor.register(f"liq_{asset}", liq.run, stale_after=120.0, stoppable=liq)
+        log.info("Liquidation agents enabled for: %s", assets)
+
+    # ── On-Chain Activity ──────────────────────────────────────
+    oc = OnChainAgent(bus, assets=assets, interval=300.0)
+    supervisor.register("onchain", oc.run, stale_after=600.0, stoppable=oc)
+
+    # ── Cross-Exchange Arbitrage ───────────────────────────────
+    arb = ArbitrageAgent(bus, assets=assets, interval=120.0)
+    supervisor.register("arbitrage", arb.run, stale_after=300.0, stoppable=arb)
+
+    # ── ML Signal Agent (per asset) ────────────────────────────
+    for asset in assets:
+        MLSignalAgent(bus, asset=asset, retrain_interval=500, min_samples=200)
+    log.info("ML signal agents enabled for: %s", assets)
+
     # ── Strategy ────────────────────────────────────────────────
     tokens = set(assets) | {"USD", "USDC", "USDT"}
     strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
@@ -273,6 +336,57 @@ async def run(args: argparse.Namespace):
         max_total_exposure=args.max_size * 5,
     )
 
+    # ── Quantitative Risk — VaR Engine ─────────────────────────
+    var_engine = VaREngine(bus, portfolio=portfolio)
+    supervisor.register("var_engine", var_engine.run, stale_after=60.0)
+    log.info("VaR engine enabled (historical + parametric + Monte Carlo)")
+
+    # ── Stress Testing ─────────────────────────────────────────
+    stress_tester = StressTester(portfolio=portfolio)
+
+    # ── Factor Model + PnL Attribution ─────────────────────────
+    factor_model = FactorModel(bus)
+    pnl_attributor = PnLAttributor(bus, portfolio=portfolio, factor_model=factor_model)  # noqa: F841 — event-driven, no run() loop
+    factor_risk = FactorRiskModel(factor_model=factor_model, portfolio=portfolio)
+    log.info("Factor model + PnL attribution enabled")
+
+    # ── Portfolio Optimization ─────────────────────────────────
+    portfolio_opt = PortfolioOptAgent(
+        bus, portfolio=portfolio,
+        optimizer="risk_parity", rebalance_interval=60.0,
+    )
+    portfolio_opt.attach_hedger(primary_asset=primary_asset)
+    supervisor.register("portfolio_opt", portfolio_opt.run, stale_after=120.0)
+    log.info("Portfolio optimization (risk parity) + dynamic hedger enabled")
+
+    # ── Smart Order Router ─────────────────────────────────────
+    sor = SmartOrderRouter(bus)
+    supervisor.register("sor", sor.run, stale_after=15.0)
+    log.info("Smart order router: 5 venues (Kraken, Binance, Coinbase, OKX, dYdX)")
+
+    # ── Microstructure — Iceberg + TCA ─────────────────────────
+    iceberg = IcebergExecutor(bus, threshold_usd=args.max_size * 0.75)
+    tca = ExecutionQualityTracker(bus)
+    supervisor.register("tca", tca.run, stale_after=60.0)
+    log.info("Iceberg executor + TCA tracker enabled")
+
+    # ── Compliance — Wash Trading + Margin + Data Quality ──────
+    wash_detector = WashTradingDetector(bus)
+    pos_limit_checker = PositionLimitChecker(
+        portfolio=portfolio, per_asset_limit=args.max_size * 3,
+        total_limit=args.capital * 0.8,
+    )
+    margin_monitor = MarginMonitor(bus, portfolio=portfolio, total_capital=args.capital)
+    reconciler = Reconciler(portfolio=portfolio)
+    data_quality = DataQualityMonitor(bus)
+    supervisor.register("reconciler", reconciler.run, stale_after=120.0)
+    supervisor.register("data_quality", data_quality.run, stale_after=30.0)
+    log.info("Compliance suite enabled (wash trade, margin, reconciliation, data quality)")
+
+    # ── Transaction Cost Analyzer ──────────────────────────────
+    tca_analyzer = TransactionCostAnalyzer(bus)
+    supervisor.register("tca_analyzer", tca_analyzer.run, stale_after=60.0)
+
     # ── Risk Agents ─────────────────────────────────────────────
     rate_limiter = RateLimiter(bus, max_trades=20, window_s=3600.0)
     risks = [
@@ -284,6 +398,13 @@ async def run(args: argparse.Namespace):
         RiskAgent(bus, "funds", funds_check(wallet)),
         RiskAgent(bus, "allocation", allocation_check(wallet)),
         RiskAgent(bus, "depth", depth_liquidity_check(bus, min_depth_ratio=2.0)),
+        # Citadel-grade risk checks
+        RiskAgent(bus, "var", var_check(var_engine, max_var=args.capital * 0.05)),
+        RiskAgent(bus, "stress", stress_check(stress_tester, max_stress_loss_pct=0.30)),
+        RiskAgent(bus, "compliance", compliance_check(wash_detector, margin_monitor)),
+        RiskAgent(bus, "factor_exposure", factor_exposure_check(factor_model, max_exposure=3.0)),
+        RiskAgent(bus, "rebalance", rebalance_check(portfolio_opt, max_drift_pct=0.15)),
+        RiskAgent(bus, "sor_venues", sor_venue_check(sor, min_venues=2)),
     ]
     Coordinator(bus, n_risk_agents=len(risks))
 
@@ -316,15 +437,40 @@ async def run(args: argparse.Namespace):
         dash = Dashboard(bus, state, refresh=1.0)
         supervisor.register("dashboard", dash.run, stale_after=5.0, stoppable=dash)
 
+    # ── Agent Gateway ──────────────────────────────────────────
+    gateway = None
+    if args.gateway or os.getenv("SWARM_GATEWAY"):
+        master_key = args.gateway_key or os.getenv("SWARM_GATEWAY_KEY")
+        gateway = AgentGateway(
+            bus, strategist=strategist, portfolio=portfolio,
+            master_key=master_key,
+        )
+        log.info("Agent Gateway enabled — external agents can connect")
+        log.info("  master_key=%s...", gateway.master_key[:12])
+        if not args.web:
+            # Launch standalone gateway server
+            from aiohttp import web as aweb
+            gw_app = aweb.Application()
+            gateway.register_routes(gw_app)
+            runner = aweb.AppRunner(gw_app)
+            await runner.setup()
+            gw_port = args.web_port + 1  # 8081 by default
+            site = aweb.TCPSite(runner, "0.0.0.0", gw_port)
+            await site.start()
+            log.info("  Gateway API: http://localhost:%d/api/gateway/connect", gw_port)
+            log.info("  Gateway WS:  ws://localhost:%d/ws/agent", gw_port)
+
     # ── Web Dashboard ──────────────────────────────────────────
     if args.web:
         web_dash = WebDashboard(
             bus, state, db_path=Path(args.db),
             kill_switch=kill_switch, port=args.web_port,
-            wallet=wallet,
+            wallet=wallet, gateway=gateway,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
+        if gateway:
+            log.info("  Gateway API: http://localhost:%d/api/gateway/connect", args.web_port)
 
     # ── Scheduler — periodic automation tasks ───────────────────
     scheduler = build_scheduler(

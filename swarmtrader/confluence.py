@@ -10,9 +10,12 @@ log = logging.getLogger("swarm.confluence")
 # Signal groups — signals within same group are correlated, across groups are independent
 SIGNAL_GROUPS = {
     "price_action": {"momentum", "mean_rev", "mtf"},
-    "microstructure": {"orderbook", "spread", "funding"},
-    "external": {"prism", "prism_breakout", "prism_vol", "news"},
-    "cross_asset": {"correlation"},
+    "microstructure": {"orderbook", "spread", "funding", "open_interest"},
+    "external": {"prism", "prism_breakout", "prism_vol", "news", "social"},
+    "cross_asset": {"correlation", "arbitrage"},
+    "onchain": {"whale", "onchain"},
+    "sentiment": {"fear_greed"},
+    "derivatives": {"liquidation", "liquidation_levels"},
     "regime": {"regime"},
 }
 
@@ -53,6 +56,9 @@ class ConfluenceDetector:
             "signal.orderbook", "signal.spread", "signal.funding",
             "signal.prism", "signal.prism_breakout", "signal.prism_volume",
             "signal.news", "signal.correlation", "signal.regime",
+            "signal.open_interest", "signal.fear_greed", "signal.social",
+            "signal.liquidation", "signal.onchain", "signal.arbitrage",
+            "signal.whale",
         ]:
             bus.subscribe(topic, self._on_signal)
 

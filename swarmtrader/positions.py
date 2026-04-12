@@ -5,7 +5,7 @@ Listens to exec.report for new fills and market.snapshot for price updates.
 Emits intent.new for exit orders and signal.position for strategist awareness.
 """
 from __future__ import annotations
-import asyncio, logging, time
+import logging, time
 from dataclasses import dataclass, field
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, ExecutionReport, QUOTE_ASSETS
 
@@ -296,11 +296,11 @@ class PositionManager:
             if not pos.tp1_hit and pnl_pct >= pos.tp1_pct:
                 pos.tp1_hit = True
                 pos.remaining_pct -= 0.30
-                await self._emit_exit(asset, pos, 0.30,
+                await self._emit_exit(asset, pos, 0.30, price,
                                       f"TP1 hit ({pnl_pct:+.2%})")
                 # Activate break-even stop
                 pos.breakeven_active = True
-                # Tighten trailing stop
+                # Tighten trailing stop (floor at 1.5% to avoid noise exits)
                 pos.trail_pct = max(0.015, pos.trail_pct * 0.7)
                 log.info("TP1: %s trail tightened to %.1f%%, breakeven active",
                          asset, pos.trail_pct * 100)
@@ -308,10 +308,11 @@ class PositionManager:
             if not pos.tp2_hit and pnl_pct >= pos.tp2_pct:
                 pos.tp2_hit = True
                 pos.remaining_pct -= 0.30
-                await self._emit_exit(asset, pos, 0.30,
+                await self._emit_exit(asset, pos, 0.30, price,
                                       f"TP2 hit ({pnl_pct:+.2%})")
-                # Tighten trailing stop further
-                pos.trail_pct = max(0.008, pos.trail_pct * 0.5)
+                # Tighten trailing stop (floor at 1.2% — don't go below
+                # normal tick noise to avoid premature exit)
+                pos.trail_pct = max(0.012, pos.trail_pct * 0.6)
                 log.info("TP2: %s trail tightened to %.1f%%", asset, pos.trail_pct * 100)
 
             if pnl_pct >= pos.tp3_pct:
@@ -341,14 +342,19 @@ class PositionManager:
 
         # Process full exits
         for asset, pos, reason in to_close:
-            await self._emit_exit(asset, pos, pos.remaining_pct, reason)
+            close_price = snap.prices.get(asset, pos.entry_price)
+            await self._emit_exit(asset, pos, pos.remaining_pct, close_price, reason)
             self._exit_count += 1
+            self._exit_pnl += pos.unrealized_pnl_usd(close_price)
             del self.positions[asset]
 
     # -- Exit intent emission -----------------------------------------------
 
+    # Max acceptable slippage on exit orders (0.5%)
+    EXIT_MAX_SLIPPAGE = 0.005
+
     async def _emit_exit(self, asset: str, pos: ManagedPosition,
-                         exit_pct: float, reason: str):
+                         exit_pct: float, current_price: float, reason: str):
         now = time.time()
         # Cooldown to prevent order spam (3s per asset)
         if now - self._cooldown.get(asset, 0) < 3.0:
@@ -356,20 +362,24 @@ class PositionManager:
         self._cooldown[asset] = now
 
         exit_qty = pos.quantity * exit_pct
-        exit_notional = exit_qty * pos.entry_price
+        exit_notional = exit_qty * current_price
 
-        # Build exit intent (reverse the position)
+        # Build exit intent with slippage protection (min_out > 0)
         if pos.side == "long":
+            # Selling asset for USD — min_out is minimum USD proceeds
+            min_proceeds = exit_notional * (1 - self.EXIT_MAX_SLIPPAGE)
             intent = TradeIntent.new(
                 asset_in=asset, asset_out="USD",
                 amount_in=exit_qty,
-                min_out=0, ttl=now + 30.0,
+                min_out=min_proceeds, ttl=now + 30.0,
             )
         else:
+            # Buying asset to close short — min_out is minimum asset received
+            min_qty = exit_qty * (1 - self.EXIT_MAX_SLIPPAGE)
             intent = TradeIntent.new(
                 asset_in="USD", asset_out=asset,
                 amount_in=exit_notional,
-                min_out=0, ttl=now + 30.0,
+                min_out=min_qty, ttl=now + 30.0,
             )
 
         log.info("EXIT %s %s %.0f%% ($%.0f) — %s",

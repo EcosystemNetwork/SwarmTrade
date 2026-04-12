@@ -583,6 +583,8 @@ class ATRTrailingStopAgent:
             return
 
         # Distance from stop as fraction of ATR
+        if atr < 1e-9:
+            return
         if self._trend == "long":
             dist_from_stop = (price - self._trailing_long) / atr
         else:
