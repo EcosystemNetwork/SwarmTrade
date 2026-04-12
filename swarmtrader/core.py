@@ -227,27 +227,123 @@ class PortfolioTracker:
 
 
 class Bus:
-    """Tiny in-process async pub/sub. Swap for NATS/Redis in prod.
+    """In-process async pub/sub with optional Redis fan-out.
 
     Handlers are dispatched sequentially per-topic to avoid race conditions
     on shared mutable state. Different topics still run concurrently.
+
+    When ``redis_url`` is provided, every ``publish()`` also pushes to a Redis
+    Pub/Sub channel so other processes can subscribe. Incoming Redis messages
+    are dispatched to local handlers automatically. This enables multi-worker
+    deployments without changing any agent code.
+
+    When ``redis_url`` is ``None`` (default), behaves as a pure in-process bus.
     """
-    def __init__(self) -> None:
+    def __init__(self, redis_url: str | None = None) -> None:
         self._subs: dict[str, list[Callable[[Any], Awaitable[None]]]] = {}
         self._topic_locks: dict[str, asyncio.Lock] = {}
         self._processed_ids: set[str] = set()  # idempotency tracking
         self._pending_tasks: set[asyncio.Task] = set()  # prevent GC of fire-and-forget tasks
 
+        # Redis integration (optional)
+        self._redis_url = redis_url
+        self._redis_pub = None   # redis.asyncio.Redis for publishing
+        self._redis_sub = None   # pubsub object for subscribing
+        self._redis_listener: asyncio.Task | None = None
+        self._redis_ready = False
+
+    async def connect_redis(self) -> None:
+        """Initialize Redis pub/sub if a URL was provided.
+
+        Call once after the event loop is running. Safe to skip — the bus
+        works without Redis, just in-process only.
+        """
+        if not self._redis_url:
+            return
+        try:
+            import redis.asyncio as aioredis
+        except ImportError:
+            import logging
+            logging.getLogger("bus").warning(
+                "redis package not installed — falling back to in-process bus. "
+                "Install with: pip install redis>=5.0")
+            self._redis_url = None
+            return
+
+        import logging
+        log = logging.getLogger("bus")
+        try:
+            self._redis_pub = aioredis.from_url(
+                self._redis_url, decode_responses=True,
+            )
+            await self._redis_pub.ping()
+            self._redis_sub = self._redis_pub.pubsub()
+            self._redis_ready = True
+            self._redis_listener = asyncio.create_task(self._redis_listen())
+            log.info("Bus: Redis connected at %s", self._redis_url.split("@")[-1])
+        except Exception as e:
+            log.warning("Bus: Redis connection failed (%s) — falling back to in-process", e)
+            self._redis_url = None
+            self._redis_ready = False
+
+    async def _redis_listen(self) -> None:
+        """Background task: read messages from Redis and dispatch locally."""
+        import json
+        import logging
+        log = logging.getLogger("bus")
+        assert self._redis_sub is not None
+        try:
+            async for raw in self._redis_sub.listen():
+                if raw["type"] != "message":
+                    continue
+                topic = raw["channel"]
+                try:
+                    payload = json.loads(raw["data"])
+                except (json.JSONDecodeError, TypeError):
+                    payload = raw["data"]
+                # Skip messages we published ourselves (dedup via origin marker)
+                if isinstance(payload, dict) and payload.get("_bus_origin") == id(self):
+                    continue
+                await self._dispatch_local(topic, payload.get("_payload", payload)
+                                           if isinstance(payload, dict) else payload)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            log.error("Redis listener died: %s", e)
+
+    async def _dispatch_local(self, topic: str, msg: Any) -> None:
+        """Dispatch to local handlers only (no Redis re-publish)."""
+        lock = self._topic_locks.setdefault(topic, asyncio.Lock())
+        async with lock:
+            for fn in self._subs.get(topic, []):
+                await self._safe(fn, msg)
+
     def subscribe(self, topic: str, fn: Callable[[Any], Awaitable[None]]) -> None:
         self._subs.setdefault(topic, []).append(fn)
         # Use setdefault for atomic lock creation (avoids race condition)
         self._topic_locks.setdefault(topic, asyncio.Lock())
+        # Subscribe to the Redis channel too (if connected)
+        if self._redis_ready and self._redis_sub is not None:
+            asyncio.ensure_future(self._redis_sub.subscribe(topic))
 
     async def publish(self, topic: str, msg: Any) -> None:
+        # Always dispatch to local handlers
         lock = self._topic_locks.setdefault(topic, asyncio.Lock())
         task = asyncio.create_task(self._dispatch(lock, topic, msg))
         self._pending_tasks.add(task)
         task.add_done_callback(self._task_done)
+
+        # Also publish to Redis for cross-process fan-out
+        if self._redis_ready and self._redis_pub is not None:
+            try:
+                import json
+                envelope = json.dumps({
+                    "_bus_origin": id(self),
+                    "_payload": msg if isinstance(msg, (dict, list, str, int, float, bool, type(None))) else str(msg),
+                }, default=str)
+                await self._redis_pub.publish(topic, envelope)
+            except Exception:
+                pass  # Redis failure should never block local dispatch
 
     def _task_done(self, task: asyncio.Task) -> None:
         """Log unhandled exceptions from dispatch tasks and clean up."""
@@ -293,3 +389,14 @@ class Bus:
         except Exception as e:  # pragma: no cover
             import logging
             logging.getLogger("bus").exception("handler failed: %s", e)
+
+    async def close(self) -> None:
+        """Shut down Redis connections gracefully."""
+        if self._redis_listener and not self._redis_listener.done():
+            self._redis_listener.cancel()
+        if self._redis_sub:
+            await self._redis_sub.unsubscribe()
+            await self._redis_sub.close()
+        if self._redis_pub:
+            await self._redis_pub.close()
+        self._redis_ready = False

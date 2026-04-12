@@ -283,8 +283,14 @@ class UniswapExecutor:
         tx_value = swap_tx.get("value", "0")
 
         # Sign and submit transaction
+        # Use Flashbots Protect RPC when configured — sends tx to private
+        # mempool, preventing sandwich attacks and other MEV extraction.
         from web3 import Web3
-        w3 = Web3(Web3.HTTPProvider(f"https://mainnet.base.org"))
+        default_rpc = "https://mainnet.base.org"
+        flashbots_rpc = os.getenv("FLASHBOTS_RPC", "")
+        rpc_url = flashbots_rpc or default_rpc
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        using_private_mempool = bool(flashbots_rpc)
 
         nonce = w3.eth.get_transaction_count(self._address)
         tx = {
@@ -303,7 +309,8 @@ class UniswapExecutor:
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         tx_hash_hex = tx_hash.hex()
 
-        log.info("  Swap tx submitted: %s", tx_hash_hex)
+        protection = "flashbots_protect" if using_private_mempool else "none"
+        log.info("  Swap tx submitted: %s (mev_protection=%s)", tx_hash_hex, protection)
 
         # Publish signed intent event for ERC-8004 tracking
         await self.bus.publish("uniswap.swap_submitted", {
@@ -315,6 +322,7 @@ class UniswapExecutor:
             "amount_in": str(intent.amount_in),
             "amount_out": amount_out,
             "chain_id": self._chain_id,
+            "mev_protection": protection,
         })
 
         return {

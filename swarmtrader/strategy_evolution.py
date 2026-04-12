@@ -34,10 +34,7 @@ log = logging.getLogger("swarm.evolution")
 
 # Import real backtester for fitness evaluation
 try:
-    from .backtester import (
-        BacktestEngine, BacktestStrategy, OHLCV,
-        HistoricalDataFetcher, MomentumStrategy,
-    )
+    from .backtester import BacktestEngine, HistoricalDataFetcher
     _HAS_BACKTESTER = True
 except ImportError:
     _HAS_BACKTESTER = False
@@ -369,7 +366,7 @@ class StrategyEvolution:
 
         Args:
             fitness_fn: Optional custom fitness function. If None, uses
-                       random simulated results for development.
+                       real backtesting against historical candles.
         """
         self._generation += 1
 

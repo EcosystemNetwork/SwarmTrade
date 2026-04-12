@@ -8,7 +8,7 @@
 
 **Show:** Title slide
 
-> "This is SwarmTrader — a multi-agent autonomous trading platform where 80+ specialized AI agents collaborate in real-time to analyze markets, manage risk, and execute trades across 5 CEXs and 10 DEXs on 3 chains."
+> "This is SwarmTrader — a multi-agent autonomous trading platform where 120+ specialized AI agents collaborate in real-time to analyze markets, manage risk, and execute trades across 5 CEXs and 10 DEXs on 3 chains."
 >
 > "Unlike single-model trading bots, SwarmTrader uses a swarm intelligence approach — each agent is an expert in one domain, and they must reach consensus through a 15-layer risk pipeline before any trade executes."
 
@@ -37,7 +37,7 @@
 >
 > **Analysis Layer** — 30+ signal agents process data independently: Momentum, MeanReversion, Volatility for core analysis. RSI, MACD, Bollinger, VWAP, Ichimoku for technicals. OrderBook, Funding, Spread, and Regime for advanced market structure. SmartMoney for whale wallet shadowing. Polymarket for prediction market signals. And an ML agent with gradient-boosted decision trees — all pure stdlib, no numpy.
 >
-> **Strategy Layer** — The Strategist fuses all signals with regime-aware adaptive weights and sizes positions using the Kelly criterion. Or optionally, the Hermes LLM brain (local Ollama) takes over, reading all 80+ agent signals and making AI-powered decisions. Then every trade must pass through a 15-layer risk pipeline — size, drawdown, VaR, stress test, compliance, factor exposure, agent spending policies — ALL must approve, or the trade is blocked.
+> **Strategy Layer** — The Strategist fuses all signals with regime-aware adaptive weights and sizes positions using the Kelly criterion. Or optionally, the Hermes LLM brain (local Ollama) takes over, reading all 120+ agent signals and making AI-powered decisions. Then every trade must pass through a 15-layer risk pipeline — size, drawdown, VaR, stress test, compliance, factor exposure, agent spending policies — ALL must approve, or the trade is blocked.
 >
 > **Execution Layer** — Trades route through a Smart Order Router comparing quotes across 5 CEXs and 10 DEXs. Execution via KrakenExecutor, HyperliquidExecutor, JupiterExecutor, or UniswapExecutor. Plus TWAP, Iceberg, and cross-venue arbitrage execution."
 
@@ -82,7 +82,7 @@ python -m swarmtrader.main mock 120 --web --dashboard --pairs ETHUSD BTCUSD
 
 **Show:** Terminal with `--hermes` flag
 
-> "What makes this truly autonomous — the Hermes LLM brain. When you add the `--hermes` flag, a local Ollama model replaces the rule-based strategy. It reads the full context — all 80+ agent signals, portfolio state, risk metrics, market regime — and generates trade decisions. The rule-based Strategist runs as a backup. All risk checks still apply."
+> "What makes this truly autonomous — the Hermes LLM brain. When you add the `--hermes` flag, a local Ollama model replaces the rule-based strategy. It reads the full context — all 120+ agent signals, portfolio state, risk metrics, market regime — and generates trade decisions. The rule-based Strategist runs as a backup. All risk checks still apply."
 
 ---
 
@@ -98,7 +98,7 @@ python -m swarmtrader.main mock 120 --web --dashboard --pairs ETHUSD BTCUSD
 
 **Show:** Slide 9 (Thank You)
 
-> "SwarmTrader: 80+ agents, 15 risk layers, 5 CEXs, 10 DEXs, 3 chains, zero black boxes. Multi-agent consensus with optional LLM brain. Built in pure Python with just 6 dependencies.
+> "SwarmTrader: 120+ agents, 15 risk layers, 5 CEXs, 10 DEXs, 3 chains, zero black boxes. Multi-agent consensus with optional LLM brain. Built in pure Python with just 6 dependencies.
 >
 > Check out the GitHub repo and try it yourself — mock mode requires zero API keys."
 

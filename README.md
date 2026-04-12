@@ -254,7 +254,7 @@ Every signal passes through multiple intelligence layers before reaching executi
 
 ```
 Raw Data (8 sources, 54 subscribers)
-  -> 80+ signal agents (59 topics)
+  -> 120+ signal agents (59 topics)
     -> Kalman Filter (noise removal)
       -> Data Fusion (convergence scoring)
         -> Strategist (48 weights, 3 regime profiles)
@@ -314,7 +314,7 @@ swarmtrader/                          # 122 modules, 48,612 lines
 ├── agents.py, kraken.py, kraken_api.py, kraken_ws.py
 ├── hyperliquid.py, jupiter.py, birdeye.py, pyth_oracle.py
 │
-├── ── SIGNALS (80+ agents) ─────────────────────────────
+├── ── SIGNALS (120+ agents) ─────────────────────────────
 ├── strategies.py, agents_advanced.py, ml_signal.py
 ├── multitf.py, correlation.py, confluence.py
 ├── whale.py, smart_money.py, onchain.py, feargreed.py

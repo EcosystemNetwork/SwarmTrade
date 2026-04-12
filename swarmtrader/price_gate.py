@@ -86,8 +86,8 @@ class PriceValidationGate:
         bus.subscribe("market.coingecko", self._on_coingecko_price)
         bus.subscribe("market.dex_quote", self._on_dex_price)
 
-        # Intercept execution flow
-        bus.subscribe("exec.go", self._on_exec_go)
+        # Intercept execution flow (after MEV screening)
+        bus.subscribe("exec.cleared", self._on_exec_go)
 
     async def _on_snapshot(self, snap: MarketSnapshot):
         """Update internal price source from market snapshots."""

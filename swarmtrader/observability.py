@@ -18,14 +18,19 @@ Bus integration:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
 from collections import defaultdict
 
+from typing import Awaitable, Callable
+
 from .core import Bus, Signal, ExecutionReport
 
 log = logging.getLogger("swarm.observe")
+
+AlertHook = Callable[[str, str], Awaitable[None]]
 
 
 @dataclass
@@ -85,8 +90,9 @@ class ObservabilityDashboard:
     DEAD_THRESHOLD = 900.0     # 15 minutes
     DEGRADED_RATE = 0.5        # signals/min below this = degraded
 
-    def __init__(self, bus: Bus):
+    def __init__(self, bus: Bus, alert_hook: AlertHook | None = None):
         self.bus = bus
+        self.alert_hook = alert_hook
         self._agents: dict[str, AgentHealth] = {}
         self._signal_times: dict[str, list[float]] = defaultdict(list)
         self._system_signals: list[float] = []
@@ -161,6 +167,31 @@ class ObservabilityDashboard:
             "ts": time.time(),
         })
 
+    async def _fire_alerts(self, report: SystemHealthReport) -> None:
+        """Send external alerts for critical health conditions."""
+        if not self.alert_hook:
+            return
+        try:
+            if report.dead > 0:
+                dead_names = [h.agent_id for h in self._agents.values() if h.status == "dead"]
+                await self.alert_hook(
+                    "WARNING",
+                    f"{report.dead} agent(s) DEAD (no signal in {self.DEAD_THRESHOLD/60:.0f}min): "
+                    f"{', '.join(dead_names[:10])}",
+                )
+            if report.dead > report.total_agents * 0.5 and report.total_agents > 5:
+                await self.alert_hook(
+                    "CRITICAL",
+                    f"Majority agent failure: {report.dead}/{report.total_agents} agents dead",
+                )
+            if report.pnl_today < -500:
+                await self.alert_hook(
+                    "WARNING",
+                    f"Daily PnL alert: ${report.pnl_today:,.2f}",
+                )
+        except Exception as e:
+            log.error("Observability alert dispatch failed: %s", e)
+
     def _get_health(self, agent_id: str) -> AgentHealth:
         if agent_id not in self._agents:
             self._agents[agent_id] = AgentHealth(agent_id=agent_id)
@@ -213,6 +244,13 @@ class ObservabilityDashboard:
         self._reports.append(report)
         if len(self._reports) > 100:
             self._reports = self._reports[-50:]
+
+        # Fire external alerts in background if hook configured
+        if self.alert_hook:
+            try:
+                asyncio.get_running_loop().create_task(self._fire_alerts(report))
+            except RuntimeError:
+                pass  # No running loop (e.g. called from sync context)
 
         return report
 

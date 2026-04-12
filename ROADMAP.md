@@ -374,7 +374,7 @@ Each phase builds on the previous. Estimated timeline: 6-8 months to Phase 20.
 - 3 cross-asset + 4 alpha swarm + 4 social media + 1 ML
 - 15 risk agents + 8 execution components + 3 arbitrage
 - 5 safety systems + 2 yield/LP + 2 learning + 7 infrastructure
-- **Total: 80+ cooperative agents across 79 source files**
+- **Total: 120+ cooperative agents across 79 source files**
 
 **Deployed:**
 - Railway: https://swarmtrade-production-f9c0.up.railway.app

@@ -212,7 +212,7 @@ class IcebergExecutor:
         self._active: dict[str, IcebergOrder] = {}   # parent_id -> IcebergOrder
         self._prices: dict[str, float] = {}
 
-        bus.subscribe("exec.go", self._on_exec_go)
+        bus.subscribe("exec.cleared", self._on_exec_go)
         bus.subscribe("exec.report", self._on_child_report)
         bus.subscribe("market.snapshot", self._on_snapshot)
 

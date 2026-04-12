@@ -40,10 +40,10 @@ class Simulator:
         self._last_price_ts: float = 0.0  # track staleness
         self._stale_threshold: float = 60.0  # reject prices older than 60s
         bus.subscribe("market.snapshot", self._on_snap)
-        # PriceValidationGate intercepts exec.go -> validates -> publishes exec.validated
-        # Simulator listens to exec.validated (gate present) or exec.go (no gate)
+        # PriceValidationGate intercepts exec.cleared -> validates -> publishes exec.validated
+        # Simulator listens to exec.validated (gate present) or exec.cleared (no gate)
         bus.subscribe("exec.validated", self._on_go)
-        bus.subscribe("exec.go", self._on_go)
+        bus.subscribe("exec.cleared", self._on_go)
         self._seen_intents: OrderedDict[str, None] = OrderedDict()
 
     def _dedup(self, intent_id: str) -> bool:

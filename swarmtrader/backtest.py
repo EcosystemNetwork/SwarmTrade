@@ -332,6 +332,39 @@ class BacktestExecutor:
         await self.bus.publish("exec.report", rep)
 
 
+def load_candles_from_file(path: str | Path) -> list[list]:
+    """Load OHLC candles from a JSON file.
+
+    Supports two formats:
+      1. Kraken array: [[ts, o, h, l, c, vwap, vol, count], ...]
+      2. Dict format:  [{"ts": ..., "o": ..., "h": ..., "l": ..., "c": ..., "v": ...}, ...]
+
+    Returns Kraken-style arrays (what HistoricalScout expects).
+    """
+    import json
+    raw = json.loads(Path(path).read_text())
+    if not raw:
+        raise ValueError(f"Empty candle data in {path}")
+
+    # Detect format
+    sample = raw[0]
+    if isinstance(sample, list):
+        return raw  # Already Kraken array format
+
+    # Dict format → convert to [ts, o, h, l, c, vwap, vol, count]
+    candles = []
+    for row in raw:
+        ts = float(row.get("ts", row.get("time", 0)))
+        o = float(row.get("o", row.get("open", 0)))
+        h = float(row.get("h", row.get("high", 0)))
+        l = float(row.get("l", row.get("low", 0)))
+        c = float(row.get("c", row.get("close", 0)))
+        v = float(row.get("v", row.get("volume", 0)))
+        vwap = (o + h + l + c) / 4  # Approximate VWAP from OHLC
+        candles.append([ts, o, h, l, c, vwap, v, 0])
+    return candles
+
+
 async def fetch_candles(pair: str, interval: int) -> tuple[list[list], str]:
     """Fetch historical OHLC data from Kraken CLI."""
     from .kraken import _run_cli
@@ -506,6 +539,116 @@ async def run_walk_forward(
     return results
 
 
+async def run_backtest_from_file(
+    candle_file: str | Path,
+    symbol: str = "ETH",
+    base_size: float = 500.0,
+    max_size: float = 2000.0,
+    max_drawdown: float = 100.0,
+    starting_capital: float = 10_000.0,
+    warm_up: int = 50,
+) -> BacktestResult:
+    """Run a backtest using candle data from a local JSON file.
+
+    This avoids the Kraken CLI dependency — useful for offline/CI backtesting.
+    """
+    candles = load_candles_from_file(candle_file)
+    log.info("Loaded %d candles from %s for %s", len(candles), candle_file, symbol)
+
+    # Infer interval from timestamps
+    if len(candles) >= 2:
+        dt = float(candles[1][0]) - float(candles[0][0])
+        interval_min = max(1, int(dt / 60))
+    else:
+        interval_min = 1440
+
+    result = BacktestResult(
+        pair=f"{symbol}USD", interval_min=interval_min,
+        candles=len(candles), warm_up=warm_up,
+    )
+    bus = Bus()
+    state: dict = {"daily_pnl": 0.0}
+    portfolio = PortfolioTracker()
+
+    clock = _SimulatedClock()
+    import swarmtrader.strategy as _strat_mod
+    import swarmtrader.execution as _exec_mod
+    _strat_mod.time = type("_T", (), {"time": staticmethod(clock)})()
+    _exec_mod.time = type("_T", (), {"time": staticmethod(clock)})()
+
+    try:
+        scout = HistoricalScout(bus, candles, symbol=symbol, clock=clock, warm_up=warm_up)
+
+        MomentumAnalyst(bus, asset=symbol)
+        MeanReversionAnalyst(bus, asset=symbol)
+        VolatilityAnalyst(bus, asset=symbol)
+
+        tokens = {symbol, "USD", "USDC", "USDT"}
+        Strategist(bus, base_size=base_size)
+        risks = [
+            RiskAgent(bus, "size", size_check(max_size=max_size)),
+            RiskAgent(bus, "allowlist", allowlist_check(tokens)),
+            RiskAgent(bus, "drawdown", drawdown_check(state, max_dd=max_drawdown)),
+        ]
+        Coordinator(bus, n_risk_agents=len(risks))
+
+        Simulator(bus)
+        BacktestExecutor(bus, result, portfolio, starting_capital=starting_capital)
+
+        with tempfile.TemporaryDirectory() as d:
+            from .database import Database
+            bt_db = Database(sqlite_path=Path(d) / "backtest.db")
+            await bt_db.connect()
+            Auditor(bus, db=bt_db, state=state, portfolio=portfolio)
+            await scout.run()
+            await bt_db.close()
+    finally:
+        _strat_mod.time = time
+        _exec_mod.time = time
+
+    return result
+
+
+def archive_result(result: BacktestResult, output_dir: str | Path = "backtest_results") -> Path:
+    """Save backtest result to a timestamped JSON file.
+
+    Returns the path to the written file.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    pair = result.pair.lower().replace("/", "_")
+    filename = f"{ts}_{pair}_{result.interval_min}min.json"
+    path = out / filename
+
+    payload = {
+        "run_ts": datetime.now(timezone.utc).isoformat(),
+        "result": result.to_dict(),
+        "trades": [
+            {
+                "ts": t.ts,
+                "intent_id": t.intent_id,
+                "side": t.side,
+                "asset": t.asset,
+                "quantity": round(t.quantity, 8),
+                "fill_price": round(t.fill_price, 4),
+                "fee_usd": round(t.fee_usd, 6),
+                "pnl": round(t.pnl, 6),
+            }
+            for t in result.trades
+        ],
+        "equity_curve": [round(e, 4) for e in result.equity_curve],
+    }
+
+    path.write_text(json.dumps(payload, indent=2))
+    log.info("Archived backtest result to %s", path)
+    return path
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Swarm Trade Backtester")
     p.add_argument("--pair", default="ETHUSD", help="Trading pair (default: ETHUSD)")
@@ -523,6 +666,12 @@ def parse_args() -> argparse.Namespace:
                    help="Number of walk-forward splits (0 = disabled)")
     p.add_argument("--warm-up", type=int, default=50,
                    help="Warm-up candles for indicators (default: 50)")
+    p.add_argument("--file", type=str, default="",
+                   help="Load candles from a local JSON file instead of Kraken API")
+    p.add_argument("--symbol", type=str, default="ETH",
+                   help="Asset symbol when using --file (default: ETH)")
+    p.add_argument("--archive", action="store_true",
+                   help="Save results to backtest_results/ as timestamped JSON")
     return p.parse_args()
 
 
@@ -532,7 +681,23 @@ async def main(args: argparse.Namespace):
         format="%(asctime)s %(name)-16s %(levelname)-5s %(message)s",
     )
 
-    if args.walk_forward > 0:
+    if args.file:
+        # File-based backtest (no Kraken API needed)
+        result = await run_backtest_from_file(
+            candle_file=args.file,
+            symbol=args.symbol,
+            base_size=args.base_size,
+            max_size=args.max_size,
+            max_drawdown=args.max_drawdown,
+            starting_capital=args.capital,
+            warm_up=args.warm_up,
+        )
+        print(result.summary())
+        if args.archive:
+            path = archive_result(result)
+            print(f"\n  Archived to: {path}")
+
+    elif args.walk_forward > 0:
         results = await run_walk_forward(
             pair=args.pair,
             interval=args.interval,
@@ -558,6 +723,11 @@ async def main(args: argparse.Namespace):
         max_dd = max((r.max_drawdown for r in results), default=0)
         print(f"\n  Aggregate: PnL=${total_pnl:+,.2f}  Avg WR={avg_wr:.1%}  "
               f"Avg Sharpe={avg_sharpe:.3f}  Worst DD={max_dd:.2%}")
+
+        if args.archive:
+            for r in results:
+                archive_result(r)
+            print(f"\n  Archived {len(results)} split results to backtest_results/")
     else:
         result = await run_backtest(
             pair=args.pair,
@@ -569,6 +739,9 @@ async def main(args: argparse.Namespace):
             warm_up=args.warm_up,
         )
         print(result.summary())
+        if args.archive:
+            path = archive_result(result)
+            print(f"\n  Archived to: {path}")
 
         if result.trades:
             print(f"\n  {'Side':<6} {'Qty':>10} {'Price':>12} {'Fee':>8} {'PnL':>10}")

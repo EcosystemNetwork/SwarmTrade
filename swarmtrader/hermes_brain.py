@@ -4,7 +4,7 @@ Subscribes to every signal and market topic on the bus, compiles a rolling
 market brief, sends it to any LLM backend, and emits TradeIntent objects
 based on the LLM's reasoning.
 
-The 80+ swarm agents become the eyes and ears; your LLM is the brain.
+The 120+ swarm agents become the eyes and ears; your LLM is the brain.
 
 Supported backends (auto-detected from env vars):
   1. Ollama        — OLLAMA_URL  (local: gemma3, hermes, llama3, etc.)
@@ -427,7 +427,7 @@ class HermesBrain:
     """LLM-powered strategist that replaces the rule-based Strategist.
 
     Flow:
-      1. All 80+ agents publish signals to the bus
+      1. All 120+ agents publish signals to the bus
       2. HermesBrain collects them into a MarketState
       3. Every HERMES_INTERVAL seconds, it compiles a market brief
       4. Sends brief to any LLM backend (Ollama/OpenAI/Claude/Kimi/etc.)
@@ -774,7 +774,7 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
             "action": action,
             "asset": str(params.get("ticker", params.get("asset", "ETH"))).upper().replace("USD", ""),
             "size_usd": float(params.get("size_usd", params.get("amount", 0))),
-            "confidence": confidence * urgency_mult,
+            "confidence": min(1.0, confidence * urgency_mult),
             "reasoning": str(params.get("analysis", params.get("reasoning", ""))),
             "order_type": params.get("order_type", "market"),
             "urgency": urgency,
@@ -804,7 +804,7 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
         action = decision.get("action", "").lower()
         asset = decision.get("asset", "").upper()
         size_usd = float(decision.get("size_usd", 0))
-        confidence = float(decision.get("confidence", 0))
+        confidence = max(0.0, min(1.0, float(decision.get("confidence", 0))))
         reasoning = decision.get("reasoning", "LLM decision")
         order_type = decision.get("order_type", "market").lower()
 
@@ -993,13 +993,17 @@ class CommanderGate:
 
     When the LLM is unavailable, the gate can operate in fallback modes:
       - "strict": block all trades until LLM is back (safest)
-      - "passthrough": let Strategist intents through (degraded mode)
       - "conservative": only let high-conviction (>0.8) intents through
     """
+
+    _ALLOWED_FALLBACKS = ("strict", "conservative")
 
     def __init__(self, bus: Bus, brain: HermesBrain,
                  fallback_mode: str = "conservative",
                  approval_timeout_s: float = 30.0):
+        if fallback_mode not in self._ALLOWED_FALLBACKS:
+            log.warning("COMMANDER GATE: invalid fallback_mode '%s' — forcing 'strict'", fallback_mode)
+            fallback_mode = "strict"
         self.bus = bus
         self.brain = brain
         self.fallback_mode = fallback_mode
@@ -1057,10 +1061,13 @@ class CommanderGate:
             await self.bus.publish("exec.go", intent)
 
         elif verdict == "modify":
+            # NOTE: Modification logic is not yet implemented — the LLM can say
+            # "MODIFY" but we have no structured way to parse what changed.
+            # Treating unimplemented modify as reject to prevent silent approval.
             self._stats["modified"] += 1
-            self._approved.append(intent.id)
-            log.info("COMMANDER MODIFIED: %s — forwarding modified intent", intent.id)
-            await self.bus.publish("exec.go", intent)
+            self._stats["rejected"] += 1
+            log.warning("COMMANDER MODIFY: %s — modification not implemented, rejecting for safety",
+                        intent.id)
 
         else:  # reject
             self._stats["rejected"] += 1
@@ -1112,12 +1119,15 @@ class CommanderGate:
             if not self.brain._session:
                 self.brain._session = aiohttp.ClientSession()
 
-            raw = await self.brain.provider.query(
-                self.brain._session,
-                "You are the trading commander. You approve or reject every trade. "
-                "Respond with ONLY: APPROVE, REJECT, or MODIFY. Nothing else.",
-                prompt,
-                max_tokens=10,
+            raw = await asyncio.wait_for(
+                self.brain.provider.query(
+                    self.brain._session,
+                    "You are the trading commander. You approve or reject every trade. "
+                    "Respond with ONLY: APPROVE, REJECT, or MODIFY. Nothing else.",
+                    prompt,
+                    max_tokens=10,
+                ),
+                timeout=self.approval_timeout_s,
             )
 
             raw_lower = raw.strip().lower()
@@ -1127,6 +1137,12 @@ class CommanderGate:
                 return "modify"
             else:
                 return "reject"
+
+        except asyncio.TimeoutError:
+            self._stats["timeout"] += 1
+            log.warning("Commander approval timed out after %.0fs — rejecting (strict fallback)",
+                        self.approval_timeout_s)
+            return "reject"
 
         except Exception as e:
             log.warning("Commander query failed: %s — using fallback", e)
@@ -1150,9 +1166,6 @@ class CommanderGate:
         """Determine verdict when LLM is unavailable."""
         if self.fallback_mode == "strict":
             return "reject"  # Block everything
-
-        elif self.fallback_mode == "passthrough":
-            return "approve"  # Let everything through (dangerous)
 
         elif self.fallback_mode == "conservative":
             # Only approve high-conviction intents

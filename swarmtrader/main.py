@@ -155,6 +155,7 @@ from .arb_executor import ArbScanner, ArbExecutor
 from .dex_quotes import DEXQuoteProvider
 from .dex_multi import MultiDEXScanner
 from .hermes_brain import HermesBrain, CommanderGate
+from .alerts import AlertRouter
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -349,7 +350,10 @@ async def run(args: argparse.Namespace):
             else:
                 log.warning("API key validation: %s (continuing in paper mode)", msg)
 
-    bus = Bus()
+    redis_url = os.getenv("REDIS_URL", "")
+    bus = Bus(redis_url=redis_url or None)
+    if redis_url:
+        await bus.connect_redis()
     state: dict = {"daily_pnl": 0.0, "trade_count": 0, "total_fees": 0.0}
     kill_switch = KillSwitch(Path(args.kill_switch))
     portfolio = PortfolioTracker()
@@ -1163,6 +1167,10 @@ async def run(args: argparse.Namespace):
     ]
     Coordinator(bus, n_risk_agents=len(risks))
 
+    # ── Alert Routing (PagerDuty / Opsgenie / Slack / Telegram) ──
+    alert_router = AlertRouter()
+    observability.alert_hook = alert_router
+
     # ── Circuit Breakers ────────────────────────────────────────
     cb = CircuitBreaker(
         bus, kill_switch,
@@ -1170,6 +1178,7 @@ async def run(args: argparse.Namespace):
         max_drawdown_usd=args.max_drawdown,
         vol_halt_threshold=0.05,
         cooldown_seconds=300.0,
+        alert_hook=alert_router,
         ws_client=ws_v2_client,
     )
     if args.mode != "mock":

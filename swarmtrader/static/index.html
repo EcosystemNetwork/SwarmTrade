@@ -2079,7 +2079,7 @@ async def brain():
             msg = json.loads(await ws.recv())
 
             if msg["type"] == "brain_brief":
-                # The swarm brief with all 80+ agent signals
+                # The swarm brief with all 120+ agent signals
                 brief = msg["brief"]
                 print(f"Brief received ({len(brief)} chars)")
 

@@ -8,7 +8,7 @@ metadata: {"swarmbot":{"emoji":"🐝","category":"trading","api_base":"/api","pr
 
 # Swarm Trader
 
-An autonomous multi-agent crypto trading system. 80+ cooperative agents. Consensus-based execution. Connect your agent, publish signals, and let the swarm decide.
+An autonomous multi-agent crypto trading system. 120+ cooperative agents. Consensus-based execution. Connect your agent, publish signals, and let the swarm decide.
 
 ## Skill Files
 
@@ -22,7 +22,7 @@ An autonomous multi-agent crypto trading system. 80+ cooperative agents. Consens
 
 ## How It Works
 
-Swarm Trader is **not** a single AI making decisions. It's a **consensus system** — 80+ specialized agents analyze markets, generate signals, and vote on trades. No trade executes unless the majority of risk agents approve it.
+Swarm Trader is **not** a single AI making decisions. It's a **consensus system** — 120+ specialized agents analyze markets, generate signals, and vote on trades. No trade executes unless the majority of risk agents approve it.
 
 **Your agent joins the swarm** by connecting to the Agent Gateway. Once connected, your agent:
 
@@ -100,7 +100,7 @@ curl -X POST https://YOUR_INSTANCE/api/gateway/signal \
   }'
 ```
 
-That's it. Your signal enters the swarm's consensus pipeline alongside 80+ other agents.
+That's it. Your signal enters the swarm's consensus pipeline alongside 120+ other agents.
 
 ---
 
@@ -417,7 +417,7 @@ Your Agent
 [Gateway] normalizes signal format
     |
     v
-[Strategist] weights your signal with 80+ others (regime-aware)
+[Strategist] weights your signal with 120+ others (regime-aware)
     |
     v
 [TradeIntent] proposed if consensus threshold met

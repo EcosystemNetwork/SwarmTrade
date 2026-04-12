@@ -24,7 +24,7 @@ log = logging.getLogger("swarm.sor")
 
 # Try to import real exchange clients
 try:
-    from .exchanges import get_exchange, list_exchanges, Ticker
+    from .exchanges import get_exchange
     _HAS_EXCHANGES = True
 except ImportError:
     _HAS_EXCHANGES = False
@@ -98,7 +98,7 @@ class SmartOrderRouter:
 
         bus.subscribe("market.snapshot", self._on_snapshot)
         bus.subscribe("market.book", self._on_book)
-        bus.subscribe("exec.go", self._on_exec_go)
+        bus.subscribe("exec.cleared", self._on_exec_go)
 
     # ── Bus handlers ──────────────────────────────────────────────
 
@@ -402,7 +402,7 @@ class SmartOrderRouter:
 
     async def get_quotes(self, asset: str, side: str = "buy") -> list[ExchangeQuote]:
         """Fetch all available quotes for an asset. Returns cached or freshly
-        simulated quotes sorted by effective price."""
+        fetched quotes sorted by effective price."""
         asset_key = asset.upper()
         if asset_key in self._quote_cache:
             quotes = list(self._quote_cache[asset_key])
