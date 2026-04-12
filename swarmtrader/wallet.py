@@ -425,13 +425,16 @@ class WalletManager:
                     "INSERT OR REPLACE INTO wallet_state(key, value) VALUES ($1, $2)",
                     "state", state_json,
                 )
-            # Persist recent transactions
+            # Persist only NEW transactions (not yet persisted)
             for tx in self.transactions[-10:]:
+                if getattr(tx, '_persisted', False):
+                    continue
                 await self.db.execute(
                     "INSERT INTO wallet_transactions (ts, tx_type, amount, note) "
                     "VALUES ($1, $2, $3, $4)",
                     tx.ts, tx.tx_type, tx.amount_usd, tx.note,
                 )
+                tx._persisted = True
         except Exception as e:
             log.warning("WALLET save failed: %s", e)
 

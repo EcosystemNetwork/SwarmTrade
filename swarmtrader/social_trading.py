@@ -842,9 +842,11 @@ class SocialTradingEngine:
             self._feed = self._feed[-self._feed_max:]
 
         # Broadcast to WebSocket clients
-        asyncio.ensure_future(
-            self.bus.publish("social.feed", event.to_dict())
-        )
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.bus.publish("social.feed", event.to_dict()))
+        except RuntimeError:
+            pass  # no event loop — skip broadcast (e.g. during tests)
 
     def get_feed(self, limit: int = 50, event_type: str | None = None,
                  agent_id: str | None = None) -> list[dict]:

@@ -98,7 +98,7 @@ class DatabaseConfig:
 @dataclass
 class DashboardConfig:
     """Web dashboard parameters."""
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"  # bind to localhost by default; use 0.0.0.0 for Docker/production
     port: int = 8080
     token: str = ""                          # empty = auto-generate
 

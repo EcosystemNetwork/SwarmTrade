@@ -58,6 +58,8 @@ from .walkforward import (
 )
 # Agent gateway
 from .gateway import AgentGateway
+# Agent social network
+from .swarm_network import SwarmNetwork
 # Agent memory
 from .memory import AgentMemory
 # ERC-8004 on-chain identity + reputation
@@ -107,6 +109,14 @@ from .debate import (
     ELOTracker, setup_debate_engine,
 )
 from .agent_policies import ExecutionSandbox
+# Phase 4-10: ETHGlobal showcase integrations
+from .vault import VaultManager, vault_trade_check
+from .marketplace import AgentMarketplace
+from .flashloan import FlashLoanExecutor, ArbPathFinder, ProfitSimulator
+from .strategy_nft import StrategyNFTManager, StrategyConfig, StrategyNFT
+from .v4_hooks import V4HookManager, V4PoolState, V4Position
+from .cross_chain import CrossChainCoordinator
+from .zk_trading import CommitRevealEngine, PrivatePositionManager
 from .agent_registry import AgentRegistry, AgentIdentity
 # Multi-exchange + arbitrage
 from .exchanges import (
@@ -185,8 +195,9 @@ __all__ = [
     "Reconciler", "DataQualityMonitor", "compliance_check",
     # Walk-forward + TCA
     "WalkForwardEngine", "WalkForwardResult", "TransactionCostAnalyzer", "MonteCarloBacktester",
-    # Agent gateway
+    # Agent gateway + social network
     "AgentGateway",
+    "SwarmNetwork",
     # Config, reconciliation, logging
     "TradingConfig", "BalanceReconciler", "setup_logging",
     # Checkpoint, rate limiting, demo

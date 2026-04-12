@@ -236,18 +236,29 @@ class Bus:
         self._subs: dict[str, list[Callable[[Any], Awaitable[None]]]] = {}
         self._topic_locks: dict[str, asyncio.Lock] = {}
         self._processed_ids: set[str] = set()  # idempotency tracking
+        self._pending_tasks: set[asyncio.Task] = set()  # prevent GC of fire-and-forget tasks
 
     def subscribe(self, topic: str, fn: Callable[[Any], Awaitable[None]]) -> None:
         self._subs.setdefault(topic, []).append(fn)
-        if topic not in self._topic_locks:
-            self._topic_locks[topic] = asyncio.Lock()
+        # Use setdefault for atomic lock creation (avoids race condition)
+        self._topic_locks.setdefault(topic, asyncio.Lock())
 
     async def publish(self, topic: str, msg: Any) -> None:
-        lock = self._topic_locks.get(topic)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._topic_locks[topic] = lock
-        asyncio.create_task(self._dispatch(lock, topic, msg))
+        lock = self._topic_locks.setdefault(topic, asyncio.Lock())
+        task = asyncio.create_task(self._dispatch(lock, topic, msg))
+        self._pending_tasks.add(task)
+        task.add_done_callback(self._task_done)
+
+    def _task_done(self, task: asyncio.Task) -> None:
+        """Log unhandled exceptions from dispatch tasks and clean up."""
+        self._pending_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            import logging
+            logging.getLogger("bus").error(
+                "Bus dispatch task failed: %s", exc, exc_info=exc)
 
     async def _dispatch(self, lock: asyncio.Lock, topic: str, msg: Any) -> None:
         async with lock:
@@ -267,10 +278,18 @@ class Bus:
             self._processed_ids -= set(to_remove)
         return False
 
+    _HANDLER_TIMEOUT = 30.0  # seconds — kill hung handlers
+
     @staticmethod
     async def _safe(fn, msg):
         try:
-            await fn(msg)
+            await asyncio.wait_for(fn(msg), timeout=Bus._HANDLER_TIMEOUT)
+        except asyncio.TimeoutError:
+            import logging
+            logging.getLogger("bus").error(
+                "handler %s.%s timed out after %.0fs",
+                getattr(fn, '__module__', '?'), getattr(fn, '__qualname__', '?'),
+                Bus._HANDLER_TIMEOUT)
         except Exception as e:  # pragma: no cover
             import logging
             logging.getLogger("bus").exception("handler failed: %s", e)

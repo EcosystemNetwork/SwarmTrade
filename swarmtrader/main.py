@@ -111,6 +111,23 @@ from .kalman import AdaptiveKalmanFilter
 from .fusion import DataFusionPipeline
 from .debate import setup_debate_engine, ELOTracker
 from .agent_policies import ExecutionSandbox
+from .vault import VaultManager, vault_trade_check
+from .marketplace import AgentMarketplace
+from .flashloan import FlashLoanExecutor
+from .strategy_nft import StrategyNFTManager
+from .v4_hooks import V4HookManager
+from .cross_chain import CrossChainCoordinator
+from .zk_trading import CommitRevealEngine
+from .rugpull_detector import RugpullDetector
+from .prediction_trader import PredictionTrader
+from .agent_payments import AgentPaymentProtocol
+from .strategy_evolution import StrategyEvolution
+from .ai_brain import AIBrain
+from .narrative import NarrativeEngine
+from .whale_mirror import WhaleMirrorAgent
+from .intent_solver import IntentSolverNetwork
+from .liquidation_shield import LiquidationShield
+from .governance import GovernanceDAO
 from .agent_registry import AgentRegistry
 from .arb_executor import ArbScanner, ArbExecutor
 from .dex_quotes import DEXQuoteProvider
@@ -181,6 +198,9 @@ def parse_args() -> argparse.Namespace:
                    help="Disable advanced agents (orderbook, funding, spread)")
     p.add_argument("--web", action="store_true",
                    help="Launch web dashboard on http://localhost:8080")
+    p.add_argument("--web-host", type=str,
+                   default=os.getenv("SWARM_WEB_HOST", "127.0.0.1"),
+                   help="Web dashboard bind address (default: 127.0.0.1, use 0.0.0.0 for Docker)")
     p.add_argument("--web-port", type=int,
                    default=int(os.getenv("PORT", "8080")),
                    help="Web dashboard port (default: $PORT or 8080)")
@@ -216,6 +236,57 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _validate_env_config(log):
+    """Validate environment variable types and ranges at startup. Fail fast on bad config."""
+    errors = []
+
+    def _check_int(name, min_val=None, max_val=None):
+        val = os.getenv(name)
+        if val is None:
+            return
+        try:
+            n = int(val)
+            if min_val is not None and n < min_val:
+                errors.append(f"{name}={val} must be >= {min_val}")
+            if max_val is not None and n > max_val:
+                errors.append(f"{name}={val} must be <= {max_val}")
+        except ValueError:
+            errors.append(f"{name}={val!r} is not a valid integer")
+
+    def _check_float(name, min_val=None, max_val=None):
+        val = os.getenv(name)
+        if val is None:
+            return
+        try:
+            f = float(val)
+            if min_val is not None and f < min_val:
+                errors.append(f"{name}={val} must be >= {min_val}")
+            if max_val is not None and f > max_val:
+                errors.append(f"{name}={val} must be <= {max_val}")
+        except ValueError:
+            errors.append(f"{name}={val!r} is not a valid float")
+
+    # Database
+    _check_int("SWARM_DB_MIN_POOL", min_val=1, max_val=50)
+    _check_int("SWARM_DB_MAX_POOL", min_val=1, max_val=100)
+    # Price gate
+    _check_int("PRICE_GATE_SAFE_BPS", min_val=1, max_val=1000)
+    _check_int("PRICE_GATE_WARN_BPS", min_val=1, max_val=5000)
+    _check_float("PRICE_GATE_RETRY_DELAY", min_val=0.1, max_val=60)
+    _check_int("PRICE_GATE_MAX_RETRIES", min_val=0, max_val=10)
+    _check_float("PRICE_GATE_STALE_SECS", min_val=5, max_val=300)
+    # Web
+    _check_int("PORT", min_val=1, max_val=65535)
+
+    if errors:
+        for err in errors:
+            log.error("CONFIG ERROR: %s", err)
+        raise SystemExit(
+            f"Startup aborted: {len(errors)} config error(s). Check env vars."
+        )
+    log.info("Environment config validated OK")
+
+
 async def run(args: argparse.Namespace):
     load_dotenv()
     # Expose mode to submodules (e.g. web.py token enforcement)
@@ -230,6 +301,9 @@ async def run(args: argparse.Namespace):
     log.setLevel(logging.INFO)
     log.info("Swarm Trade starting: mode=%s duration=%.0fs pairs=%s",
              args.mode, args.duration, args.pairs)
+
+    # Pre-flight: validate environment config
+    _validate_env_config(log)
 
     # Pre-flight: live mode safety gate
     if args.mode == "live":
@@ -623,6 +697,127 @@ async def run(args: argparse.Namespace):
         sandbox.set_permission(agent_name, ExecutionSandbox.TRADE_ONLY)
     log.info("Execution sandbox: %d agents sandboxed to TRADE_ONLY", len(sandbox._agent_permissions))
 
+    # ── ERC-4626 Vault Manager (standard fund custody) ─────────
+    vault_mode = os.getenv("VAULT_MODE", "simulate")
+    vault = VaultManager(bus, mode=vault_mode, daily_limit=args.capital * 5)
+    # Seed vault with initial capital in simulate mode
+    if vault_mode == "simulate" and args.capital > 0:
+        vault.deposit("system", args.capital)
+        vault.add_allowed_token("ETH")
+        vault.add_allowed_token("BTC")
+        vault.add_allowed_token("WETH")
+    log.info("ERC-4626 vault: mode=%s assets=$%.0f daily_limit=$%.0f",
+             vault_mode, vault.state.total_assets, vault.state.daily_limit)
+
+    # ── Agent Marketplace (competitive signal auctions) ──────
+    marketplace = AgentMarketplace(
+        bus, auction_window_s=10.0, min_bids=1, elo_tracker=elo_tracker,
+    )
+    log.info("Agent marketplace: competitive signal auctions (window=10s)")
+
+    # ── Flash Loan Arbitrage Engine ──────────────────────────
+    flash_mode = os.getenv("FLASHLOAN_MODE", "simulate")
+    flashloan = FlashLoanExecutor(
+        bus, mode=flash_mode,
+        min_profit_usd=float(os.getenv("FLASHLOAN_MIN_PROFIT_USD", "5.0")),
+        cooldown_s=float(os.getenv("FLASHLOAN_COOLDOWN_S", "60")),
+    )
+    log.info("Flash loan arb: mode=%s min_profit=$%.1f", flash_mode, flashloan.simulator.min_profit_usd)
+
+    # ── Strategy-as-NFT Manager ──────────────────────────────
+    strategy_nft = StrategyNFTManager(bus, mode=os.getenv("STRATEGY_NFT_MODE", "simulate"))
+    log.info("Strategy NFT: mintable/forkable strategies with royalty chain")
+
+    # ── Uniswap v4 Hook Manager ──────────────────────────────
+    v4_mode = os.getenv("V4_MODE", "simulate")
+    v4_hooks = V4HookManager(bus, mode=v4_mode)
+    # Register default pools
+    v4_hooks.register_pool("eth-usdc-30", "ETH", "USDC", fee_bps=30)
+    v4_hooks.register_pool("btc-usdc-30", "BTC", "USDC", fee_bps=30)
+    log.info("V4 hooks: %d pools monitored (mode=%s)", len(v4_hooks._pools), v4_mode)
+
+    # ── Cross-Chain Coordinator ──────────────────────────────
+    cc_chains = [int(c) for c in os.getenv("CROSSCHAIN_CHAINS", "8453,42161,10").split(",")]
+    crosschain = CrossChainCoordinator(
+        bus, chains=cc_chains,
+        min_yield_diff=float(os.getenv("CROSSCHAIN_MIN_YIELD_DIFF", "2.0")),
+        max_rebalance_pct=float(os.getenv("CROSSCHAIN_REBALANCE_PCT", "25")),
+    )
+    log.info("Cross-chain: monitoring %d chains for yield optimization", len(cc_chains))
+
+    # ── ZK Private Trading (commit-reveal dark pool) ─────────
+    zk_engine = CommitRevealEngine(bus)
+    log.info("ZK trading: commit-reveal dark pool with batch matching")
+
+    # ── Phase 11: Rugpull/Scam Detection ─────────────────────
+    rugpull = RugpullDetector(
+        bus, mode=os.getenv("RUGPULL_MODE", "strict"),
+        min_age_days=float(os.getenv("RUGPULL_MIN_AGE_DAYS", "7")),
+        min_liquidity_usd=float(os.getenv("RUGPULL_MIN_LIQ_USD", "50000")),
+    )
+    log.info("Rugpull detector: mode=%s min_age=%dd min_liq=$%.0f",
+             rugpull.mode, rugpull.min_age_days, rugpull.min_liquidity_usd)
+
+    # ── Phase 12: Prediction Market Trading ──────────────────
+    prediction = PredictionTrader(
+        bus, mode=os.getenv("POLYMARKET_MODE", "simulate"),
+        kelly_frac=float(os.getenv("PREDICTION_KELLY_FRAC", "0.15")),
+        min_edge=float(os.getenv("PREDICTION_MIN_EDGE", "0.05")),
+    )
+    log.info("Prediction trader: mode=%s kelly=%.2f min_edge=%.1f%%",
+             prediction.mode, prediction.kelly_frac, prediction.min_edge * 100)
+
+    # ── Phase 13: Agent Payment Protocol ─────────────────────
+    agent_pay = AgentPaymentProtocol(bus, default_budget=args.capital * 0.01)
+    log.info("Agent payments: micropayment protocol with batch settlement")
+
+    # ── Phase 14: Genetic Strategy Evolution ─────────────────
+    evolution = StrategyEvolution(
+        bus, population_size=50, elite_pct=0.2,
+        mutation_rate=0.15, max_generations=100,
+    )
+    log.info("Strategy evolution: genetic algorithm (pop=%d, elite=%.0f%%)",
+             evolution.population_size, evolution.elite_pct * 100)
+
+    # ── Phase 15: Multi-Model AI Brain ───────────────────────
+    ai_brain = AIBrain(
+        bus, provider=os.getenv("AI_BRAIN_PROVIDER", "groq"),
+        model=os.getenv("AI_BRAIN_MODEL", ""),
+        api_key=os.getenv("AI_BRAIN_API_KEY", ""),
+    )
+    log.info("AI brain: %s/%s", ai_brain.provider, ai_brain.model)
+
+    # ── Phase 16: Narrative Engine ───────────────────────────
+    narrative = NarrativeEngine(bus, window_s=300.0, min_events_for_narrative=2)
+    log.info("Narrative engine: event correlation -> market stories")
+
+    # ── Phase 17: Whale Mirror Agent ─────────────────────────
+    whale_mirror = WhaleMirrorAgent(
+        bus, max_mirror_pct=float(os.getenv("MIRROR_MAX_PCT", "5")),
+        min_whale_reliability=0.6,
+        max_mirror_usd=float(os.getenv("MIRROR_MAX_USD", "2000")),
+    )
+    log.info("Whale mirror: auto-copy smart money (max=$%.0f, %.0f%% cap)",
+             whale_mirror.max_mirror_usd, whale_mirror.max_mirror_pct)
+
+    # ── Phase 18: Intent Solver Network ──────────────────────
+    solver_net = IntentSolverNetwork(bus, auction_window_s=5.0)
+    log.info("Intent solver: %d competing solvers for best execution",
+             len(solver_net._solvers))
+
+    # ── Phase 19: Liquidation Cascade Shield ─────────────────
+    liq_shield = LiquidationShield(
+        bus, auto_deleverage=True,
+        deleverage_pct=float(os.getenv("SHIELD_DELEVERAGE_PCT", "25")),
+    )
+    log.info("Liquidation shield: auto-deleverage at health < %.1f",
+             liq_shield.DANGER_THRESHOLD)
+
+    # ── Phase 20: Agent Governance DAO ───────────────────────
+    governance = GovernanceDAO(bus, elo_tracker=elo_tracker)
+    log.info("Governance DAO: ELO-weighted voting, %.0f%% quorum, %.0f%% approval",
+             30.0, 60.0)
+
     # ── Agent Registry (Unstoppable Domains identity) ─────────
     agent_registry = AgentRegistry(
         bus, owner_address=os.getenv("WALLET_ADDRESS", ""),
@@ -826,7 +1021,7 @@ async def run(args: argparse.Namespace):
     log.info("Price gate: SAFE<%dbps WARN<%dbps HALT>=200bps", 50, 200)
 
     # ── Execution Pipeline ──────────────────────────────────────
-    Simulator(bus)
+    Simulator(bus, kill_switch=kill_switch)
     if args.mode == "mock":
         Executor(bus, kill_switch=kill_switch, dry_run=True, portfolio=portfolio)
     else:
@@ -875,6 +1070,9 @@ async def run(args: argparse.Namespace):
             bus, strategist=strategist, portfolio=portfolio,
             master_key=master_key,
         )
+        # Wire gateway to HermesBrain so it pushes briefs to connected agents
+        if hermes:
+            hermes.gateway = gateway
         log.info("Agent Gateway enabled — external agents can connect")
         log.info("  master_key configured (length=%d)", len(gateway.master_key))
         if not args.web:
@@ -944,13 +1142,17 @@ async def run(args: argparse.Namespace):
         from .social_trading import SocialTradingEngine
         social = SocialTradingEngine(bus, db=db)
 
+        # Agent social network (posts, communities, data feeds, DMs)
+        from .swarm_network import SwarmNetwork
+        network = SwarmNetwork(bus)
+
         web_dash = WebDashboard(
             bus, state, db=db,
-            kill_switch=kill_switch, port=args.web_port,
+            kill_switch=kill_switch, host=args.web_host, port=args.web_port,
             wallet=wallet, gateway=gateway,
             strategist=strategist, capital_allocator=cap_alloc,
             memory=memory, erc8004=erc8004, uniswap=uniswap,
-            social=social,
+            social=social, network=network,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
@@ -1006,9 +1208,24 @@ async def run(args: argparse.Namespace):
         "assets": assets,
     })
 
+    # ── SIGTERM/SIGINT handler for graceful shutdown ─────────────
+    import signal
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, shutdown_event.set)
+
     # ── Run ──────────────────────────────────────────────────────
     try:
-        await asyncio.sleep(args.duration)
+        # Wait for either duration or shutdown signal
+        sleep_task = asyncio.create_task(asyncio.sleep(args.duration))
+        signal_task = asyncio.create_task(shutdown_event.wait())
+        done, pending = await asyncio.wait(
+            {sleep_task, signal_task}, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        if shutdown_event.is_set():
+            log.info("Received shutdown signal")
     except asyncio.CancelledError:
         pass
     finally:
@@ -1036,6 +1253,30 @@ async def run(args: argparse.Namespace):
                 await t
             except (asyncio.CancelledError, Exception):
                 pass
+        # Close web dashboard (aiohttp server + WebSocket connections)
+        if 'web_dash' in locals():
+            try:
+                await web_dash.stop()
+                log.info("Web dashboard stopped")
+            except Exception as e:
+                log.warning("Web dashboard stop failed: %s", e)
+
+        # Close Kraken WebSocket client
+        if ws_v2_client is not None:
+            try:
+                await ws_v2_client.close()
+                log.info("Kraken WS client closed")
+            except Exception as e:
+                log.warning("Kraken WS close failed: %s", e)
+
+        # Close Kraken REST client session
+        try:
+            from .kraken_api import close_client
+            await close_client()
+            log.info("Kraken REST client closed")
+        except Exception as e:
+            log.debug("Kraken REST close: %s", e)
+
         # Close database connection pool
         await db.close()
         log.info("SWARM SHUTDOWN complete")

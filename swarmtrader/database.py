@@ -15,11 +15,39 @@ Usage:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from pathlib import Path
 
 log = logging.getLogger("swarm.db")
+
+# Retry config for transient DB errors (Neon cold starts, network blips)
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 0.5  # seconds, doubles each retry
+
+
+async def _retry_pg(fn, *args, **kwargs):
+    """Execute an async Postgres operation with exponential backoff retry."""
+    last_exc = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await fn(*args, **kwargs)
+        except Exception as e:
+            last_exc = e
+            err_str = str(e).lower()
+            # Only retry on transient/connection errors
+            transient = any(k in err_str for k in (
+                "connection", "timeout", "closed", "pool", "broken pipe",
+                "server closed", "ssl", "operational",
+            ))
+            if not transient or attempt == _MAX_RETRIES - 1:
+                raise
+            delay = _RETRY_BASE_DELAY * (2 ** attempt)
+            log.warning("DB transient error (attempt %d/%d, retry in %.1fs): %s",
+                        attempt + 1, _MAX_RETRIES, delay, e)
+            await asyncio.sleep(delay)
+    raise last_exc  # unreachable, but satisfies type checker
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -153,6 +181,117 @@ CREATE TABLE IF NOT EXISTS agent_achievements (
     unlocked_at         TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (agent_id, achievement_id)
 );
+
+-- SwarmNetwork: agent social network for intelligence sharing
+CREATE TABLE IF NOT EXISTS network_posts (
+    id                  TEXT PRIMARY KEY,
+    author_id           TEXT NOT NULL,
+    community_id        TEXT NOT NULL DEFAULT 'general',
+    title               TEXT NOT NULL,
+    body                TEXT DEFAULT '',
+    post_type           TEXT DEFAULT 'analysis',
+    structured_data     JSONB DEFAULT '{}',
+    tags                JSONB DEFAULT '[]',
+    assets              JSONB DEFAULT '[]',
+    upvotes             INTEGER DEFAULT 0,
+    downvotes           INTEGER DEFAULT 0,
+    comment_count       INTEGER DEFAULT 0,
+    view_count          INTEGER DEFAULT 0,
+    verified_outcome    TEXT,
+    outcome_pnl         DOUBLE PRECISION,
+    ts                  DOUBLE PRECISION NOT NULL,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS network_comments (
+    id                  TEXT PRIMARY KEY,
+    post_id             TEXT NOT NULL,
+    author_id           TEXT NOT NULL,
+    parent_id           TEXT,
+    body                TEXT NOT NULL,
+    upvotes             INTEGER DEFAULT 0,
+    downvotes           INTEGER DEFAULT 0,
+    ts                  DOUBLE PRECISION NOT NULL,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS network_communities (
+    id                  TEXT PRIMARY KEY,
+    display_name        TEXT NOT NULL,
+    description         TEXT DEFAULT '',
+    community_type      TEXT DEFAULT 'general',
+    creator_id          TEXT NOT NULL,
+    tags                JSONB DEFAULT '[]',
+    assets              JSONB DEFAULT '[]',
+    member_count        INTEGER DEFAULT 0,
+    post_count          INTEGER DEFAULT 0,
+    moderators          JSONB DEFAULT '[]',
+    pinned_posts        JSONB DEFAULT '[]',
+    last_activity       DOUBLE PRECISION DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS network_memberships (
+    agent_id            TEXT NOT NULL,
+    community_id        TEXT NOT NULL,
+    joined_at           TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (agent_id, community_id)
+);
+
+CREATE TABLE IF NOT EXISTS network_data_feeds (
+    id                  TEXT PRIMARY KEY,
+    publisher_id        TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    description         TEXT DEFAULT '',
+    feed_type           TEXT DEFAULT 'custom',
+    assets              JSONB DEFAULT '[]',
+    subscriber_count    INTEGER DEFAULT 0,
+    total_updates       INTEGER DEFAULT 0,
+    last_update         DOUBLE PRECISION DEFAULT 0,
+    avg_accuracy        DOUBLE PRECISION DEFAULT 0,
+    public              BOOLEAN DEFAULT TRUE,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS network_feed_subscriptions (
+    agent_id            TEXT NOT NULL,
+    feed_id             TEXT NOT NULL,
+    subscribed_at       TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (agent_id, feed_id)
+);
+
+CREATE TABLE IF NOT EXISTS network_dm_threads (
+    thread_id           TEXT PRIMARY KEY,
+    agent_a             TEXT NOT NULL,
+    agent_b             TEXT NOT NULL,
+    status              TEXT DEFAULT 'pending',
+    initiated_by        TEXT NOT NULL,
+    last_message_at     DOUBLE PRECISION DEFAULT 0,
+    unread_a            INTEGER DEFAULT 0,
+    unread_b            INTEGER DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS network_dms (
+    id                  TEXT PRIMARY KEY,
+    thread_id           TEXT NOT NULL,
+    sender_id           TEXT NOT NULL,
+    receiver_id         TEXT NOT NULL,
+    body                TEXT NOT NULL,
+    structured_data     JSONB,
+    read                BOOLEAN DEFAULT FALSE,
+    ts                  DOUBLE PRECISION NOT NULL,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS network_votes (
+    agent_id            TEXT NOT NULL,
+    target_id           TEXT NOT NULL,
+    target_type         TEXT NOT NULL,
+    direction           TEXT NOT NULL,
+    voted_at            TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (agent_id, target_id)
+);
 """
 
 POSTGRES_INDEXES = [
@@ -176,6 +315,22 @@ POSTGRES_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_feed_agent ON social_feed(agent_id)",
     "CREATE INDEX IF NOT EXISTS idx_feed_type ON social_feed(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_achievements_agent ON agent_achievements(agent_id)",
+    # SwarmNetwork indexes
+    "CREATE INDEX IF NOT EXISTS idx_net_posts_community ON network_posts(community_id, ts DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_net_posts_author ON network_posts(author_id, ts DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_net_posts_type ON network_posts(post_type)",
+    "CREATE INDEX IF NOT EXISTS idx_net_posts_ts ON network_posts(ts DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_net_comments_post ON network_comments(post_id, ts)",
+    "CREATE INDEX IF NOT EXISTS idx_net_comments_author ON network_comments(author_id)",
+    "CREATE INDEX IF NOT EXISTS idx_net_memberships_community ON network_memberships(community_id)",
+    "CREATE INDEX IF NOT EXISTS idx_net_memberships_agent ON network_memberships(agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_net_feeds_publisher ON network_data_feeds(publisher_id)",
+    "CREATE INDEX IF NOT EXISTS idx_net_feeds_type ON network_data_feeds(feed_type)",
+    "CREATE INDEX IF NOT EXISTS idx_net_feed_subs_feed ON network_feed_subscriptions(feed_id)",
+    "CREATE INDEX IF NOT EXISTS idx_net_feed_subs_agent ON network_feed_subscriptions(agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_net_dms_thread ON network_dms(thread_id, ts)",
+    "CREATE INDEX IF NOT EXISTS idx_net_dm_threads_agents ON network_dm_threads(agent_a)",
+    "CREATE INDEX IF NOT EXISTS idx_net_votes_target ON network_votes(target_id)",
 ]
 
 SQLITE_SCHEMA = [
@@ -277,6 +432,24 @@ class Database:
         backend = "Postgres (Neon)" if self.is_postgres else f"SQLite ({self._sqlite_path})"
         log.info("Database connected: %s", backend)
 
+    async def check_health(self) -> dict:
+        """Run a lightweight health check. Returns {"ok": bool, "backend": str, "latency_ms": float}."""
+        import time as _t
+        if not self._connected:
+            return {"ok": False, "backend": "disconnected", "latency_ms": 0}
+        start = _t.monotonic()
+        try:
+            if self.is_postgres:
+                await self.fetchval("SELECT 1")
+            else:
+                await self.fetchval("SELECT 1")
+            elapsed = (_t.monotonic() - start) * 1000
+            backend = "postgres" if self.is_postgres else "sqlite"
+            return {"ok": True, "backend": backend, "latency_ms": round(elapsed, 1)}
+        except Exception as e:
+            elapsed = (_t.monotonic() - start) * 1000
+            return {"ok": False, "backend": "error", "latency_ms": round(elapsed, 1), "error": str(e)}
+
     async def close(self):
         """Drain the pool / close the file handle."""
         if not self._connected:
@@ -335,9 +508,14 @@ class Database:
             min_size=self._min_pool,
             max_size=self._max_pool,
             kwargs={"autocommit": False},
+            open=False,  # open manually with timeout
         )
         await self._pool.open()
-        await self._pool.wait()
+        try:
+            await asyncio.wait_for(self._pool.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            log.error("Database connection pool timed out after 30s")
+            raise ConnectionError("Database connection pool failed to initialize within 30s")
 
         # Initialize schema
         async with self._pool.connection() as conn:
@@ -350,45 +528,57 @@ class Database:
                  4, len(POSTGRES_INDEXES))
 
     async def _pg_execute(self, query: str, args: tuple):
-        async with self._pool.connection() as conn:
-            await conn.execute(query, args if args else None)
-            await conn.commit()
+        async def _do():
+            async with self._pool.connection() as conn:
+                await conn.execute(query, args if args else None)
+                await conn.commit()
+        await _retry_pg(_do)
 
     async def _pg_fetch(self, query: str, args: tuple) -> list[dict]:
-        async with self._pool.connection() as conn:
-            cursor = await conn.execute(query, args if args else None)
-            columns = [desc.name for desc in cursor.description or []]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+        async def _do():
+            async with self._pool.connection() as conn:
+                cursor = await conn.execute(query, args if args else None)
+                columns = [desc.name for desc in cursor.description or []]
+                rows = await cursor.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
+        return await _retry_pg(_do)
 
     # ── SQLite implementation ──────────────────────────────────────
 
     def _connect_sqlite(self):
-        import asyncio
+        import asyncio, concurrent.futures
         if not self._sqlite_path:
             self._sqlite_path = Path("swarm.db")
         self._sqlite_conn = sqlite3.connect(self._sqlite_path, check_same_thread=False)
+        self._sqlite_conn.execute("PRAGMA journal_mode=WAL")  # safer concurrent access
+        self._sqlite_conn.execute("PRAGMA busy_timeout=5000")  # wait up to 5s on lock
         self._sqlite_conn.row_factory = sqlite3.Row
         for sql in SQLITE_SCHEMA:
             self._sqlite_conn.execute(sql)
         self._sqlite_conn.commit()
-        log.info("SQLite schema initialized: %s", self._sqlite_path)
+        # Single-thread executor to serialize all SQLite operations
+        self._sqlite_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="sqlite"
+        )
+        log.info("SQLite schema initialized (WAL mode): %s", self._sqlite_path)
 
     async def _sqlite_execute(self, query: str, args: tuple):
         import asyncio
         q, a = self._adapt_query(query, args)
+        loop = asyncio.get_running_loop()
         def _run():
             self._sqlite_conn.execute(q, a)
             self._sqlite_conn.commit()
-        await asyncio.to_thread(_run)
+        await loop.run_in_executor(self._sqlite_executor, _run)
 
     async def _sqlite_fetch(self, query: str, args: tuple) -> list[dict]:
         import asyncio
         q, a = self._adapt_query(query, args)
+        loop = asyncio.get_running_loop()
         def _run():
             rows = self._sqlite_conn.execute(q, a).fetchall()
             return [dict(r) for r in rows]
-        return await asyncio.to_thread(_run)
+        return await loop.run_in_executor(self._sqlite_executor, _run)
 
     def _adapt_query(self, query: str, args: tuple) -> tuple[str, tuple]:
         """Convert Postgres $1, $2 placeholders to SQLite ? placeholders.

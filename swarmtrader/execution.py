@@ -10,6 +10,7 @@ from .core import (
     Bus, TradeIntent, ExecutionReport, MarketSnapshot,
     PortfolioTracker, QUOTE_ASSETS,
 )
+from collections import OrderedDict
 from .safety import KillSwitch
 
 log = logging.getLogger("swarm")
@@ -32,35 +33,49 @@ class Simulator:
     Slippage model: 5 bps per $1k notional (linear), applied adversely."""
     SLIPPAGE_BPS_PER_1K = 5
 
-    def __init__(self, bus: Bus):
+    def __init__(self, bus: Bus, kill_switch: "KillSwitch | None" = None):
         self.bus = bus
+        self.kill_switch = kill_switch
         self.last_price: float | None = None
+        self._last_price_ts: float = 0.0  # track staleness
+        self._stale_threshold: float = 60.0  # reject prices older than 60s
         bus.subscribe("market.snapshot", self._on_snap)
         # PriceValidationGate intercepts exec.go -> validates -> publishes exec.validated
         # Simulator listens to exec.validated (gate present) or exec.go (no gate)
         bus.subscribe("exec.validated", self._on_go)
         bus.subscribe("exec.go", self._on_go)
-        self._seen_intents: set[str] = set()
+        self._seen_intents: OrderedDict[str, None] = OrderedDict()
 
     def _dedup(self, intent_id: str) -> bool:
         """Prevent double-execution when both exec.go and exec.validated fire."""
         if intent_id in self._seen_intents:
             return True
-        self._seen_intents.add(intent_id)
+        self._seen_intents[intent_id] = None
         if len(self._seen_intents) > 2000:
-            # Trim oldest half (sets are unordered, but prevents unbounded growth)
-            to_remove = list(self._seen_intents)[:1000]
-            self._seen_intents -= set(to_remove)
+            # FIFO eviction — OrderedDict preserves insertion order
+            while len(self._seen_intents) > 1000:
+                self._seen_intents.popitem(last=False)
         return False
 
     async def _on_snap(self, snap: MarketSnapshot):
         for price in snap.prices.values():
             self.last_price = price
+            self._last_price_ts = time.time()
             break
 
     async def _on_go(self, intent: TradeIntent):
         if self._dedup(intent.id):
             return  # Already processed via the other topic
+        # Kill switch check — do not simulate trades when halted
+        if self.kill_switch and self.kill_switch.active:
+            log.warning("SIMULATOR: kill switch active, rejecting intent %s", intent.id)
+            return
+        # Stale price check
+        if self.last_price is not None and (time.time() - self._last_price_ts) > self._stale_threshold:
+            log.warning("SIMULATOR: price data stale (%.0fs old), rejecting intent %s",
+                        time.time() - self._last_price_ts, intent.id)
+            await self.bus.publish("exec.simulated", (intent, None))
+            return
         if self.last_price is None:
             await self.bus.publish("exec.simulated", (intent, None))
             return

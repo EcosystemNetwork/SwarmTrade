@@ -12,6 +12,7 @@ from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, Executi
 from .report import load_from_db, generate_html_report
 from .gateway import AgentGateway, ConnectedAgent
 from .social_trading import SocialTradingEngine
+from .swarm_network import SwarmNetwork
 
 log = logging.getLogger("swarm.web")
 
@@ -41,6 +42,64 @@ def _safe_float(value, *, default: float = 0.0, min_val: float | None = None,
     return f
 
 
+# ── API Rate Limiter ──────────────────────────────────────────────
+class _APIRateLimiter:
+    """Simple per-IP token bucket rate limiter for HTTP API endpoints."""
+    def __init__(self, requests_per_minute: int = 60):
+        self._rpm = requests_per_minute
+        self._buckets: dict[str, list[float]] = {}
+
+    def check(self, ip: str) -> bool:
+        """Returns True if request is allowed, False if rate-limited."""
+        now = time.time()
+        window = self._buckets.setdefault(ip, [])
+        # Prune old entries
+        cutoff = now - 60.0
+        self._buckets[ip] = window = [t for t in window if t > cutoff]
+        if len(window) >= self._rpm:
+            return False
+        window.append(now)
+        return True
+
+    def cleanup(self):
+        """Remove stale IPs (call periodically)."""
+        now = time.time()
+        cutoff = now - 120.0
+        stale = [ip for ip, ts in self._buckets.items() if not ts or ts[-1] < cutoff]
+        for ip in stale:
+            del self._buckets[ip]
+
+_api_limiter = _APIRateLimiter(requests_per_minute=60)
+_api_critical_limiter = _APIRateLimiter(requests_per_minute=10)  # emergency controls
+
+# Paths with stricter rate limits (emergency controls, wallet ops)
+_CRITICAL_PATHS = frozenset({
+    "/api/cancel-all", "/api/flatten", "/api/pause",
+    "/api/wallet/deposit", "/api/wallet/withdraw",
+})
+
+
+@web.middleware
+async def security_headers_middleware(request: web.Request, handler):
+    """Add security headers to all responses."""
+    response = await handler(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-XSS-Protection", "1; mode=block")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self' ws: wss:; "
+        "frame-ancestors 'none';"
+    )
+    return response
+
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """Require Bearer token for all API/WS endpoints.
@@ -64,6 +123,7 @@ async def auth_middleware(request: web.Request, handler):
             path.startswith("/api/gateway/agents") or
             path.startswith("/api/gateway/registry") or
             path.startswith("/api/gateway/disconnect") or
+            path.startswith("/api/gateway/chat") or
             path == "/ws/agent"):
         return await handler(request)
 
@@ -90,19 +150,39 @@ async def auth_middleware(request: web.Request, handler):
     )
 
 
+@web.middleware
+async def rate_limit_middleware(request: web.Request, handler):
+    """Rate limit API endpoints. Static assets and WebSocket are exempt."""
+    path = request.path
+    if not path.startswith("/api/"):
+        return await handler(request)
+    ip = request.remote or "unknown"
+    limiter = _api_critical_limiter if path in _CRITICAL_PATHS else _api_limiter
+    if not limiter.check(ip):
+        return web.json_response(
+            {"error": "rate limit exceeded", "retry_after": 60},
+            status=429,
+        )
+    return await handler(request)
+
+
 class WebDashboard:
     """Serves the frontend and streams Bus events over WebSocket."""
 
     # Rate-limit: max WebSocket commands per client per minute
     _CMD_RATE_LIMIT = 60
     _CMD_WINDOW_SECS = 60.0
+    # Max concurrent dashboard WebSocket connections
+    _MAX_WS_CLIENTS = 100
+    # Max inbound message size (64KB — signals and commands are small JSON)
+    _WS_MAX_MSG_SIZE = 64 * 1024
 
     def __init__(self, bus: Bus, state: dict, db=None,
-                 kill_switch=None, host: str = "0.0.0.0", port: int = 8080,
+                 kill_switch=None, host: str = "127.0.0.1", port: int = 8080,
                  wallet=None, gateway: AgentGateway | None = None,
                  strategist=None, capital_allocator=None,
                  memory=None, erc8004=None, uniswap=None,
-                 social=None):
+                 social=None, network=None):
         self.bus = bus
         self.state = state
         self.db = db  # Database instance
@@ -117,6 +197,7 @@ class WebDashboard:
         self.strategist = strategist  # Strategist instance (for NLP config)
         self.capital_allocator = capital_allocator  # CapitalAllocator (leaderboard)
         self.social = social  # SocialTradingEngine instance (optional)
+        self.network = network  # SwarmNetwork instance (optional)
         self._privacy_mgr = None  # lazy init
         self._pyth_oracle = None  # lazy init
         self._clients: set[web.WebSocketResponse] = set()
@@ -166,6 +247,9 @@ class WebDashboard:
         bus.subscribe("wallet.rebalance", self._on_wallet_rebalance)
         bus.subscribe("memory.thought", self._on_thought)
         bus.subscribe("social.feed", self._on_social_feed)
+        bus.subscribe("network.post", self._on_network_post)
+        bus.subscribe("network.comment", self._on_network_comment)
+        bus.subscribe("network.feed_update", self._on_network_feed_update)
 
         self._init_agents()
 
@@ -385,6 +469,11 @@ class WebDashboard:
             "approve": v.approve, "reason": v.reason,
         }
         self.verdicts.setdefault(v.intent_id, []).append(d)
+        # Prevent unbounded growth — keep verdicts for recent intents only
+        if len(self.verdicts) > 200:
+            # Keep only the last 100 intent IDs
+            recent_ids = set(i["id"] for i in self.recent_intents[-100:])
+            self.verdicts = {k: v2 for k, v2 in self.verdicts.items() if k in recent_ids}
 
         agent_map = {"size": "RiskAgent_Size", "allowlist": "RiskAgent_Allowlist",
                      "drawdown": "RiskAgent_Drawdown",
@@ -440,6 +529,15 @@ class WebDashboard:
     async def _on_social_feed(self, data: dict):
         await self._broadcast("social_feed", data)
 
+    async def _on_network_post(self, data: dict):
+        await self._broadcast("network_post", data)
+
+    async def _on_network_comment(self, data: dict):
+        await self._broadcast("network_comment", data)
+
+    async def _on_network_feed_update(self, data: dict):
+        await self._broadcast("network_feed_update", data)
+
     # ── Quantitative system event handlers ─────────────────────────
 
     async def _on_var_update(self, data: dict):
@@ -471,7 +569,14 @@ class WebDashboard:
     # ── WebSocket Handler ──────────────────────────────────────────
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=1024 * 1024)
+        # Enforce connection limit
+        if len(self._clients) >= self._MAX_WS_CLIENTS:
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=1013, message=b"max connections reached")
+            return ws
+
+        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=self._WS_MAX_MSG_SIZE)
         await ws.prepare(request)
         self._clients.add(ws)
         log.info("WebSocket client connected (%d total)", len(self._clients))
@@ -837,8 +942,47 @@ class WebDashboard:
             return web.Response(text="Error generating report", status=500)
 
     async def _handle_health(self, request: web.Request) -> web.Response:
-        """Unauthenticated health check for monitoring."""
-        return web.json_response({"status": "ok", "uptime": time.time() - self.start_time})
+        """Unauthenticated health check for monitoring.
+
+        Deep check: verifies DB connectivity and bus activity.
+        Use ?deep=1 for full check, otherwise returns shallow OK.
+        """
+        uptime = time.time() - self.start_time
+        deep = request.query.get("deep", "") == "1"
+
+        if not deep:
+            return web.json_response({"status": "ok", "uptime": round(uptime, 1)})
+
+        checks = {"uptime": round(uptime, 1)}
+        overall_ok = True
+
+        # Database health
+        if self.db:
+            db_health = await self.db.check_health()
+            checks["database"] = db_health
+            if not db_health.get("ok"):
+                overall_ok = False
+        else:
+            checks["database"] = {"ok": False, "backend": "none"}
+            overall_ok = False
+
+        # Bus activity — check if we've received market data recently
+        has_prices = len(self.prices) > 0
+        checks["market_feed"] = {"active": has_prices, "pairs": len(self.prices)}
+
+        # Kill switch state
+        if self.kill_switch:
+            checks["kill_switch"] = {"active": self.kill_switch.active}
+
+        # Agent count
+        checks["agents"] = {"total": len(self.agents)}
+
+        status = "ok" if overall_ok else "degraded"
+        status_code = 200 if overall_ok else 503
+        return web.json_response(
+            {"status": status, **checks},
+            status=status_code,
+        )
 
     async def _handle_thoughts(self, request: web.Request) -> web.Response:
         """GET /api/thoughts — recent agent thought stream."""
@@ -1207,17 +1351,27 @@ class WebDashboard:
         if not self.social:
             return web.json_response({"error": "social trading not enabled"}, status=404)
         body = await request.json()
-        agent_id = body.get("agent_id", "").strip()
-        display_name = body.get("display_name", "").strip()
+        agent_id = body.get("agent_id", "").strip()[:64]
+        display_name = body.get("display_name", "").strip()[:100]
         if not agent_id or not display_name:
             return web.json_response({"error": "agent_id and display_name required"}, status=400)
+        bio = str(body.get("bio", ""))[:500]
+        tags = body.get("strategy_tags", [])
+        if isinstance(tags, list):
+            tags = [str(t)[:50] for t in tags[:20]]  # max 20 tags, 50 chars each
+        else:
+            tags = []
+        strategy_desc = str(body.get("strategy_description", ""))[:1000]
+        visibility = body.get("visibility", "public")
+        if visibility not in ("public", "private"):
+            visibility = "public"
         profile = self.social.create_profile(
             agent_id=agent_id,
             display_name=display_name,
-            bio=body.get("bio", ""),
-            strategy_tags=body.get("strategy_tags", []),
-            strategy_description=body.get("strategy_description", ""),
-            visibility=body.get("visibility", "public"),
+            bio=bio,
+            strategy_tags=tags,
+            strategy_description=strategy_desc,
+            visibility=visibility,
         )
         return web.json_response({"ok": True, "profile": profile.public_dict()})
 
@@ -1363,9 +1517,9 @@ class WebDashboard:
         if not self.social:
             return web.json_response({"error": "social trading not enabled"}, status=404)
         body = await request.json()
-        event_id = body.get("event_id", "").strip()
-        agent_id = body.get("agent_id", "").strip()
-        text = body.get("text", "").strip()
+        event_id = body.get("event_id", "").strip()[:64]
+        agent_id = body.get("agent_id", "").strip()[:64]
+        text = body.get("text", "").strip()[:500]
         if not event_id or not agent_id or not text:
             return web.json_response({"error": "event_id, agent_id, and text required"}, status=400)
         ok = self.social.add_comment(event_id, agent_id, text)
@@ -1391,6 +1545,358 @@ class WebDashboard:
             "achievements": self.social.get_achievements(agent_id),
         })
 
+    # ── SwarmNetwork Endpoints ─────────────────────────────────────
+
+    def _require_network(self):
+        if not self.network:
+            return web.json_response({"error": "swarm network not enabled"}, status=404)
+        return None
+
+    async def _handle_network_home(self, request: web.Request) -> web.Response:
+        """GET /api/network/home — one-call dashboard for an agent."""
+        err = self._require_network()
+        if err:
+            return err
+        agent_id = request.query.get("agent_id", "")
+        if not agent_id:
+            return web.json_response({"error": "agent_id query param required"}, status=400)
+        return web.json_response(self.network.home(agent_id))
+
+    async def _handle_network_posts_create(self, request: web.Request) -> web.Response:
+        """POST /api/network/posts — create a post."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        author_id = body.get("author_id", "").strip()[:64]
+        title = body.get("title", "").strip()
+        if not author_id or not title:
+            return web.json_response({"error": "author_id and title required"}, status=400)
+        post = self.network.create_post(
+            author_id=author_id,
+            title=title,
+            body=str(body.get("body", "")),
+            community_id=body.get("community_id", "general"),
+            post_type=body.get("post_type", "analysis"),
+            structured_data=body.get("structured_data"),
+            tags=body.get("tags"),
+            assets=body.get("assets"),
+        )
+        if not post:
+            return web.json_response({"error": "failed to create post"}, status=400)
+        return web.json_response({"ok": True, "post": post.to_dict()})
+
+    async def _handle_network_post_get(self, request: web.Request) -> web.Response:
+        """GET /api/network/posts/{post_id} — get a single post with full body."""
+        err = self._require_network()
+        if err:
+            return err
+        post = self.network.get_post(request.match_info["post_id"])
+        if not post:
+            return web.json_response({"error": "post not found"}, status=404)
+        return web.json_response({"post": post.full_dict()})
+
+    async def _handle_network_post_delete(self, request: web.Request) -> web.Response:
+        """DELETE /api/network/posts/{post_id} — delete a post."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        ok = self.network.delete_post(request.match_info["post_id"], body.get("agent_id", ""))
+        if not ok:
+            return web.json_response({"error": "not found or not authorized"}, status=404)
+        return web.json_response({"ok": True})
+
+    async def _handle_network_feed_global(self, request: web.Request) -> web.Response:
+        """GET /api/network/feed — global feed across all communities."""
+        err = self._require_network()
+        if err:
+            return err
+        sort = request.query.get("sort", "hot")
+        limit = min(100, max(1, int(request.query.get("limit", "25"))))
+        return web.json_response({
+            "posts": self.network.get_global_feed(sort=sort, limit=limit),
+        })
+
+    async def _handle_network_feed_personal(self, request: web.Request) -> web.Response:
+        """GET /api/network/feed/{agent_id} — personalized feed for an agent."""
+        err = self._require_network()
+        if err:
+            return err
+        agent_id = request.match_info["agent_id"]
+        sort = request.query.get("sort", "hot")
+        limit = min(100, max(1, int(request.query.get("limit", "25"))))
+        return web.json_response({
+            "posts": self.network.get_feed(agent_id, sort=sort, limit=limit),
+        })
+
+    async def _handle_network_vote(self, request: web.Request) -> web.Response:
+        """POST /api/network/vote — upvote or downvote a post or comment."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        agent_id = body.get("agent_id", "").strip()
+        target_id = body.get("target_id", "").strip()
+        direction = body.get("direction", "up")
+        target_type = body.get("target_type", "post")  # "post" or "comment"
+        if not agent_id or not target_id:
+            return web.json_response({"error": "agent_id and target_id required"}, status=400)
+        if direction not in ("up", "down"):
+            return web.json_response({"error": "direction must be 'up' or 'down'"}, status=400)
+        if target_type == "comment":
+            ok = self.network.vote_comment(target_id, agent_id, direction)
+        else:
+            ok = self.network.vote_post(target_id, agent_id, direction)
+        return web.json_response({"ok": ok})
+
+    async def _handle_network_comments_get(self, request: web.Request) -> web.Response:
+        """GET /api/network/posts/{post_id}/comments — get comments on a post."""
+        err = self._require_network()
+        if err:
+            return err
+        post_id = request.match_info["post_id"]
+        sort = request.query.get("sort", "best")
+        return web.json_response({
+            "comments": self.network.get_comments(post_id, sort=sort),
+        })
+
+    async def _handle_network_comments_create(self, request: web.Request) -> web.Response:
+        """POST /api/network/posts/{post_id}/comments — add a comment."""
+        err = self._require_network()
+        if err:
+            return err
+        post_id = request.match_info["post_id"]
+        body = await request.json()
+        author_id = body.get("author_id", "").strip()[:64]
+        text = body.get("body", "").strip()
+        parent_id = body.get("parent_id")
+        if not author_id or not text:
+            return web.json_response({"error": "author_id and body required"}, status=400)
+        comment = self.network.add_comment(post_id, author_id, text, parent_id=parent_id)
+        if not comment:
+            return web.json_response({"error": "failed to add comment"}, status=400)
+        return web.json_response({"ok": True, "comment": comment.to_dict()})
+
+    async def _handle_network_communities_list(self, request: web.Request) -> web.Response:
+        """GET /api/network/communities — list all communities."""
+        err = self._require_network()
+        if err:
+            return err
+        sort = request.query.get("sort", "members")
+        return web.json_response({
+            "communities": self.network.list_communities(sort=sort),
+        })
+
+    async def _handle_network_community_get(self, request: web.Request) -> web.Response:
+        """GET /api/network/communities/{id} — get community details + posts."""
+        err = self._require_network()
+        if err:
+            return err
+        cid = request.match_info["community_id"]
+        community = self.network.get_community(cid)
+        if not community:
+            return web.json_response({"error": "community not found"}, status=404)
+        sort = request.query.get("sort", "hot")
+        limit = min(100, max(1, int(request.query.get("limit", "25"))))
+        return web.json_response({
+            "community": community.to_dict(),
+            "posts": self.network.get_community_posts(cid, sort=sort, limit=limit),
+            "members": self.network.get_community_members(cid)[:100],
+        })
+
+    async def _handle_network_community_create(self, request: web.Request) -> web.Response:
+        """POST /api/network/communities — create a community."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        creator_id = body.get("creator_id", "").strip()[:64]
+        community_id = body.get("id", "").strip()[:30]
+        display_name = body.get("display_name", "").strip()[:100]
+        if not creator_id or not community_id or not display_name:
+            return web.json_response({"error": "creator_id, id, and display_name required"}, status=400)
+        community = self.network.create_community(
+            creator_id=creator_id,
+            community_id=community_id,
+            display_name=display_name,
+            description=body.get("description", ""),
+            community_type=body.get("community_type", "general"),
+            tags=body.get("tags"),
+            assets=body.get("assets"),
+        )
+        if not community:
+            return web.json_response({"error": "failed to create (duplicate id or limit reached)"}, status=400)
+        return web.json_response({"ok": True, "community": community.to_dict()})
+
+    async def _handle_network_community_join(self, request: web.Request) -> web.Response:
+        """POST /api/network/communities/{id}/join — join a community."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        ok = self.network.join_community(body.get("agent_id", ""), request.match_info["community_id"])
+        return web.json_response({"ok": ok})
+
+    async def _handle_network_community_leave(self, request: web.Request) -> web.Response:
+        """POST /api/network/communities/{id}/leave — leave a community."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        ok = self.network.leave_community(body.get("agent_id", ""), request.match_info["community_id"])
+        return web.json_response({"ok": ok})
+
+    async def _handle_network_data_feeds_list(self, request: web.Request) -> web.Response:
+        """GET /api/network/data-feeds — list available data feeds."""
+        err = self._require_network()
+        if err:
+            return err
+        feed_type = request.query.get("type")
+        sort = request.query.get("sort", "subscribers")
+        return web.json_response({
+            "feeds": self.network.list_data_feeds(feed_type=feed_type, sort=sort),
+        })
+
+    async def _handle_network_data_feed_create(self, request: web.Request) -> web.Response:
+        """POST /api/network/data-feeds — create a data feed."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        publisher_id = body.get("publisher_id", "").strip()[:64]
+        name = body.get("name", "").strip()
+        if not publisher_id or not name:
+            return web.json_response({"error": "publisher_id and name required"}, status=400)
+        feed = self.network.create_data_feed(
+            publisher_id=publisher_id,
+            name=name,
+            description=body.get("description", ""),
+            feed_type=body.get("feed_type", "custom"),
+            assets=body.get("assets"),
+            public=body.get("public", True),
+        )
+        if not feed:
+            return web.json_response({"error": "failed to create feed"}, status=400)
+        return web.json_response({"ok": True, "feed": feed.to_dict()})
+
+    async def _handle_network_data_feed_publish(self, request: web.Request) -> web.Response:
+        """POST /api/network/data-feeds/{feed_id}/publish — publish an update."""
+        err = self._require_network()
+        if err:
+            return err
+        feed_id = request.match_info["feed_id"]
+        body = await request.json()
+        publisher_id = body.get("publisher_id", "").strip()
+        data = body.get("data", {})
+        summary = body.get("summary", "")
+        if not publisher_id or not data:
+            return web.json_response({"error": "publisher_id and data required"}, status=400)
+        ok = self.network.publish_feed_update(feed_id, publisher_id, data, summary)
+        if not ok:
+            return web.json_response({"error": "feed not found or not authorized"}, status=404)
+        return web.json_response({"ok": True})
+
+    async def _handle_network_data_feed_subscribe(self, request: web.Request) -> web.Response:
+        """POST /api/network/data-feeds/{feed_id}/subscribe — subscribe."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        ok = self.network.subscribe_to_feed(body.get("agent_id", ""), request.match_info["feed_id"])
+        return web.json_response({"ok": ok})
+
+    async def _handle_network_data_feed_unsubscribe(self, request: web.Request) -> web.Response:
+        """DELETE /api/network/data-feeds/{feed_id}/subscribe — unsubscribe."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        ok = self.network.unsubscribe_from_feed(body.get("agent_id", ""), request.match_info["feed_id"])
+        return web.json_response({"ok": ok})
+
+    async def _handle_network_data_feed_updates(self, request: web.Request) -> web.Response:
+        """GET /api/network/data-feeds/{feed_id}/updates — get recent updates."""
+        err = self._require_network()
+        if err:
+            return err
+        feed_id = request.match_info["feed_id"]
+        limit = min(100, max(1, int(request.query.get("limit", "20"))))
+        return web.json_response({
+            "updates": self.network.get_feed_updates(feed_id, limit=limit),
+        })
+
+    async def _handle_network_dm_send(self, request: web.Request) -> web.Response:
+        """POST /api/network/dm — send a direct message."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        sender_id = body.get("sender_id", "").strip()[:64]
+        receiver_id = body.get("receiver_id", "").strip()[:64]
+        text = body.get("body", "").strip()
+        if not sender_id or not receiver_id or not text:
+            return web.json_response({"error": "sender_id, receiver_id, and body required"}, status=400)
+        msg = self.network.send_dm(sender_id, receiver_id, text,
+                                   structured_data=body.get("structured_data"))
+        if not msg:
+            return web.json_response({"error": "failed to send (same agent or limit reached)"}, status=400)
+        return web.json_response({"ok": True, "message": msg.to_dict()})
+
+    async def _handle_network_dm_accept(self, request: web.Request) -> web.Response:
+        """POST /api/network/dm/accept — accept a DM request."""
+        err = self._require_network()
+        if err:
+            return err
+        body = await request.json()
+        ok = self.network.accept_dm(body.get("agent_id", ""), body.get("other_id", ""))
+        return web.json_response({"ok": ok})
+
+    async def _handle_network_dm_thread(self, request: web.Request) -> web.Response:
+        """GET /api/network/dm/{agent_id}/{other_id} — get DM thread."""
+        err = self._require_network()
+        if err:
+            return err
+        agent_id = request.match_info["agent_id"]
+        other_id = request.match_info["other_id"]
+        thread = self.network.get_dm_thread(agent_id, other_id)
+        if not thread:
+            return web.json_response({"error": "no thread found"}, status=404)
+        return web.json_response(thread)
+
+    async def _handle_network_dm_threads(self, request: web.Request) -> web.Response:
+        """GET /api/network/dm/{agent_id} — all DM threads for an agent."""
+        err = self._require_network()
+        if err:
+            return err
+        agent_id = request.match_info["agent_id"]
+        return web.json_response({
+            "threads": self.network.get_dm_threads(agent_id),
+            "pending_requests": self.network.get_dm_requests(agent_id),
+        })
+
+    async def _handle_network_search(self, request: web.Request) -> web.Response:
+        """GET /api/network/search — search posts."""
+        err = self._require_network()
+        if err:
+            return err
+        query = request.query.get("q", "")
+        community_id = request.query.get("community")
+        post_type = request.query.get("type")
+        assets = request.query.get("assets", "").split(",") if request.query.get("assets") else None
+        limit = min(50, max(1, int(request.query.get("limit", "25"))))
+        return web.json_response({
+            "results": self.network.search_posts(query, community_id=community_id,
+                                                  post_type=post_type, assets=assets, limit=limit),
+        })
+
+    async def _handle_network_stats(self, request: web.Request) -> web.Response:
+        """GET /api/network/stats — platform stats."""
+        err = self._require_network()
+        if err:
+            return err
+        return web.json_response(self.network.platform_stats())
+
     # ── Server Lifecycle ────────────────────────────────────────────
 
     async def start(self):
@@ -1408,7 +1914,9 @@ class WebDashboard:
             import sys
             print(f"\n  Dashboard token: {token}\n", file=sys.stderr)
 
-        app = web.Application(middlewares=[auth_middleware])
+        app = web.Application(middlewares=[
+            security_headers_middleware, rate_limit_middleware, auth_middleware,
+        ])
         app["_dashboard_token"] = token
         app.router.add_get("/health", self._handle_health)
         app.router.add_get("/", self._handle_index)
@@ -1461,6 +1969,33 @@ class WebDashboard:
         app.router.add_post("/api/social/comment", self._handle_social_comment)
         app.router.add_post("/api/social/like", self._handle_social_like)
         app.router.add_get("/api/social/achievements/{agent_id}", self._handle_social_achievements)
+        # ── SwarmNetwork (agent social network) ─────────────────────
+        app.router.add_get("/api/network/home", self._handle_network_home)
+        app.router.add_get("/api/network/feed", self._handle_network_feed_global)
+        app.router.add_get("/api/network/feed/{agent_id}", self._handle_network_feed_personal)
+        app.router.add_post("/api/network/posts", self._handle_network_posts_create)
+        app.router.add_get("/api/network/posts/{post_id}", self._handle_network_post_get)
+        app.router.add_delete("/api/network/posts/{post_id}", self._handle_network_post_delete)
+        app.router.add_get("/api/network/posts/{post_id}/comments", self._handle_network_comments_get)
+        app.router.add_post("/api/network/posts/{post_id}/comments", self._handle_network_comments_create)
+        app.router.add_post("/api/network/vote", self._handle_network_vote)
+        app.router.add_get("/api/network/communities", self._handle_network_communities_list)
+        app.router.add_get("/api/network/communities/{community_id}", self._handle_network_community_get)
+        app.router.add_post("/api/network/communities", self._handle_network_community_create)
+        app.router.add_post("/api/network/communities/{community_id}/join", self._handle_network_community_join)
+        app.router.add_post("/api/network/communities/{community_id}/leave", self._handle_network_community_leave)
+        app.router.add_get("/api/network/data-feeds", self._handle_network_data_feeds_list)
+        app.router.add_post("/api/network/data-feeds", self._handle_network_data_feed_create)
+        app.router.add_post("/api/network/data-feeds/{feed_id}/publish", self._handle_network_data_feed_publish)
+        app.router.add_post("/api/network/data-feeds/{feed_id}/subscribe", self._handle_network_data_feed_subscribe)
+        app.router.add_delete("/api/network/data-feeds/{feed_id}/subscribe", self._handle_network_data_feed_unsubscribe)
+        app.router.add_get("/api/network/data-feeds/{feed_id}/updates", self._handle_network_data_feed_updates)
+        app.router.add_post("/api/network/dm", self._handle_network_dm_send)
+        app.router.add_post("/api/network/dm/accept", self._handle_network_dm_accept)
+        app.router.add_get("/api/network/dm/{agent_id}", self._handle_network_dm_threads)
+        app.router.add_get("/api/network/dm/{agent_id}/{other_id}", self._handle_network_dm_thread)
+        app.router.add_get("/api/network/search", self._handle_network_search)
+        app.router.add_get("/api/network/stats", self._handle_network_stats)
         # ── Agent Gateway routes (external agent API) ──────────────
         if self.gateway:
             self.gateway.register_routes(app)

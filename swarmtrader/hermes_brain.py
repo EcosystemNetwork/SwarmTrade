@@ -463,6 +463,7 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
         max_size: float = 2000.0,
         capital: float = 10000.0,
         provider: LLMProvider | None = None,
+        gateway=None,
         interval: float | None = None,
         max_tokens: int | None = None,
         cooldown_s: float = 5.0,
@@ -472,6 +473,7 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
         self.assets = assets
         self.base_size = base_size
         self.max_size = max_size
+        self.gateway = gateway  # AgentGateway — push briefs to connected agents
         self.capital = capital
         self.cooldown_s = cooldown_s
 
@@ -892,6 +894,14 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
                     log.debug("BRAIN: only %d active signals, waiting...", n_signals)
                     await asyncio.sleep(5.0)
                     continue
+
+                # Also push brief to any agents connected via gateway
+                if self.gateway:
+                    system = self.SYSTEM_PROMPT.format(
+                        n_agents=n_signals, interval=self.interval,
+                        capital=self.capital, max_size=self.max_size,
+                    )
+                    await self.gateway.broadcast_brain_brief(system, brief, self.max_tokens)
 
                 log.info("BRAIN: querying %s with %d signals, regime=%s",
                          self.provider.name, n_signals, self.state.regime)

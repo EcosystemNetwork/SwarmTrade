@@ -288,6 +288,41 @@ class AgentGateway:
         for agent_id in dead:
             self._ws_clients.pop(agent_id, None)
 
+    async def broadcast_brain_brief(self, system: str, brief: str, max_tokens: int = 1024):
+        """Push a brain brief to all connected WS agents.
+
+        Called by HermesBrain every interval so external agents can act as the brain.
+        Agents respond with {"type": "decision", ...} in their native protocol.
+        """
+        if not self._ws_clients:
+            return
+        await self._broadcast_to_agents({
+            "type": "brain_brief",
+            "system": system,
+            "brief": brief,
+            "max_tokens": max_tokens,
+            "ts": time.time(),
+        })
+
+    async def send_chat_to_agent(self, agent_id: str, message: str) -> bool:
+        """Send a chat message to a specific connected agent.
+
+        Lets the user talk to their agent through the dashboard.
+        """
+        ws = self._ws_clients.get(agent_id)
+        if not ws:
+            return False
+        try:
+            await ws.send_json({
+                "type": "chat",
+                "message": message,
+                "ts": time.time(),
+            })
+            return True
+        except Exception as e:
+            log.warning("Chat to %s failed: %s", agent_id, e)
+            return False
+
     # ── Authentication ──────────────────────────────────────────────
 
     def _verify_key(self, api_key: str) -> ConnectedAgent | None:
@@ -494,16 +529,21 @@ class AgentGateway:
         if not hmac.compare_digest(master, self.master_key):
             return web.json_response({"error": "invalid master_key"}, status=401)
 
-        name = body.get("name", f"external_{len(self.agents)}")
+        name = str(body.get("name", f"external_{len(self.agents)}")).strip()[:64]
+        if not name:
+            return web.json_response({"error": "name is required"}, status=400)
         protocol = body.get("protocol", "raw")
         if protocol not in ("openclaw", "hermes", "ironclaw", "raw"):
             return web.json_response({"error": "protocol must be openclaw, hermes, ironclaw, or raw"}, status=400)
 
-        agent_type = body.get("agent_type", "signal-custom")
+        agent_type = str(body.get("agent_type", "signal-custom"))[:64]
         if agent_type not in AGENT_TYPE_REGISTRY:
             agent_type = "signal-custom"
 
-        agent_id = f"ext_{name.lower().replace(' ', '_').replace('-', '_')}"
+        # Sanitize agent_id — alphanumeric + underscores only
+        import re
+        safe_name = re.sub(r'[^a-z0-9_]', '_', name.lower())[:48]
+        agent_id = f"ext_{safe_name}"
         api_key = secrets.token_hex(32)
         asn = generate_asn()
         MAX_AGENT_WEIGHT = 0.20  # No single external agent can dominate signals
@@ -597,20 +637,28 @@ class AgentGateway:
                 parsed = self._parse_raw_signal(signal_body)
         except Exception as e:
             log.warning("Signal parse error from %s: %s", agent.agent_id, e)
-            return web.json_response({"error": f"signal parse error: {e}"}, status=400)
+            return web.json_response({"error": "signal parse error: invalid format"}, status=400)
 
-        # Build internal Signal
+        # Build internal Signal — clamp values to valid ranges
+        raw_strength = parsed["strength"]
+        raw_confidence = parsed["confidence"]
+        clamped_strength = max(-1.0, min(1.0, float(raw_strength)))
+        clamped_confidence = max(0.0, min(1.0, float(raw_confidence)))
+        if clamped_strength != raw_strength or clamped_confidence != raw_confidence:
+            log.warning("Gateway signal clamped: %s str=%.4f->%.4f conf=%.4f->%.4f",
+                        agent.agent_id, raw_strength, clamped_strength,
+                        raw_confidence, clamped_confidence)
         signal = Signal(
             agent_id=agent.agent_id,
             asset=parsed["asset"],
             direction=parsed["direction"],
-            strength=parsed["strength"],
-            confidence=parsed["confidence"],
+            strength=clamped_strength,
+            confidence=clamped_confidence,
             rationale=f"[{agent.name}] {parsed['rationale']}"[:500],
         )
 
-        # Publish to bus
-        await self.bus.publish(f"signal.{agent.agent_id}", signal)
+        # Publish to bus — use ext. prefix to avoid collisions with internal signal topics
+        await self.bus.publish(f"signal.ext.{agent.agent_id}", signal)
 
         agent.last_signal_at = time.time()
         agent.signal_count += 1
@@ -674,7 +722,15 @@ class AgentGateway:
         })
 
     async def handle_agents_list(self, request: web.Request) -> web.Response:
-        """GET /api/gateway/agents — list connected agents."""
+        """GET /api/gateway/agents — list connected agents (requires auth)."""
+        # Require either a valid agent API key or the master key
+        api_key = self._extract_key(request)
+        if api_key:
+            if not self._verify_key(api_key) and api_key != self._master_key:
+                return web.json_response({"error": "invalid api_key"}, status=401)
+        elif self._master_key:
+            return web.json_response({"error": "authentication required"}, status=401)
+
         agents = []
         for a in self.agents.values():
             type_info = AGENT_TYPE_REGISTRY.get(a.agent_type, {})
@@ -797,6 +853,16 @@ class AgentGateway:
                      agent.agent_id)
             msg_type = "signal"  # fall through to signal handling
 
+        if msg_type == "chat_response":
+            # Agent responding to a user chat message — relay to dashboard via bus
+            await self.bus.publish("agent.chat", {
+                "agent_id": agent.agent_id,
+                "agent_name": agent.name,
+                "message": str(data.get("message", ""))[:2000],
+                "ts": time.time(),
+            })
+            return
+
         if msg_type == "signal":
             if not self._check_rate_limit(agent):
                 await ws.send_json({
@@ -852,17 +918,43 @@ class AgentGateway:
     # ── Route registration ──────────────────────────────────────────
 
     async def handle_registry(self, request: web.Request) -> web.Response:
-        """GET /api/gateway/registry — agent type registry + capabilities."""
+        """GET /api/gateway/registry — agent type registry + capabilities (requires auth)."""
+        api_key = self._extract_key(request)
+        if api_key:
+            if not self._verify_key(api_key) and api_key != self._master_key:
+                return web.json_response({"error": "invalid api_key"}, status=401)
+        elif self._master_key:
+            return web.json_response({"error": "authentication required"}, status=401)
+
         return web.json_response({
             "types": AGENT_TYPE_REGISTRY,
             "categories": AGENT_CATEGORIES,
             "capabilities": AGENT_CAPABILITIES,
         })
 
+    async def handle_chat(self, request: web.Request) -> web.Response:
+        """POST /api/gateway/chat — send a message to a connected agent.
+
+        Body: {"agent_id": "ext_my_agent", "message": "What do you think about ETH?"}
+        The agent receives {"type": "chat", "message": "..."} on its WS.
+        """
+        body = await request.json()
+        agent_id = body.get("agent_id", "")
+        message = body.get("message", "")
+        if not agent_id or not message:
+            return web.json_response({"error": "agent_id and message required"}, status=400)
+
+        sent = await self.send_chat_to_agent(agent_id, message)
+        if not sent:
+            return web.json_response({"error": f"agent {agent_id} not connected via WS"}, status=404)
+
+        return web.json_response({"sent": True, "agent_id": agent_id})
+
     def register_routes(self, app: web.Application):
         """Add gateway routes to an aiohttp Application."""
         app.router.add_post("/api/gateway/connect", self.handle_connect)
         app.router.add_post("/api/gateway/signal", self.handle_signal)
+        app.router.add_post("/api/gateway/chat", self.handle_chat)
         app.router.add_get("/api/gateway/market", self.handle_market)
         app.router.add_get("/api/gateway/portfolio", self.handle_portfolio)
         app.router.add_get("/api/gateway/agents", self.handle_agents_list)

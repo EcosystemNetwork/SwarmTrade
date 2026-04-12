@@ -1280,6 +1280,12 @@ tailwind.config = {
 // Swarm Trade Dashboard — WebSocket Client
 // ═══════════════════════════════════════════════════════════════════
 
+// HTML entity escaping — prevents XSS from external agent names, rationale, comments
+function esc(s) {
+  if (typeof s !== "string") return String(s ?? "");
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#x27;");
+}
+
 const S = {
   prices: {}, signals: {}, agents: {}, intents: [], reports: [],
   verdicts: {}, dailyPnl: 0, tradeCount: 0, wins: 0, losses: 0,
@@ -1709,7 +1715,7 @@ function renderAgents() {
       const age = a.last_tick ? `${Math.max(0, ((Date.now()/1000) - a.last_tick)).toFixed(0)}s ago` : "";
       html += `<div class="agent-row ${isActive ? "active" : ""}">
         <div class="w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-accent" : "bg-muted-dim/40"}"></div>
-        <span class="flex-1 truncate">${a.name}</span>
+        <span class="flex-1 truncate">${esc(a.name)}</span>
         <span class="text-[9px] text-muted-dim">${age}</span>
       </div>`;
     }
@@ -1794,10 +1800,10 @@ function renderIntents() {
     const riskColor = rejected > 0 ? "text-danger" : approved >= 3 ? "text-accent" : "text-amber";
     const dirColor = intent.direction === "LONG" ? "text-accent" : "text-danger";
     const dirLabel = intent.direction === "LONG" ? "Buy" : "Sell";
-    html += `<tr class="cursor-pointer" onclick="renderRiskPanel('${intent.id}')">
-      <td class="text-electric">${intent.id}</td>
+    html += `<tr class="cursor-pointer" onclick="renderRiskPanel('${esc(intent.id)}')">
+      <td class="text-electric">${esc(intent.id)}</td>
       <td class="${dirColor} font-semibold">${dirLabel}</td>
-      <td>${intent.asset_in} <span class="text-muted">→</span> ${intent.asset_out}</td>
+      <td>${esc(intent.asset_in)} <span class="text-muted">→</span> ${esc(intent.asset_out)}</td>
       <td class="tabular-nums">$${intent.amount_in.toFixed(2)}</td>
       <td class="${ttlColor} tabular-nums">${ttlStr}</td>
       <td class="${riskColor} font-semibold">${riskStr}</td>
@@ -1823,9 +1829,9 @@ function renderReports() {
     const timeStr = new Date().toLocaleTimeString("en-US", { hour12: false });
     html += `<tr>
       <td class="text-muted tabular-nums">${timeStr}</td>
-      <td class="text-electric">${r.intent_id}</td>
-      <td class="${statusColor} font-semibold uppercase">${r.status}</td>
-      <td class="text-muted-dim">${tx}</td>
+      <td class="text-electric">${esc(r.intent_id)}</td>
+      <td class="${statusColor} font-semibold uppercase">${esc(r.status)}</td>
+      <td class="text-muted-dim">${esc(tx)}</td>
       <td class="tabular-nums">${price}</td>
       <td class="text-muted tabular-nums">${slip}</td>
       <td class="${pnlColor} font-semibold tabular-nums">${pnl}</td>
@@ -1854,8 +1860,8 @@ function renderRiskPanel(intentId) {
     if (v.approve) approved++;
     html += `<div class="verdict-card ${cardClass}">
       <div>
-        <div class="text-[11px] font-semibold text-slate-200">${label}</div>
-        <div class="text-[9px] text-muted-dim mt-0.5">${desc}</div>
+        <div class="text-[11px] font-semibold text-slate-200">${esc(label)}</div>
+        <div class="text-[9px] text-muted-dim mt-0.5">${esc(desc)}</div>
       </div>
       <div class="flex items-center gap-1.5">
         <span class="text-[9px] font-semibold" style="color:${iconColor}">${resultText}</span>
@@ -2005,28 +2011,96 @@ const GW_PAYLOADS = {
 
 function gwCurlExample(proto, key) {
   const body = GW_PAYLOADS[proto];
-  return `curl -X POST ${location.origin}/api/gateway/signal \\
+  return `# Send a signal (one-shot)
+curl -X POST ${location.origin}/api/gateway/signal \\
   -H "Authorization: Bearer ${key}" \\
   -H "Content-Type: application/json" \\
-  -d '${body.replace(/\n/g, "\n  ")}'`;
+  -d '${body.replace(/\n/g, "\n  ")}'
+
+# Get market data
+curl ${location.origin}/api/gateway/market \\
+  -H "Authorization: Bearer ${key}"`;
 }
 
 function gwWsExample(proto, key) {
   const wsp = location.protocol === "https:" ? "wss:" : "ws:";
-  return `const ws = new WebSocket("${wsp}//${location.host}/ws/agent?api_key=${key}");
+  const wsUrl = `${wsp}//${location.host}/ws/agent?api_key=${key}`;
+  const payloads = {
+    openclaw: `{
+      "type": "decision",
+      "tool_calls": [{
+        "name": "submit_signal",
+        "arguments": {
+          "asset": "ETH", "action": "buy",
+          "size_usd": 200, "conviction": 0.85,
+          "reasoning": "strong consensus from swarm"
+        }
+      }]
+    }`,
+    hermes: `{
+      "type": "decision",
+      "structured_output": {
+        "signal": "bullish", "asset": "ETH",
+        "size_usd": 200, "confidence": 0.8,
+        "reasoning": "momentum + sentiment aligned"
+      }
+    }`,
+    ironclaw: `{
+      "type": "decision",
+      "actions": [{
+        "type": "trade_signal",
+        "params": {
+          "ticker": "ETH", "side": "long",
+          "size_usd": 200, "confidence": 0.85,
+          "urgency": "high",
+          "analysis": "breakout confirmed by swarm"
+        }
+      }]
+    }`,
+    raw: `{
+      "type": "decision",
+      "action": "buy", "asset": "ETH",
+      "size_usd": 200, "confidence": 0.85,
+      "reasoning": "swarm consensus bullish"
+    }`,
+  };
+  return `# Python: Connect as brain agent (daemon mode)
+# pip install websockets
 
-ws.onopen = () => {
-  ws.send(JSON.stringify({
-    type: "signal",
-    ...${GW_PAYLOADS[proto].replace(/\n/g, "\n    ")}
-  }));
-};
+import asyncio, json, websockets
 
-ws.onmessage = (e) => {
-  const msg = JSON.parse(e.data);
-  // types: market, execution, signal_ack, welcome
-  console.log(msg.type, msg);
-};`;
+async def brain():
+    uri = "${wsUrl}"
+    async with websockets.connect(uri) as ws:
+        welcome = json.loads(await ws.recv())
+        print(f"Connected: {welcome}")
+
+        while True:
+            msg = json.loads(await ws.recv())
+
+            if msg["type"] == "brain_brief":
+                # The swarm brief with all 80+ agent signals
+                brief = msg["brief"]
+                print(f"Brief received ({len(brief)} chars)")
+
+                #####################################
+                # YOUR AGENT LOGIC HERE
+                # Feed the brief to your model and
+                # get a trading decision back
+                #####################################
+
+                decision = ${payloads[proto] || payloads.raw}
+
+                await ws.send(json.dumps(decision))
+                print("Decision sent")
+
+            elif msg["type"] == "market":
+                print(f"Prices: {msg['prices']}")
+
+            elif msg["type"] == "execution":
+                print(f"Trade: {msg['status']} {msg['asset']}")
+
+asyncio.run(brain())`;
 }
 
 function toggleGatewayPanel() {
@@ -2212,11 +2286,11 @@ function renderGatewayAgents() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="font-mono text-[10px] text-white font-semibold truncate">${a.name}</span>
-              <span class="font-mono text-[7px] px-1.5 py-0.5 rounded" style="background:${proto.color}15;color:${proto.color};border:1px solid ${proto.color}25">${proto.name}</span>
+              <span class="font-mono text-[10px] text-white font-semibold truncate">${esc(a.name)}</span>
+              <span class="font-mono text-[7px] px-1.5 py-0.5 rounded" style="background:${proto.color}15;color:${proto.color};border:1px solid ${proto.color}25">${esc(proto.name)}</span>
             </div>
             <div class="flex items-center gap-2 mt-0.5">
-              <span class="font-mono text-[7px] text-muted-dim">${a.asn || ""}</span>
+              <span class="font-mono text-[7px] text-muted-dim">${esc(a.asn || "")}</span>
               <span class="font-mono text-[7px] text-muted">${a.agent_type_label || a.agent_type}</span>
               <span class="font-mono text-[7px] text-muted">w:${a.weight} | ${a.signal_count || 0}sig</span>
             </div>
@@ -2341,9 +2415,7 @@ function renderThoughts() {
   document.getElementById("thought-count").textContent = S.thoughts.length;
 }
 
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+function escapeHtml(s) { return esc(s); }
 
 function loadMemory() {
   const panel = document.getElementById("memory-panel");
@@ -2769,9 +2841,9 @@ function loadAchievements() {
         return `<div class="p-3 rounded border" style="background:${bgColor};border-color:${borderColor}40">
           <div class="flex items-center gap-2 mb-1">
             <span class="material-symbols-outlined text-sm" style="color:${textColor};${unlocked ? "font-variation-settings:'FILL' 1" : ''}">${icon}</span>
-            <span class="font-mono text-[10px] font-bold" style="color:${textColor}">${a.name}</span>
+            <span class="font-mono text-[10px] font-bold" style="color:${textColor}">${esc(a.name)}</span>
           </div>
-          <div class="text-[9px] ${unlocked ? 'text-muted' : 'text-muted-dim'}">${a.desc}</div>
+          <div class="text-[9px] ${unlocked ? 'text-muted' : 'text-muted-dim'}">${esc(a.desc)}</div>
           ${unlocked ? '<div class="text-[8px] text-accent mt-1 font-mono">UNLOCKED</div>' : ''}
         </div>`;
       }).join("");

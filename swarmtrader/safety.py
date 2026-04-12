@@ -181,11 +181,22 @@ class CircuitBreaker:
         await self.check_resume()
 
     async def _on_intent(self, intent):
-        """Block intents when halted."""
+        """Block intents when halted — publish rejection directly to close the race window."""
         if self.halted:
             log.warning("CIRCUIT BREAKER ACTIVE: blocking intent %s — %s",
                         intent.id, self.halt_reason)
             self.kill_switch.engage(self.halt_reason)
+            # Directly reject so the intent doesn't slip through the race window
+            rep = ExecutionReport(
+                intent_id=intent.id,
+                status="rejected",
+                tx_hash=None,
+                fill_price=None,
+                realized_slippage=None,
+                pnl_estimate=0.0,
+                note=f"circuit_breaker: {self.halt_reason}",
+            )
+            await self.bus.publish("exec.report", rep)
 
     async def _halt(self, reason: str):
         if self.halted:

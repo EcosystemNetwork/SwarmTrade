@@ -74,7 +74,8 @@ class PriceValidationGate:
         self.bus = bus
         self.safe_bps = safe_bps
         self.warn_bps = warn_bps
-        self._prices: dict[str, dict[str, float]] = {}  # asset -> {source: price}
+        self._prices: dict[str, dict[str, tuple[float, float]]] = {}  # asset -> {source: (price, timestamp)}
+        self._stale_threshold = float(os.getenv("PRICE_GATE_STALE_SECS", "60"))  # reject prices older than this
         self._retry_counts: dict[str, int] = {}  # intent_id -> retry count
         self._checks: list[PriceCheck] = []
         self._stats = {"safe": 0, "warn": 0, "halt": 0, "total": 0}
@@ -90,26 +91,27 @@ class PriceValidationGate:
 
     async def _on_snapshot(self, snap: MarketSnapshot):
         """Update internal price source from market snapshots."""
+        now = time.time()
         for asset, price in snap.prices.items():
-            self._prices.setdefault(asset, {})["snapshot"] = price
+            self._prices.setdefault(asset, {})["snapshot"] = (price, now)
 
     async def _on_kraken_price(self, data: dict):
         asset = data.get("asset", "")
         price = data.get("mid", 0.0)
         if asset and price > 0:
-            self._prices.setdefault(asset, {})["kraken_ws"] = price
+            self._prices.setdefault(asset, {})["kraken_ws"] = (price, time.time())
 
     async def _on_coingecko_price(self, data: dict):
         asset = data.get("asset", "")
         price = data.get("price", 0.0)
         if asset and price > 0:
-            self._prices.setdefault(asset, {})["coingecko"] = price
+            self._prices.setdefault(asset, {})["coingecko"] = (price, time.time())
 
     async def _on_dex_price(self, data: dict):
         asset = data.get("asset", "")
         price = data.get("price", 0.0)
         if asset and price > 0:
-            self._prices.setdefault(asset, {})["dex"] = price
+            self._prices.setdefault(asset, {})["dex"] = (price, time.time())
 
     def _extract_asset(self, intent: TradeIntent) -> str:
         """Get the base asset from an intent."""
@@ -119,14 +121,37 @@ class PriceValidationGate:
         return intent.asset_in
 
     def validate_price(self, asset: str) -> PriceCheck:
-        """Check price consistency across all available sources."""
-        sources = self._prices.get(asset, {})
+        """Check price consistency across all available sources.
+
+        Filters out stale sources (older than _stale_threshold seconds).
+        """
+        raw_sources = self._prices.get(asset, {})
+        now = time.time()
+        # Filter stale prices
+        sources: dict[str, float] = {}
+        for src, entry in raw_sources.items():
+            price, ts = entry
+            age = now - ts
+            if age <= self._stale_threshold:
+                sources[src] = price
+            else:
+                log.debug("PRICE GATE: dropping stale %s source for %s (%.0fs old)", src, asset, age)
 
         if len(sources) < 1:
-            # No price data — can't validate, pass through as SAFE
+            # No price data — cannot validate, HALT to prevent blind execution
+            log.warning("PRICE GATE: no price sources for %s — HALT", asset)
             return PriceCheck(
                 asset=asset, sources={}, median_price=0.0,
-                max_deviation_bps=0.0, tier="SAFE",
+                max_deviation_bps=0.0, tier="HALT",
+            )
+
+        if len(sources) < 2:
+            # Single source — can't cross-validate, allow with warning
+            log.info("PRICE GATE: only 1 source for %s — WARN (cannot cross-validate)", asset)
+            price = list(sources.values())[0]
+            return PriceCheck(
+                asset=asset, sources=dict(sources), median_price=price,
+                max_deviation_bps=0.0, tier="WARN",
             )
 
         prices = list(sources.values())
@@ -140,9 +165,10 @@ class PriceValidationGate:
             median = (prices[n // 2 - 1] + prices[n // 2]) / 2
 
         if median < 1e-12:
+            log.warning("PRICE GATE: near-zero median price for %s — HALT", asset)
             return PriceCheck(
                 asset=asset, sources=dict(sources), median_price=0.0,
-                max_deviation_bps=0.0, tier="SAFE",
+                max_deviation_bps=0.0, tier="HALT",
             )
 
         # Max deviation from median in basis points
@@ -194,6 +220,7 @@ class PriceValidationGate:
                 recheck = self.validate_price(asset)
                 if recheck.tier == "SAFE":
                     self._stats["safe"] += 1
+                    self._retry_counts.pop(intent.id, None)
                     await self.bus.publish("exec.validated", intent)
                 elif recheck.tier == "HALT":
                     self._stats["halt"] += 1
@@ -204,6 +231,7 @@ class PriceValidationGate:
                         "PRICE GATE: %s still WARN after retry (dev=%.1fbps) — proceeding",
                         asset, recheck.max_deviation_bps,
                     )
+                    self._retry_counts.pop(intent.id, None)
                     await self.bus.publish("exec.validated", intent)
             else:
                 log.warning(

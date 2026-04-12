@@ -7,5 +7,13 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    command: ["mock", "3600", "--web", "--dashboard"]
+    command: ["mock", "3600", "--web", "--web-host", "0.0.0.0", "--dashboard"]
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
+        reservations:
+          memory: 512m
+          cpus: "0.5"
