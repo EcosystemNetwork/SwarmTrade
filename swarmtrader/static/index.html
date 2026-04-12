@@ -142,6 +142,25 @@ tailwind.config = {
     display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
   }
 
+  /* Chart empty state overlay */
+  .chart-empty-state {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; z-index: 5;
+    pointer-events: none;
+  }
+  .chart-empty-state .empty-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, rgba(30,41,59,0.4), rgba(30,41,59,0.15));
+    border: 1px solid rgba(51,65,85,0.25);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .chart-empty-state .empty-label { font-size: 11px; font-weight: 500; color: #64748b; }
+  .chart-empty-state .empty-hint { font-size: 10px; color: #475569; max-width: 200px; text-align: center; line-height: 1.5; }
+
+  /* Table header hidden when empty */
+  .table-hide-head-empty:has(+ div:not(.hidden)) thead,
+  .table-hide-head-empty:has(~ div:not(.hidden)) thead { display: none; }
+
   /* Left sidebar active group glow */
   .agent-group-header:hover { background: rgba(30,41,59,0.4); }
 
@@ -503,10 +522,10 @@ tailwind.config = {
       <span class="font-headline font-bold text-white text-sm tracking-tight">Swarm Trade</span>
     </div>
     <div class="h-5 w-px bg-border"></div>
-    <span class="mode-badge border border-electric/30 text-electric bg-electric/10" id="mode-badge">MOCK</span>
+    <span class="mode-badge border border-muted-dim/30 text-muted-dim bg-muted-dim/10" id="mode-badge">OFFLINE</span>
     <div class="flex items-center gap-2 font-mono text-xs">
-      <div class="w-2 h-2 rounded-full bg-accent status-pulse" id="conn-dot"></div>
-      <span class="text-muted text-[10px] font-medium" id="conn-text">CONNECTING</span>
+      <div class="w-2 h-2 rounded-full bg-muted-dim" id="conn-dot"></div>
+      <span class="text-muted-dim text-[10px] font-medium" id="conn-text">CONNECTING</span>
       <span class="text-muted-dim text-[10px] ml-0.5" id="latency"></span>
     </div>
   </div>
@@ -555,7 +574,7 @@ tailwind.config = {
 </header>
 
 <!-- ═══ MAIN LAYOUT ═══ -->
-<div class="flex pt-12 h-screen pb-7 bg-void gap-px">
+<div class="flex pt-12 h-screen pb-8 bg-void gap-px">
 
   <!-- LEFT SIDEBAR: Agent Swarm -->
   <aside class="w-[250px] flex flex-col shrink-0 overflow-hidden border-r border-border" style="background: linear-gradient(180deg, #0c1018 0%, #080c14 100%)">
@@ -585,31 +604,31 @@ tailwind.config = {
         <div class="pipeline-step step-active" id="pipe-market" data-tip="Scouts pull live market data every tick">
           <div class="step-icon"><span class="material-symbols-outlined text-sm text-electric">wifi_tethering</span></div>
           <span class="text-[9px] font-semibold text-muted uppercase">Market Data</span>
-          <span class="text-[8px] text-muted-dim font-mono" id="pipe-market-val">--</span>
+          <span class="text-[10px] text-muted-dim font-mono" id="pipe-market-val">--</span>
         </div>
         <div class="pipeline-arrow" id="arrow-1">→</div>
         <div class="pipeline-step" id="pipe-signals" data-tip="Analysts generate buy/sell signals from market data">
           <div class="step-icon"><span class="material-symbols-outlined text-sm text-amber">sensors</span></div>
           <span class="text-[9px] font-semibold text-muted uppercase">Signals</span>
-          <span class="text-[8px] text-muted-dim font-mono" id="pipe-signals-val">awaiting</span>
+          <span class="text-[10px] text-muted-dim font-mono" id="pipe-signals-val">awaiting</span>
         </div>
         <div class="pipeline-arrow" id="arrow-2">→</div>
         <div class="pipeline-step" id="pipe-strategy" data-tip="Strategy evaluates signals and proposes trades">
           <div class="step-icon"><span class="material-symbols-outlined text-sm text-purple-400">psychology</span></div>
           <span class="text-[9px] font-semibold text-muted uppercase">Strategy</span>
-          <span class="text-[8px] text-muted-dim font-mono" id="pipe-strategy-val">idle</span>
+          <span class="text-[10px] text-muted-dim font-mono" id="pipe-strategy-val">idle</span>
         </div>
         <div class="pipeline-arrow" id="arrow-3">→</div>
         <div class="pipeline-step" id="pipe-risk" data-tip="Risk agents vote to approve or reject each trade">
           <div class="step-icon"><span class="material-symbols-outlined text-sm text-amber">shield</span></div>
           <span class="text-[9px] font-semibold text-muted uppercase">Risk Check</span>
-          <span class="text-[8px] text-muted-dim font-mono" id="pipe-risk-val">--</span>
+          <span class="text-[10px] text-muted-dim font-mono" id="pipe-risk-val">--</span>
         </div>
         <div class="pipeline-arrow" id="arrow-4">→</div>
         <div class="pipeline-step" id="pipe-exec" data-tip="Approved trades get filled on-chain via the executor">
           <div class="step-icon"><span class="material-symbols-outlined text-sm text-accent">bolt</span></div>
           <span class="text-[9px] font-semibold text-muted uppercase">Execution</span>
-          <span class="text-[8px] text-muted-dim font-mono" id="pipe-exec-val">0 filled</span>
+          <span class="text-[10px] text-muted-dim font-mono" id="pipe-exec-val">0 filled</span>
         </div>
       </div>
     </div>
@@ -624,7 +643,7 @@ tailwind.config = {
           </div>
           <div class="h-4 w-px bg-border"></div>
           <div class="font-mono">
-            <span class="text-xl font-bold text-white" id="main-price" style="text-shadow: 0 0 20px rgba(255,255,255,0.1)">--</span>
+            <span class="text-xl font-bold text-muted-dim" id="main-price" style="text-shadow: 0 0 20px rgba(255,255,255,0.1)">$---.--</span>
             <span class="text-xs font-mono ml-2" id="price-delta"></span>
           </div>
         </div>
@@ -651,6 +670,11 @@ tailwind.config = {
       </div>
       <div class="flex-1 flex gap-px min-h-0 bg-void">
         <div class="flex-[6] relative min-h-0 bg-surface p-2">
+          <div id="price-chart-empty" class="chart-empty-state">
+            <div class="empty-icon"><span class="material-symbols-outlined text-muted text-xl">candlestick_chart</span></div>
+            <div class="empty-label">Waiting for market data</div>
+            <div class="empty-hint">Candlestick chart will appear once the swarm connects to a price feed</div>
+          </div>
           <canvas id="price-chart" class="w-full h-full"></canvas>
         </div>
         <div class="flex-[4] flex flex-col gap-px min-h-0">
@@ -665,11 +689,18 @@ tailwind.config = {
               </div>
               <span class="material-symbols-outlined text-muted text-xs">show_chart</span>
             </div>
+            <div id="pnl-chart-empty" class="chart-empty-state">
+              <span class="material-symbols-outlined text-muted text-base">show_chart</span>
+              <div class="empty-label" style="font-size:10px">No P&L data yet</div>
+            </div>
             <canvas id="pnl-chart" class="w-full h-full"></canvas>
           </div>
           <div class="h-[130px] relative bg-surface p-3 flex items-center gap-3">
-            <div class="w-[90px] h-[90px] shrink-0">
+            <div class="w-[90px] h-[90px] shrink-0 relative">
               <canvas id="portfolio-chart" class="w-full h-full"></canvas>
+              <div id="portfolio-empty-icon" class="absolute inset-0 flex items-center justify-center">
+                <span class="material-symbols-outlined text-muted-dim text-2xl" style="opacity:0.4">pie_chart</span>
+              </div>
             </div>
             <div class="flex-1">
               <div class="flex items-center gap-1.5 mb-2">
@@ -680,7 +711,7 @@ tailwind.config = {
                 </div>
               </div>
               <div id="portfolio-legend" class="font-mono text-[9px] space-y-1.5 overflow-y-auto max-h-[80px]">
-                <div class="text-muted">No positions</div>
+                <div class="text-muted-dim">No positions yet</div>
               </div>
             </div>
           </div>
@@ -703,8 +734,8 @@ tailwind.config = {
         </div>
       </div>
       <div id="tab-intents" class="flex-1 overflow-y-auto">
-        <table class="data-table">
-          <thead>
+        <table class="data-table" id="intents-table">
+          <thead id="intents-thead">
             <tr>
               <th>Trade ID</th>
               <th>Direction</th>
@@ -724,8 +755,8 @@ tailwind.config = {
         </div>
       </div>
       <div id="tab-execlog" class="flex-1 overflow-y-auto hidden">
-        <table class="data-table">
-          <thead>
+        <table class="data-table" id="execlog-table">
+          <thead id="execlog-thead">
             <tr>
               <th>Time</th>
               <th>Trade ID</th>
@@ -776,9 +807,10 @@ tailwind.config = {
           </div>
           <div class="signal-track">
             <div class="signal-center-mark"></div>
+            <div id="score-neutral-dot" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-muted-dim" style="z-index:1"></div>
             <div id="score-fill" class="signal-fill signal-fill-pos" style="width:0"></div>
           </div>
-          <div class="flex justify-between text-[8px] text-muted-dim mt-1.5 font-mono">
+          <div class="flex justify-between text-[9px] text-muted-dim mt-1.5 font-mono">
             <span>← Sell</span>
             <span class="text-amber text-[9px] font-semibold">threshold ±0.20</span>
             <span>Buy →</span>
@@ -838,7 +870,7 @@ tailwind.config = {
 </div>
 
 <!-- ═══ BOTTOM BAR ═══ -->
-<footer class="fixed bottom-0 w-full h-7 z-50 flex items-center px-3 gap-4 overflow-hidden border-t font-mono text-[9px]" style="background: linear-gradient(180deg, rgba(12,16,24,0.95) 0%, rgba(8,10,16,0.98) 100%); border-color: rgba(30,41,59,0.4); backdrop-filter: blur(12px);">
+<footer class="fixed bottom-0 w-full h-8 z-50 flex items-center px-4 gap-4 overflow-hidden border-t font-mono text-[10px]" style="background: linear-gradient(180deg, rgba(12,16,24,0.95) 0%, rgba(8,10,16,0.98) 100%); border-color: rgba(30,41,59,0.4); backdrop-filter: blur(12px);">
   <div class="flex items-center gap-2 text-accent shrink-0">
     <div class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></div>
     <span class="font-semibold uppercase" id="sys-status">SYS_INIT</span>
@@ -1302,17 +1334,17 @@ function updatePipeline() {
   if (hasMarket) {
     const sym = Object.keys(S.prices)[0];
     document.getElementById("pipe-market-val").textContent = `${sym} live`;
-    document.getElementById("pipe-market-val").className = "text-[8px] text-accent font-mono";
+    document.getElementById("pipe-market-val").className = "text-[10px] text-accent font-mono";
   }
   if (hasSignals) {
     const count = Object.keys(S.signals).length;
     document.getElementById("pipe-signals-val").textContent = `${count} active`;
-    document.getElementById("pipe-signals-val").className = "text-[8px] text-amber font-mono";
+    document.getElementById("pipe-signals-val").className = "text-[10px] text-amber font-mono";
   }
   if (hasIntents) {
     const pending = S.intents.filter(i => !i._status).length;
     document.getElementById("pipe-strategy-val").textContent = `${pending} pending`;
-    document.getElementById("pipe-strategy-val").className = "text-[8px] text-purple-400 font-mono";
+    document.getElementById("pipe-strategy-val").className = "text-[10px] text-purple-400 font-mono";
 
     // Check latest intent risk state
     const latest = S.intents[S.intents.length - 1];
@@ -1320,12 +1352,12 @@ function updatePipeline() {
     if (vlist.length > 0) {
       const approved = vlist.filter(v => v.approve).length;
       document.getElementById("pipe-risk-val").textContent = `${approved}/${vlist.length} ok`;
-      document.getElementById("pipe-risk-val").className = `text-[8px] font-mono ${approved >= 3 ? "text-accent" : "text-amber"}`;
+      document.getElementById("pipe-risk-val").className = `text-[10px] font-mono ${approved >= 3 ? "text-accent" : "text-amber"}`;
     }
   }
   if (hasFills) {
     document.getElementById("pipe-exec-val").textContent = `${S.reports.length} filled`;
-    document.getElementById("pipe-exec-val").className = "text-[8px] text-accent font-mono";
+    document.getElementById("pipe-exec-val").className = "text-[10px] text-accent font-mono";
   }
 }
 
@@ -1359,6 +1391,7 @@ function initChartJs() {
 
 function updatePnlChart() {
   if (!pnlChartInstance) return;
+  if (S.pnlHistory.length > 1) document.getElementById("pnl-chart-empty").style.display = "none";
   const chart = pnlChartInstance;
   chart.data.labels = S.pnlHistory.map((_, i) => i);
   chart.data.datasets[0].data = S.pnlHistory;
@@ -1370,6 +1403,7 @@ function updatePnlChart() {
 
 function updatePortfolioChart(walletData) {
   if (!portfolioChartInstance || !walletData) return;
+  document.getElementById("portfolio-empty-icon").style.display = "none";
   const colors = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#a855f7", "#06b6d4", "#ec4899", "#14b8a6"];
   const labels = [], data = [], bgColors = [];
   const allocs = walletData.allocations || {};
@@ -1410,6 +1444,8 @@ function connect() {
     document.getElementById("conn-text").textContent = "CONNECTED";
     document.getElementById("sys-status").textContent = "SYS_READY";
     document.getElementById("demo-btn").style.display = "none";
+    document.getElementById("mode-badge").textContent = "MOCK";
+    document.getElementById("mode-badge").className = "mode-badge border border-electric/30 text-electric bg-electric/10";
     if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
   };
   ws.onclose = () => {
@@ -1426,6 +1462,8 @@ function showOffline() {
   document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-muted-dim";
   document.getElementById("conn-text").textContent = "OFFLINE";
   document.getElementById("sys-status").textContent = "WAITING";
+  document.getElementById("mode-badge").textContent = "OFFLINE";
+  document.getElementById("mode-badge").className = "mode-badge border border-muted-dim/30 text-muted-dim bg-muted-dim/10";
   document.getElementById("demo-btn").style.display = "";
 }
 
@@ -1435,8 +1473,8 @@ function stopDemoMode() {
   document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-muted-dim";
   document.getElementById("conn-text").textContent = "OFFLINE";
   document.getElementById("sys-status").textContent = "WAITING";
-  document.getElementById("mode-badge").textContent = "MOCK";
-  document.getElementById("mode-badge").className = "mode-badge border border-electric/30 text-electric bg-electric/10";
+  document.getElementById("mode-badge").textContent = "OFFLINE";
+  document.getElementById("mode-badge").className = "mode-badge border border-muted-dim/30 text-muted-dim bg-muted-dim/10";
   document.getElementById("demo-btn").querySelector("span > span:first-child").textContent = "play_circle";
   document.getElementById("demo-btn").querySelector("span").lastChild.textContent = " Demo";
   document.getElementById("demo-btn").style.background = "rgba(168,85,247,0.15)";
@@ -1582,7 +1620,9 @@ function handleMarket(d) {
   if (!S.startPrice) S.startPrice = price;
   S.priceHistory.push({ t: Date.now(), p: price });
   if (S.priceHistory.length > 600) S.priceHistory = S.priceHistory.slice(-600);
-  document.getElementById("main-price").textContent = `$${price.toFixed(2)}`;
+  const mainPriceEl = document.getElementById("main-price");
+  mainPriceEl.textContent = `$${price.toFixed(2)}`;
+  mainPriceEl.className = "text-xl font-bold text-white";
   const delta = ((price / S.startPrice - 1) * 100);
   const deltaEl = document.getElementById("price-delta");
   deltaEl.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`;
@@ -1723,15 +1763,18 @@ function renderSignals() {
   document.getElementById("weighted-score-header").className = `font-mono text-[10px] font-semibold ${scoreColor}`;
 
   const fillEl = document.getElementById("score-fill");
+  const neutralDot = document.getElementById("score-neutral-dot");
   const absW = Math.min(50, Math.abs(weightedScore) * 50);
+  if (absW > 0 && neutralDot) neutralDot.style.display = "none";
+  else if (neutralDot) neutralDot.style.display = "";
   if (weightedScore >= 0) { fillEl.className = "signal-fill signal-fill-pos"; fillEl.style.cssText = `width:${absW}%;left:50%`; }
   else { fillEl.className = "signal-fill signal-fill-neg"; fillEl.style.cssText = `width:${absW}%;right:50%;left:auto`; }
 }
 
 function renderIntents() {
-  const body = document.getElementById("intents-body"), empty = document.getElementById("intents-empty");
-  if (S.intents.length === 0) { body.innerHTML = ""; empty.classList.remove("hidden"); return; }
-  empty.classList.add("hidden");
+  const body = document.getElementById("intents-body"), empty = document.getElementById("intents-empty"), thead = document.getElementById("intents-thead");
+  if (S.intents.length === 0) { body.innerHTML = ""; empty.classList.remove("hidden"); thead.style.display = "none"; return; }
+  empty.classList.add("hidden"); thead.style.display = "";
   const items = [...S.intents].reverse().slice(0, 30);
   let html = "";
   for (const intent of items) {
@@ -1765,9 +1808,9 @@ function renderIntents() {
 }
 
 function renderReports() {
-  const body = document.getElementById("execlog-body"), empty = document.getElementById("execlog-empty");
-  if (S.reports.length === 0) { body.innerHTML = ""; empty.classList.remove("hidden"); return; }
-  empty.classList.add("hidden");
+  const body = document.getElementById("execlog-body"), empty = document.getElementById("execlog-empty"), thead = document.getElementById("execlog-thead");
+  if (S.reports.length === 0) { body.innerHTML = ""; empty.classList.remove("hidden"); thead.style.display = "none"; return; }
+  empty.classList.add("hidden"); thead.style.display = "";
   const items = [...S.reports].reverse().slice(0, 50);
   let html = "";
   for (const r of items) {
@@ -1866,6 +1909,7 @@ function drawChart() {
   ctx.scale(devicePixelRatio, devicePixelRatio);
   const w = rect.width, h = rect.height, data = S.priceHistory;
   if (data.length < 2) return;
+  document.getElementById("price-chart-empty").style.display = "none";
   ctx.clearRect(0, 0, w, h);
 
   ctx.strokeStyle = "rgba(30,41,59,0.4)"; ctx.lineWidth = 0.5;
@@ -2744,6 +2788,8 @@ function likeFeedEvent(eventId) {
 }
 
 // ── Init ──────────────────────────────────────────────────────
+document.getElementById("intents-thead").style.display = "none";
+document.getElementById("execlog-thead").style.display = "none";
 initChartJs(); connect();
 setInterval(updateClock, 1000); setInterval(updateTicker, 3000);
 setInterval(updateUptime, 1000); setInterval(() => { renderIntents(); }, 1000);

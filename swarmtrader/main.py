@@ -106,10 +106,16 @@ from .agent_policies import AgentPolicyEngine, AgentPolicy, policy_check
 from .hardware_signer import HardwareSigningPipeline
 from .polymarket import PolymarketAgent
 from .alpha_swarm import setup_alpha_swarm
+from .price_gate import PriceValidationGate
+from .kalman import AdaptiveKalmanFilter
+from .fusion import DataFusionPipeline
+from .debate import setup_debate_engine, ELOTracker
+from .agent_policies import ExecutionSandbox
 from .agent_registry import AgentRegistry
 from .arb_executor import ArbScanner, ArbExecutor
 from .dex_quotes import DEXQuoteProvider
 from .dex_multi import MultiDEXScanner
+from .hermes_brain import HermesBrain
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -196,6 +202,8 @@ def parse_args() -> argparse.Namespace:
                    help="Master key for agent gateway (auto-generated if omitted)")
     p.add_argument("--demo", action="store_true",
                    help="Use demo replay mode with pre-recorded market scenario")
+    p.add_argument("--hermes", action="store_true",
+                   help="Use local Hermes LLM (via Ollama) as the brain instead of rule-based Strategist")
     p.add_argument("--checkpoint", action="store_true",
                    help="Enable state checkpointing for crash recovery")
     p.add_argument("--checkpoint-path", type=str, default="swarm_checkpoint.json",
@@ -569,11 +577,28 @@ async def run(args: argparse.Namespace):
     supervisor.register("yield_agg", yield_agg.run, stale_after=1200.0, stoppable=yield_agg)
     log.info("Yield aggregator: scanning DeFi Llama for top pools")
 
+    # ── Adaptive Kalman Filter (signal noise removal) ─────────
+    kalman_filter = AdaptiveKalmanFilter(bus, min_confidence_boost=0.1)
+    log.info("Kalman filter: adaptive noise removal on all signal topics")
+
+    # ── Data Fusion Pipeline (cross-source convergence) ──────
+    fusion = DataFusionPipeline(
+        bus, window_s=120.0, min_sources=2, fusion_interval=30.0,
+    )
+    log.info("Data fusion: convergence scoring across %d signal sources", len(fusion._buckets))
+
     # ── Alpha Swarm (multi-agent opportunity detection) ───────
     alpha_components = setup_alpha_swarm(
         bus, min_agents_agree=3, window_s=300.0, min_conviction=0.4,
     )
     log.info("Alpha swarm: hunter -> sentiment -> risk -> coordinator")
+
+    # ── Adversarial Debate Engine (bull vs bear before trades) ─
+    elo_tracker = ELOTracker()
+    debate_engine = setup_debate_engine(
+        bus, elo=elo_tracker, min_margin=0.3, memory_depth=3,
+    )
+    log.info("Debate engine: bull vs bear adversarial validation with ELO reputation")
 
     # ── LP Rebalance Manager (UniRange pattern) ───────────────
     lp_mgr = LPRebalanceManager(
@@ -587,6 +612,16 @@ async def run(args: argparse.Namespace):
     # ── Agent Policy Engine (per-agent spending limits) ───────
     policy_engine = AgentPolicyEngine(bus, default_daily_cap=args.capital * 0.1)
     log.info("Agent policy engine: default daily cap=$%.0f", args.capital * 0.1)
+
+    # ── Execution Sandbox (agents trade but can't withdraw) ──
+    sandbox = ExecutionSandbox()
+    # All internal agents get TRADE_ONLY by default
+    for agent_name in ["momentum", "mean_rev", "rsi", "macd", "bollinger",
+                        "vwap", "ichimoku", "whale", "news", "ml",
+                        "alpha_swarm", "debate_engine", "fusion",
+                        "kalman", "smart_money", "sentiment"]:
+        sandbox.set_permission(agent_name, ExecutionSandbox.TRADE_ONLY)
+    log.info("Execution sandbox: %d agents sandboxed to TRADE_ONLY", len(sandbox._agent_permissions))
 
     # ── Agent Registry (Unstoppable Domains identity) ─────────
     agent_registry = AgentRegistry(
@@ -672,7 +707,21 @@ async def run(args: argparse.Namespace):
 
     # ── Strategy ────────────────────────────────────────────────
     tokens = set(assets) | {"USD", "USDC", "USDT"}
-    strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
+    hermes = None
+    if getattr(args, "hermes", False):
+        hermes = HermesBrain(
+            bus, portfolio=portfolio, assets=assets,
+            base_size=args.base_size, max_size=args.max_size,
+            capital=args.capital,
+        )
+        supervisor.register("hermes_brain", hermes.run, stale_after=60.0, stoppable=hermes)
+        log.info("HERMES BRAIN enabled — LLM controls all agents (model=%s)", hermes.model)
+        # Still create Strategist so its signal subscriptions populate the bus,
+        # but Hermes will be the primary intent emitter
+        strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
+        log.info("Rule-based Strategist running as backup alongside Hermes")
+    else:
+        strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
 
     # ── Position Management ───────────────────────────────────────
     pos_mgr = PositionManager(
@@ -771,6 +820,10 @@ async def run(args: argparse.Namespace):
     if args.mode != "mock":
         PositionFlattener(bus, paper=(args.mode == "paper"),
                           kill_switch=kill_switch, ws_client=ws_v2_client)
+
+    # ── Price Validation Gate (multi-source price check) ───────
+    price_gate = PriceValidationGate(bus, safe_bps=50, warn_bps=200)
+    log.info("Price gate: SAFE<%dbps WARN<%dbps HALT>=200bps", 50, 200)
 
     # ── Execution Pipeline ──────────────────────────────────────
     Simulator(bus)

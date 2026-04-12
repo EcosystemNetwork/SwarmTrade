@@ -98,6 +98,15 @@ from .alpha_swarm import (
     AlphaHunter, SentimentFilter, RiskScreener, SwarmCoordinator,
     setup_alpha_swarm, AlphaOpportunity,
 )
+# Competitive intelligence modules (ETHGlobal showcase patterns)
+from .price_gate import PriceValidationGate
+from .kalman import AdaptiveKalmanFilter
+from .fusion import DataFusionPipeline, FusedSignal
+from .debate import (
+    AdversarialDebateEngine, BullAgent, BearAgent, DebateResolver,
+    ELOTracker, setup_debate_engine,
+)
+from .agent_policies import ExecutionSandbox
 from .agent_registry import AgentRegistry, AgentIdentity
 # Multi-exchange + arbitrage
 from .exchanges import (
@@ -124,6 +133,7 @@ from .social_agents import (
     XMonitorAgent, DiscordAgent, TelegramAgent, SocialAggregator,
 )
 from .agent_learning import LearningCoordinator
+from .hermes_brain import HermesBrain
 from .dex_multi import (
     MultiDEXScanner, SushiSwapQuoter, AerodromeQuoter, CurveQuoter,
     PancakeSwapQuoter, RaydiumQuoter, OrcaQuoter, DEXQuote,
@@ -217,4 +227,6 @@ __all__ = [
     "BirdEyeAgent", "BirdEyeClient",
     "XMonitorAgent", "DiscordAgent", "TelegramAgent", "SocialAggregator",
     "LearningCoordinator",
+    # Hermes LLM brain
+    "HermesBrain",
 ]

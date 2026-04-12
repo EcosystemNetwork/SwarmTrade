@@ -27,6 +27,105 @@ from .core import Bus, TradeIntent, RiskVerdict
 log = logging.getLogger("swarm.policies")
 
 
+class ExecutionSandbox:
+    """Sandboxed Agent Execution — agents trade but can't withdraw.
+
+    Inspired by Meme Sentinels (ETHGlobal HackMoney 2026). Enforces
+    permission scoping at the action level. Even if an agent's decision
+    logic is compromised (prompt injection, bad data), it physically
+    cannot perform destructive operations.
+
+    Permission levels:
+      TRADE_ONLY  — place_order, cancel_order, amend_order (DEFAULT)
+      READ_ONLY   — view positions, balances, market data
+      FULL_ACCESS — all operations (human operator only, requires 2FA)
+
+    Blocked actions for TRADE_ONLY:
+      - withdraw, transfer, send
+      - change_api_keys, modify_risk_params
+      - delete_agent, modify_policy
+    """
+
+    TRADE_ONLY = "trade_only"
+    READ_ONLY = "read_only"
+    FULL_ACCESS = "full_access"
+
+    # Actions allowed per permission level
+    ALLOWED_ACTIONS: dict[str, set[str]] = {
+        "trade_only": {
+            "place_order", "cancel_order", "amend_order",
+            "view_positions", "view_balances", "view_market",
+            "publish_signal", "subscribe_topic",
+        },
+        "read_only": {
+            "view_positions", "view_balances", "view_market",
+            "subscribe_topic",
+        },
+        "full_access": {
+            "place_order", "cancel_order", "amend_order",
+            "view_positions", "view_balances", "view_market",
+            "publish_signal", "subscribe_topic",
+            "withdraw", "transfer", "send",
+            "change_api_keys", "modify_risk_params",
+            "delete_agent", "modify_policy",
+        },
+    }
+
+    BLOCKED_ACTIONS_LOG: list[dict] = []
+
+    def __init__(self):
+        self._agent_permissions: dict[str, str] = {}  # agent_id -> level
+        self._blocked_attempts: list[dict] = []
+
+    def set_permission(self, agent_id: str, level: str):
+        """Set permission level for an agent."""
+        if level not in self.ALLOWED_ACTIONS:
+            raise ValueError(f"Invalid permission level: {level}")
+        self._agent_permissions[agent_id] = level
+        log.info("Sandbox: agent %s set to %s", agent_id, level)
+
+    def get_permission(self, agent_id: str) -> str:
+        """Get permission level, defaulting to TRADE_ONLY."""
+        return self._agent_permissions.get(agent_id, self.TRADE_ONLY)
+
+    def check_action(self, agent_id: str, action: str) -> tuple[bool, str]:
+        """Check if an agent is allowed to perform an action.
+
+        Returns (allowed, reason).
+        """
+        level = self.get_permission(agent_id)
+        allowed = self.ALLOWED_ACTIONS.get(level, set())
+
+        if action in allowed:
+            return True, "ok"
+
+        # Block and log the attempt
+        record = {
+            "agent_id": agent_id,
+            "action": action,
+            "permission_level": level,
+            "ts": time.time(),
+        }
+        self._blocked_attempts.append(record)
+        if len(self._blocked_attempts) > 500:
+            self._blocked_attempts = self._blocked_attempts[-250:]
+
+        log.warning(
+            "SANDBOX BLOCKED: agent %s attempted '%s' (level=%s)",
+            agent_id, action, level,
+        )
+        return False, f"action '{action}' not allowed for permission level '{level}'"
+
+    def summary(self) -> dict:
+        return {
+            "agents": {
+                aid: level for aid, level in self._agent_permissions.items()
+            },
+            "blocked_attempts": len(self._blocked_attempts),
+            "recent_blocks": self._blocked_attempts[-5:],
+        }
+
+
 @dataclass
 class AgentPolicy:
     """Spending and trading policy for a single agent."""
@@ -46,6 +145,8 @@ class AgentPolicy:
     can_go_short: bool = True
     can_use_leverage: bool = False
     max_position_pct: float = 25.0        # max % of portfolio in one position
+    # Sandbox permission level
+    sandbox_level: str = ExecutionSandbox.TRADE_ONLY
     # Metadata
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)

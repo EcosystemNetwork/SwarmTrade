@@ -255,6 +255,8 @@ class WebDashboard:
             ("RiskAgent_FactorExposure", "risk", "risk.verdict"),
             ("RiskAgent_Rebalance", "risk", "risk.verdict"),
             ("RiskAgent_SOR", "risk", "risk.verdict"),
+            # Hermes LLM brain
+            ("HermesBrain", "strategy", "signal.hermes"),
         ]
         for name, role, topic in agent_defs:
             self.agents[name] = {

@@ -36,7 +36,22 @@ class Simulator:
         self.bus = bus
         self.last_price: float | None = None
         bus.subscribe("market.snapshot", self._on_snap)
+        # PriceValidationGate intercepts exec.go -> validates -> publishes exec.validated
+        # Simulator listens to exec.validated (gate present) or exec.go (no gate)
+        bus.subscribe("exec.validated", self._on_go)
         bus.subscribe("exec.go", self._on_go)
+        self._seen_intents: set[str] = set()
+
+    def _dedup(self, intent_id: str) -> bool:
+        """Prevent double-execution when both exec.go and exec.validated fire."""
+        if intent_id in self._seen_intents:
+            return True
+        self._seen_intents.add(intent_id)
+        if len(self._seen_intents) > 2000:
+            # Trim oldest half (sets are unordered, but prevents unbounded growth)
+            to_remove = list(self._seen_intents)[:1000]
+            self._seen_intents -= set(to_remove)
+        return False
 
     async def _on_snap(self, snap: MarketSnapshot):
         for price in snap.prices.values():
@@ -44,6 +59,8 @@ class Simulator:
             break
 
     async def _on_go(self, intent: TradeIntent):
+        if self._dedup(intent.id):
+            return  # Already processed via the other topic
         if self.last_price is None:
             await self.bus.publish("exec.simulated", (intent, None))
             return

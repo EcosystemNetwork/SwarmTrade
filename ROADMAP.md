@@ -355,21 +355,38 @@ Each phase builds on the previous. Estimated timeline: 6-8 months to Phase 20.
 
 ## Current Status
 
-**Completed:**
-- Phase 1: ~60% (infrastructure hardened, security audit done, DB migrated to Neon)
-- Phase 2: ~40% (Kraken CLI works, REST client exists, needs reconciliation)
-- Phase 3: ~30% (dashboard exists but needs React rebuild)
-- Phase 4: ~50% (risk checks exist, need exchange-side stop orders)
-- Phase 5: ~30% (basic strategies exist, need backtesting validation)
+**Phase Progress:**
+- Phase 1 (Infrastructure): ~85% — Neon Postgres, structured logging, AgentSupervisor with auto-restart, checkpoint/recovery, connection pooling
+- Phase 2 (Kraken Integration): ~75% — REST v2 + WS v2 clients, order tracking, balance reconciliation, dead man's switch, paper/live execution
+- Phase 3 (Dashboard): ~60% — Full web dashboard with WebSocket streaming, social trading UI, agent leaderboard, kill switch, report viewer
+- Phase 4 (Risk Management v2): ~90% — 15-layer risk pipeline, VaR (3 methods), stress testing (8 scenarios), factor model, compliance suite, agent policies
+- Phase 5 (Strategy Engine v2): ~70% — 7 TA strategies, ML agent, regime detection, walk-forward + Monte Carlo backtesting, NLP strategy parsing
+- Phase 6 (Multi-Exchange): ~80% — Kraken, Binance, Coinbase, OKX, Bybit CEX clients + Uniswap, Jupiter, Hyperliquid, SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca DEX quoters
+- Phase 7 (ML Signals): ~50% — Online gradient-boosted trees (stdlib), 15+ features, needs LSTM + ensemble
+- Phase 8 (Execution Optimization): ~85% — TWAP, Iceberg, SOR (15 venues), Almgren-Chriss, TCA, ArbScanner + ArbExecutor
+- Phase 11 (Copy Trading & Social): ~40% — Social trading engine, agent leaderboard, copy trading with revenue sharing
+- Phase 13 (DeFi Integration): ~50% — Uniswap executor, Jupiter executor, LP rebalancing, yield aggregator, x402 payments
+
+**Agent Inventory:**
+- 8 data scouts (Kraken REST/WS, Hyperliquid, Jupiter, BirdEye, Pyth, Mock, Demo)
+- 3 core analysts + 7 TA agents + 4 advanced market agents
+- 9 market intelligence agents + 2 external signals + 7 extended feeds
+- 3 cross-asset + 4 alpha swarm + 4 social media + 1 ML
+- 15 risk agents + 8 execution components + 3 arbitrage
+- 5 safety systems + 2 yield/LP + 2 learning + 7 infrastructure
+- **Total: 80+ cooperative agents across 79 source files**
 
 **Deployed:**
 - Railway: https://swarmtrade-production-f9c0.up.railway.app
-- Database: Neon Postgres via Vercel
-- Agents: 26 signal agents, 14 risk agents, 21 supervised processes
+- Database: Neon Postgres (production) + SQLite (dev/backtest)
+- Chains: Ethereum, Base, Solana (data + execution)
 
 **Stack:**
-- Backend: Python 3.11 / aiohttp / asyncio
+- Backend: Python 3.11 / aiohttp / asyncio (79 modules, ~1.1M bytes of source)
 - Database: Neon Postgres (prod) / SQLite (dev)
-- Frontend: Static HTML (Phase 3 will migrate to React)
-- Infra: Railway (backend) / Vercel (Neon)
-- Exchange: Kraken (primary), expandable to multi-exchange
+- Frontend: Static HTML + Chart.js + Tailwind (Phase 3 will migrate to React)
+- Infra: Railway (backend) / Neon (database)
+- CEX: Kraken (primary) + Binance, Coinbase, OKX, Bybit (SOR)
+- DEX: Uniswap (Base), Jupiter (Solana), Hyperliquid (perps), + 6 quoters
+- LLM: Ollama (optional Hermes brain)
+- Oracle: Pyth Network (decentralized price feeds)

@@ -782,6 +782,21 @@ class AgentGateway:
             await ws.send_json({"type": "heartbeat_ack", "ts": time.time()})
             return
 
+        if msg_type == "brain_brief":
+            # Brain agent pushing a market brief — relay to all brain subscribers
+            # This is handled by the GatewayProvider on the brain side;
+            # the agent just reads the brief and sends back a "decision" message.
+            # Nothing to do here — the WS is bidirectional.
+            return
+
+        if msg_type == "decision":
+            # Brain agent responding with a trading decision.
+            # The GatewayProvider reads this directly from the WS stream.
+            # If it arrives here, it means no brain is listening — treat as signal.
+            log.info("Decision from %s (no brain listener, converting to signal)",
+                     agent.agent_id)
+            msg_type = "signal"  # fall through to signal handling
+
         if msg_type == "signal":
             if not self._check_rate_limit(agent):
                 await ws.send_json({

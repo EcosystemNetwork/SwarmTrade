@@ -13,3 +13,7 @@ KILL
 .gitnexus
 *.log
 report_preview.html
+swarm_checkpoint.json
+session_log.json
+backtest_data/
+.stitch/
