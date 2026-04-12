@@ -32,6 +32,36 @@ class Signal:
 
 
 @dataclass
+class OrderSpec:
+    """Specifies how an order should be placed on the exchange.
+
+    Supports all Kraken order types:
+      market, limit, stop-loss, stop-loss-limit, take-profit,
+      take-profit-limit, trailing-stop, trailing-stop-limit,
+      iceberg, settle-position
+
+    Bracket orders use close_* fields (Kraken's conditional close).
+    """
+    order_type: str = "market"          # Kraken order type string
+    limit_price: float | None = None    # price for limit orders
+    stop_price: float | None = None     # trigger price for stop/take-profit
+    stop_limit_price: float | None = None  # limit price for stop-limit orders
+    trailing_offset: float | None = None   # offset for trailing stop (absolute or %)
+    # Bracket order (conditional close attached to entry)
+    close_order_type: str | None = None    # e.g., "stop-loss-limit"
+    close_price: float | None = None       # stop-loss trigger price
+    close_price2: float | None = None      # take-profit price (or stop-limit limit)
+    # Iceberg
+    display_volume: float | None = None    # visible volume (native iceberg)
+    # Time-in-force
+    time_in_force: str | None = None       # "gtc", "gtd", "ioc"
+    expire_time: str | None = None         # for "gtd"
+    # Order flags
+    post_only: bool = False                # maker-only (passive)
+    reduce_only: bool = False              # reduce position only
+
+
+@dataclass
 class TradeIntent:
     id: str
     asset_in: str
@@ -40,6 +70,7 @@ class TradeIntent:
     min_out: float
     ttl: float
     supporting: list[Signal] = field(default_factory=list)
+    order_spec: OrderSpec | None = None  # None = use default (market)
 
     @staticmethod
     def new(**kw) -> "TradeIntent":
@@ -57,7 +88,7 @@ class RiskVerdict:
 @dataclass
 class ExecutionReport:
     intent_id: str
-    status: Literal["filled", "rejected", "expired", "error"]
+    status: Literal["filled", "rejected", "expired", "error", "partial", "submitted", "cancelled"]
     tx_hash: str | None
     fill_price: float | None
     realized_slippage: float | None
@@ -67,6 +98,11 @@ class ExecutionReport:
     quantity: float = 0.0   # amount of base asset
     asset: str = ""         # base asset symbol (e.g. "ETH")
     fee_usd: float = 0.0   # fee paid in USD
+    # Phase 4: Order lifecycle fields
+    partial_fill: bool = False
+    filled_quantity: float = 0.0    # cumulative filled so far
+    remaining_quantity: float = 0.0  # remaining to fill
+    cl_ord_id: str = ""             # client order ID for Kraken tracking
 
 
 # ---------------------------------------------------------------------------

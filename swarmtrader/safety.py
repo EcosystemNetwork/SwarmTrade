@@ -80,7 +80,8 @@ class CircuitBreaker:
                  max_drawdown_usd: float = 200.0,
                  vol_halt_threshold: float = 0.05,
                  cooldown_seconds: float = 300.0,
-                 alert_hook: AlertHook | None = None):
+                 alert_hook: AlertHook | None = None,
+                 ws_client=None):
         self.bus = bus
         self.kill_switch = kill_switch
         self.max_consecutive_losses = max_consecutive_losses
@@ -88,6 +89,7 @@ class CircuitBreaker:
         self.vol_halt_threshold = vol_halt_threshold
         self.cooldown_seconds = cooldown_seconds
         self._alert_hook = alert_hook
+        self._ws_client = ws_client  # KrakenWSv2Client for fast cancel
 
         self.consecutive_losses = 0
         self.cumulative_pnl = 0.0
@@ -213,7 +215,35 @@ class CircuitBreaker:
         })
 
     async def _cancel_all_orders(self):
-        """Cancel all open orders via Kraken CLI with timeout protection."""
+        """Cancel all open orders via REST API → WS → CLI (priority order).
+
+        Tries the fastest method first:
+        1. WS cancel_all (sub-50ms if connected)
+        2. REST API cancel_all (no subprocess)
+        3. CLI subprocess (fallback)
+        """
+        # Try WS cancel (fastest)
+        if self._ws_client:
+            try:
+                await self._ws_client.ws_cancel_all()
+                log.info("Dead man's switch: cancelled all orders via WebSocket")
+                return
+            except Exception as e:
+                log.debug("WS cancel_all failed, trying REST: %s", e)
+
+        # Try REST API
+        try:
+            from .kraken_api import get_client
+            client = get_client()
+            if client._cfg.api_key and client._cfg.api_secret:
+                result = await client.cancel_all()
+                count = result.get("count", 0)
+                log.info("Dead man's switch: cancelled %d orders via REST API", count)
+                return
+        except Exception as e:
+            log.debug("REST cancel_all failed, trying CLI: %s", e)
+
+        # CLI fallback
         try:
             proc = await asyncio.create_subprocess_exec(
                 "kraken", "order", "cancel-all", "--yes",
@@ -225,7 +255,7 @@ class CircuitBreaker:
                     proc.communicate(), timeout=_CLI_TIMEOUT
                 )
                 if proc.returncode == 0:
-                    log.info("Dead man's switch: cancelled all open orders")
+                    log.info("Dead man's switch: cancelled all open orders (CLI)")
                 else:
                     log.warning("Dead man's switch returned code %d: %s",
                                 proc.returncode,
@@ -305,15 +335,40 @@ class PositionFlattener:
     remains engaged permanently — the system cannot safely flatten positions.
     """
 
-    def __init__(self, bus: Bus, paper: bool = True, kill_switch: "KillSwitch | None" = None):
+    def __init__(self, bus: Bus, paper: bool = True,
+                 kill_switch: "KillSwitch | None" = None, ws_client=None):
         self.bus = bus
         self.paper = paper
         self.kill_switch = kill_switch
+        self._ws_client = ws_client
         bus.subscribe("safety.halt", self._on_halt)
 
     async def _on_halt(self, payload: dict):
         reason = payload.get("reason", "unknown")
         log.critical("FLATTENING ALL POSITIONS: %s", reason)
+
+        # Try WS cancel first (fastest)
+        if self._ws_client:
+            try:
+                await self._ws_client.ws_cancel_all()
+                log.info("Position flattener: cancelled all orders via WebSocket")
+                return
+            except Exception as e:
+                log.debug("WS flatten failed, trying REST: %s", e)
+
+        # Try REST API
+        try:
+            from .kraken_api import get_client
+            client = get_client()
+            if client._cfg.api_key and client._cfg.api_secret:
+                result = await client.cancel_all()
+                count = result.get("count", 0)
+                log.info("Position flattener: cancelled %d orders via REST API", count)
+                return
+        except Exception as e:
+            log.debug("REST flatten failed, trying CLI: %s", e)
+
+        # CLI fallback
         try:
             if self.paper:
                 cmd = ["kraken", "paper", "cancel-all", "-o", "json"]

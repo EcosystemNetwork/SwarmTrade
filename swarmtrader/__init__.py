@@ -58,6 +58,8 @@ from .walkforward import (
 )
 # Agent gateway
 from .gateway import AgentGateway
+# Agent memory
+from .memory import AgentMemory
 # Phase 4: config, reconciliation, structured logging
 from .config import TradingConfig
 from .reconciliation import BalanceReconciler

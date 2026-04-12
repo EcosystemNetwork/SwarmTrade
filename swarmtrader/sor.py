@@ -1,11 +1,12 @@
 """Smart Order Router — multi-venue quote aggregation and best-execution routing.
 
-Simulates quotes from multiple exchanges (Kraken, Binance, Coinbase, OKX, dYdX)
-with small random spread offsets for hackathon demo. In production, each venue
-adapter would hit real order-book APIs.
+When L2 order book data is available (via KrakenWSv2Client), uses real book depth
+to compute executable fill prices by walking the book. Simulates other venues
+with small spread offsets.
 
 Execution flow integration:
     market.snapshot -> sor quote cache update
+    market.book    -> sor real book analysis
     exec.go        -> sor intercepts, picks best venue, publishes sor.routed
 """
 from __future__ import annotations
@@ -65,9 +66,18 @@ _DYDX_PAIRS = {"BTC", "ETH", "SOL", "AVAX", "DOGE", "LINK", "MATIC"}
 # SmartOrderRouter
 # ---------------------------------------------------------------------------
 class SmartOrderRouter:
-    """Aggregates quotes from multiple venues and routes to best execution."""
+    """Aggregates quotes from multiple venues and routes to best execution.
 
-    def __init__(self, bus: Bus, venues: list[VenueConfig] | None = None):
+    When L2 order book data is available, computes real executable fill prices
+    by walking the book depth. Provides:
+    - walk_book(): compute fill price at given size from real L2 data
+    - Optimal limit price calculation (1-2 ticks inside spread)
+    - Adaptive order sizing based on book depth
+    - Order type recommendation (limit vs market vs TWAP)
+    """
+
+    def __init__(self, bus: Bus, venues: list[VenueConfig] | None = None,
+                 ws_client=None):
         self.bus = bus
         self.venues = venues or list(DEFAULT_VENUES)
         self._kraken_prices: dict[str, float] = {}
@@ -75,17 +85,27 @@ class SmartOrderRouter:
         self._routing_log: list[dict[str, Any]] = []
         self._total_savings_bps: float = 0.0
         self._route_count: int = 0
+        self._ws_client = ws_client  # KrakenWSv2Client for real L2 books
+        # Real book data from WS
+        self._books: dict[str, dict] = {}  # symbol -> {bids, asks, spread_bps, ...}
 
         bus.subscribe("market.snapshot", self._on_snapshot)
+        bus.subscribe("market.book", self._on_book)
         bus.subscribe("exec.go", self._on_exec_go)
 
     # ── Bus handlers ──────────────────────────────────────────────
 
     async def _on_snapshot(self, snap: MarketSnapshot) -> None:
         self._kraken_prices.update(snap.prices)
-        # Refresh simulated quotes for all known assets
+        # Refresh quotes — use real book for Kraken if available
         for asset in snap.prices:
-            self._quote_cache[asset] = self._simulate_quotes(asset, snap.prices[asset])
+            self._quote_cache[asset] = self._build_quotes(asset, snap.prices[asset])
+
+    async def _on_book(self, book_data: dict) -> None:
+        """Cache real L2 order book data from WebSocket."""
+        symbol = book_data.get("symbol", "")
+        if symbol:
+            self._books[symbol] = book_data
 
     async def _on_exec_go(self, intent: TradeIntent) -> None:
         """Intercept execution-go events to route to best venue.
@@ -136,6 +156,208 @@ class SmartOrderRouter:
                 ts=now,
             ))
         return quotes
+
+    def _build_quotes(self, asset: str, kraken_mid: float) -> list[ExchangeQuote]:
+        """Build quotes using real book data for Kraken, simulated for others."""
+        quotes: list[ExchangeQuote] = []
+        now = time.time()
+
+        for v in self.venues:
+            if not v.enabled:
+                continue
+            if v.name == "dydx" and asset.upper() not in _DYDX_PAIRS:
+                continue
+
+            if v.name == "kraken" and asset in self._books:
+                # Real quote from L2 order book
+                book = self._books[asset]
+                bid = book.get("best_bid", 0)
+                ask = book.get("best_ask", 0)
+                if bid > 0 and ask > 0:
+                    quotes.append(ExchangeQuote(
+                        exchange="kraken",
+                        pair=f"{asset}/USD",
+                        bid=bid,
+                        ask=ask,
+                        volume_24h=0.0,  # real volume from trades if available
+                        fee_rate=v.fee_rate,
+                        latency_ms=2.0,  # native WS = very low latency
+                        ts=book.get("ts", now),
+                    ))
+                    continue
+
+            # Simulated quote for other venues (or Kraken without book)
+            spread_bps = random.uniform(-15, 15) / 10_000
+            mid = kraken_mid * (1 + spread_bps)
+            half_spread = random.uniform(2, 8) / 10_000
+            bid = mid * (1 - half_spread)
+            ask = mid * (1 + half_spread)
+            if bid >= ask:
+                bid, ask = ask, bid
+            vol_24h = random.uniform(500_000, 5_000_000) * v.weight
+            latency = random.uniform(5, 80) if v.name != "kraken" else random.uniform(2, 20)
+
+            quotes.append(ExchangeQuote(
+                exchange=v.name, pair=f"{asset}/USD",
+                bid=bid, ask=ask, volume_24h=vol_24h,
+                fee_rate=v.fee_rate, latency_ms=latency, ts=now,
+            ))
+        return quotes
+
+    # ── L2 Order Book Analysis ───────────────────────────────────
+
+    def walk_book(self, asset: str, side: str, size_usd: float) -> dict | None:
+        """Walk the L2 order book to compute executable fill price at given size.
+
+        Args:
+            asset: Symbol (e.g., "ETH")
+            side: "buy" (walk asks) or "sell" (walk bids)
+            size_usd: Order size in USD
+
+        Returns dict with:
+            fill_price: Volume-weighted average fill price
+            levels_consumed: How many levels were consumed
+            total_depth_usd: Total available depth
+            market_impact_bps: Price impact vs mid
+            slippage_bps: Estimated slippage vs best price
+        """
+        if self._ws_client:
+            book = self._ws_client.get_book(asset)
+            if book:
+                levels = book.asks if side == "buy" else book.bids
+                mid = book.mid_price
+                return self._walk_levels(levels, size_usd, mid)
+
+        # Fallback: use cached book data
+        if asset in self._books:
+            book_data = self._books[asset]
+            levels = book_data.get("asks_top5" if side == "buy" else "bids_top5", [])
+            mid = book_data.get("mid", 0)
+            if levels and mid > 0:
+                return self._walk_levels(levels, size_usd, mid)
+
+        return None
+
+    @staticmethod
+    def _walk_levels(levels: list[list[float]], size_usd: float,
+                     mid: float) -> dict:
+        """Walk price levels to compute fill price for given USD size."""
+        remaining = size_usd
+        total_cost = 0.0
+        total_qty = 0.0
+        consumed = 0
+
+        for price, qty in levels:
+            if remaining <= 0:
+                break
+            level_usd = price * qty
+            fill_usd = min(remaining, level_usd)
+            fill_qty = fill_usd / price
+            total_cost += fill_qty * price
+            total_qty += fill_qty
+            remaining -= fill_usd
+            consumed += 1
+
+        if total_qty <= 0:
+            return {
+                "fill_price": mid,
+                "levels_consumed": 0,
+                "total_depth_usd": 0.0,
+                "market_impact_bps": 0.0,
+                "slippage_bps": 0.0,
+                "filled_pct": 0.0,
+            }
+
+        vwap = total_cost / total_qty
+        best_price = levels[0][0] if levels else mid
+        total_depth = sum(p * q for p, q in levels)
+        impact_bps = abs(vwap - mid) / max(mid, 1e-9) * 10_000
+        slippage_bps = abs(vwap - best_price) / max(best_price, 1e-9) * 10_000
+
+        return {
+            "fill_price": vwap,
+            "levels_consumed": consumed,
+            "total_depth_usd": total_depth,
+            "market_impact_bps": round(impact_bps, 2),
+            "slippage_bps": round(slippage_bps, 2),
+            "filled_pct": (size_usd - remaining) / max(size_usd, 1e-9) * 100,
+        }
+
+    def recommend_order_type(self, asset: str, side: str,
+                             size_usd: float) -> dict:
+        """Recommend optimal order type based on book depth and size.
+
+        Returns dict with:
+            order_type: "limit", "market", or "twap"
+            limit_price: Suggested limit price (if applicable)
+            reasoning: Why this type was chosen
+            urgency: "low", "medium", "high"
+        """
+        analysis = self.walk_book(asset, side, size_usd)
+        if not analysis:
+            return {
+                "order_type": "market",
+                "limit_price": None,
+                "reasoning": "No book data available — default to market",
+                "urgency": "medium",
+            }
+
+        impact_bps = analysis["market_impact_bps"]
+        filled_pct = analysis["filled_pct"]
+        depth_usd = analysis["total_depth_usd"]
+
+        # Get book for limit price calculation
+        book_data = self._books.get(asset)
+        best_bid = book_data.get("best_bid", 0) if book_data else 0
+        best_ask = book_data.get("best_ask", 0) if book_data else 0
+
+        # Decision logic
+        if size_usd > depth_usd * 0.3:
+            # Large order relative to book → TWAP to minimize impact
+            return {
+                "order_type": "twap",
+                "limit_price": None,
+                "reasoning": f"Order is {size_usd/max(depth_usd,1):.0%} of visible depth — TWAP recommended",
+                "urgency": "low",
+                "book_analysis": analysis,
+            }
+        elif impact_bps < 5 and filled_pct >= 99:
+            # Shallow impact, plenty of depth → aggressive limit inside spread
+            if side == "buy" and best_ask > 0 and best_bid > 0:
+                spread = best_ask - best_bid
+                limit = best_bid + spread * 0.3  # 30% into spread from bid
+            elif side == "sell" and best_ask > 0 and best_bid > 0:
+                spread = best_ask - best_bid
+                limit = best_ask - spread * 0.3
+            else:
+                limit = analysis["fill_price"]
+
+            return {
+                "order_type": "limit",
+                "limit_price": round(limit, 2),
+                "reasoning": f"Low impact ({impact_bps:.1f}bps), deep book — limit inside spread",
+                "urgency": "low",
+                "book_analysis": analysis,
+            }
+        elif impact_bps > 20:
+            # High impact → passive limit at best bid/ask
+            limit = best_bid if side == "buy" else best_ask
+            return {
+                "order_type": "limit",
+                "limit_price": round(limit, 2) if limit > 0 else None,
+                "reasoning": f"High impact ({impact_bps:.1f}bps) — passive limit to reduce cost",
+                "urgency": "medium",
+                "book_analysis": analysis,
+            }
+        else:
+            # Moderate — market order is fine
+            return {
+                "order_type": "market",
+                "limit_price": None,
+                "reasoning": f"Moderate impact ({impact_bps:.1f}bps), adequate depth — market OK",
+                "urgency": "high",
+                "book_analysis": analysis,
+            }
 
     # ── Public API ────────────────────────────────────────────────
 
@@ -249,7 +471,7 @@ class SmartOrderRouter:
             await asyncio.sleep(5.0)
             # Refresh quotes for all cached assets
             for asset, price in list(self._kraken_prices.items()):
-                self._quote_cache[asset] = self._simulate_quotes(asset, price)
+                self._quote_cache[asset] = self._build_quotes(asset, price)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """Strategist + risk + consensus coordinator with regime-aware adaptive weighting."""
 from __future__ import annotations
 import asyncio, time, logging
-from .core import Bus, Signal, TradeIntent, RiskVerdict, PortfolioTracker
+from .core import Bus, Signal, TradeIntent, RiskVerdict, PortfolioTracker, OrderSpec
 
 log = logging.getLogger("swarm")
 
@@ -198,6 +198,10 @@ class Strategist:
 
         # Determine assets from the signal context
         asset = next((s.asset for s in self.latest.values()), "ETH")
+
+        # Phase 10: Regime-adaptive order type selection
+        order_spec = self._select_order_spec(abs(score), going_long)
+
         intent = TradeIntent.new(
             asset_in="USDC" if going_long else asset,
             asset_out=asset if going_long else "USDC",
@@ -205,12 +209,14 @@ class Strategist:
             min_out=0.0,
             ttl=now + self.ttl_s,
             supporting=[self.latest[a] for a in active],
+            order_spec=order_spec,
         )
         self._cooldown_until = now + self.cooldown_s
 
-        log.info("INTENT %s score=%+.3f damp=%.2f regime=%s kelly_size=%.2f %s->%s",
+        log.info("INTENT %s score=%+.3f damp=%.2f regime=%s kelly=%.2f type=%s %s->%s",
                  intent.id, score, self.vol_damp, self.regime,
-                 size, intent.asset_in, intent.asset_out)
+                 size, order_spec.order_type if order_spec else "market",
+                 intent.asset_in, intent.asset_out)
         await self.bus.publish("intent.new", intent)
 
     def _kelly_size(self, score: float) -> float:
@@ -236,6 +242,41 @@ class Strategist:
 
         size = self.base_size * kelly_f * min(1.0, score) / 0.125  # normalize
         return max(10.0, min(self.base_size * 1.5, size))  # clamp tighter
+
+    def _select_order_spec(self, confidence: float, _going_long: bool) -> OrderSpec:
+        """Select order type based on regime and signal confluence.
+
+        Regime-adaptive logic:
+        - Trending: trailing stops to ride momentum
+        - Mean-reverting: limit orders at favorable prices (maker fees)
+        - Volatile: tighter stops, smaller engagement
+        - High confluence (>0.7): aggressive limit inside spread
+        - Low confluence (<0.3): conservative market order, small size
+        """
+        spec = OrderSpec()
+
+        if self.regime == "trending":
+            spec.order_type = "market"
+            if confidence > 0.5:
+                spec.close_order_type = "trailing-stop"
+                spec.close_price = 3.0  # 3% trailing offset
+        elif self.regime == "reverting":
+            spec.order_type = "limit"
+            spec.post_only = True
+            spec.time_in_force = "gtc"
+        elif self.regime == "volatile":
+            spec.order_type = "market"
+            if confidence > 0.4:
+                spec.close_order_type = "stop-loss"
+                spec.close_price = 2.0  # tighter 2% stop
+        else:
+            if confidence > 0.6:
+                spec.order_type = "limit"
+                spec.post_only = True
+            else:
+                spec.order_type = "market"
+
+        return spec
 
     async def _on_attribution(self, payload: dict):
         """Adaptive weighting: nudge weights toward profitable agents."""

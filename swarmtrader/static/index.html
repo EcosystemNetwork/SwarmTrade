@@ -45,37 +45,24 @@ tailwind.config = {
   body { background: #06080d; color: #e2e8f0; font-family: 'Inter', sans-serif; }
 
   /* Panel system */
-  .panel {
-    background: #0c1018;
-    border: 1px solid #1e293b;
-    border-radius: 6px;
-    overflow: hidden;
-  }
+  .panel { background: #0c1018; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden; }
   .panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
     padding: 10px 14px;
     background: linear-gradient(180deg, rgba(30,41,59,0.5) 0%, transparent 100%);
-    border-bottom: 1px solid #1e293b;
-    user-select: none;
+    border-bottom: 1px solid #1e293b; user-select: none;
   }
   .panel-header-title {
-    font-family: 'Inter', sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: #94a3b8;
+    font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase; color: #94a3b8;
+  }
+  .panel-desc {
+    font-size: 10px; color: #64748b; font-weight: 400; letter-spacing: 0;
+    text-transform: none; margin-left: 8px;
   }
 
   /* KPI card */
-  .kpi-card {
-    background: rgba(15,23,42,0.6);
-    border: 1px solid #1e293b;
-    border-radius: 6px;
-    padding: 8px 14px;
-  }
+  .kpi-card { background: rgba(15,23,42,0.6); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; }
   .kpi-label { font-size: 9px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
   .kpi-value { font-size: 14px; font-weight: 700; font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
 
@@ -83,52 +70,29 @@ tailwind.config = {
   @keyframes pulse-ring { 0% { opacity:0.6; transform:scale(1); } 100% { opacity:0; transform:scale(2.2); } }
   .status-pulse { position: relative; }
   .status-pulse::after {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 50%;
-    background: inherit;
-    animation: pulse-ring 1.8s ease-out infinite;
+    content: ''; position: absolute; inset: -2px; border-radius: 50%;
+    background: inherit; animation: pulse-ring 1.8s ease-out infinite;
   }
 
   /* Agent tree */
   .agent-group-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #64748b;
-    cursor: pointer;
-    user-select: none;
-    border-bottom: 1px solid rgba(30,41,59,0.5);
-    background: rgba(15,23,42,0.3);
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #64748b; cursor: pointer; user-select: none;
+    border-bottom: 1px solid rgba(30,41,59,0.5); background: rgba(15,23,42,0.3);
   }
   .agent-group-header:hover { background: rgba(30,41,59,0.4); }
   .agent-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 12px 5px 28px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: #94a3b8;
-    cursor: default;
-    transition: background 0.15s;
-    border-left: 2px solid transparent;
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px 5px 28px; font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: #94a3b8; cursor: default;
+    transition: background 0.15s; border-left: 2px solid transparent;
   }
   .agent-row:hover { background: rgba(30,41,59,0.3); }
   .agent-row.active { background: rgba(34,197,94,0.06); border-left-color: #22c55e; color: #e2e8f0; }
 
   /* Tabs */
-  .tab-active {
-    color: #e2e8f0;
-    border-bottom: 2px solid #3b82f6;
-    background: rgba(59,130,246,0.06);
-  }
+  .tab-active { color: #e2e8f0; border-bottom: 2px solid #3b82f6; background: rgba(59,130,246,0.06); }
   .tab-inactive { color: #64748b; border-bottom: 2px solid transparent; }
   .tab-inactive:hover { color: #94a3b8; background: rgba(255,255,255,0.02); }
 
@@ -143,14 +107,8 @@ tailwind.config = {
   .data-table { width: 100%; text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
   .data-table thead { position: sticky; top: 0; z-index: 10; }
   .data-table th {
-    padding: 8px 12px;
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #64748b;
-    background: #111520;
-    border-bottom: 1px solid #1e293b;
+    padding: 8px 12px; font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #64748b; background: #111520; border-bottom: 1px solid #1e293b;
   }
   .data-table td { padding: 8px 12px; border-bottom: 1px solid rgba(30,41,59,0.4); }
   .data-table tbody tr { transition: background 0.15s; }
@@ -163,10 +121,6 @@ tailwind.config = {
   .badge-blue { background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
   .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
 
-  /* Data flash */
-  @keyframes data-flash { 0% { background: rgba(59,130,246,0.15); } 100% { background: transparent; } }
-  .flash { animation: data-flash 0.6s ease-out; }
-
   /* Ticker */
   @keyframes ticker-scroll { from { transform: translateX(100%); } to { transform: translateX(-200%); } }
   .ticker-scroll { animation: ticker-scroll 90s linear infinite; }
@@ -177,106 +131,279 @@ tailwind.config = {
   ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
-  /* Status badges in header */
-  .mode-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 4px;
-    letter-spacing: 0.06em;
-  }
+  .mode-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 4px; letter-spacing: 0.06em; }
 
   /* Kill switch */
-  .kill-btn {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 6px 16px;
-    border-radius: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    transition: all 0.15s;
-    cursor: pointer;
-    border: 1px solid;
-  }
-  .kill-btn-idle {
-    background: rgba(127,29,29,0.3);
-    color: #fca5a5;
-    border-color: rgba(239,68,68,0.3);
-  }
-  .kill-btn-idle:hover {
-    background: rgba(153,27,27,0.5);
-    border-color: rgba(239,68,68,0.5);
-  }
-  .kill-btn-active {
-    background: #dc2626;
-    color: #fff;
-    border-color: #ef4444;
-    box-shadow: 0 0 20px rgba(239,68,68,0.3);
-    animation: pulse-kill 1s ease-in-out infinite;
-  }
+  .kill-btn { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; padding: 6px 16px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; transition: all 0.15s; cursor: pointer; border: 1px solid; }
+  .kill-btn-idle { background: rgba(127,29,29,0.3); color: #fca5a5; border-color: rgba(239,68,68,0.3); }
+  .kill-btn-idle:hover { background: rgba(153,27,27,0.5); border-color: rgba(239,68,68,0.5); }
+  .kill-btn-active { background: #dc2626; color: #fff; border-color: #ef4444; box-shadow: 0 0 20px rgba(239,68,68,0.3); animation: pulse-kill 1s ease-in-out infinite; }
   @keyframes pulse-kill { 0%,100% { opacity:1; } 50% { opacity:0.8; } }
 
   /* Verdict card */
-  .verdict-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    background: #111520;
-    border-radius: 4px;
-    border-left: 3px solid;
-    transition: background 0.15s;
-  }
+  .verdict-card { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #111520; border-radius: 4px; border-left: 3px solid; transition: background 0.15s; }
   .verdict-card:hover { background: #161a26; }
   .verdict-approved { border-left-color: #22c55e; }
   .verdict-rejected { border-left-color: #ef4444; }
 
-  /* Quorum */
-  .quorum-bar {
-    padding: 10px;
-    border-radius: 4px;
-    text-align: center;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
+  .quorum-bar { padding: 10px; border-radius: 4px; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 
-  /* Resize handle look */
-  .resize-border { border-color: #1e293b; }
-
-  /* Chart timeframe buttons */
-  .tf-btn {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 3px;
-    color: #64748b;
-    cursor: pointer;
-    transition: all 0.15s;
-    border: 1px solid transparent;
-  }
+  .tf-btn { font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600; padding: 3px 8px; border-radius: 3px; color: #64748b; cursor: pointer; transition: all 0.15s; border: 1px solid transparent; }
   .tf-btn:hover { color: #94a3b8; background: rgba(30,41,59,0.5); }
   .tf-btn.active { color: #e2e8f0; background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.3); }
+
+  /* Tooltip */
+  .tip { position: relative; cursor: help; }
+  .tip .tip-text {
+    visibility: hidden; opacity: 0; position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); background: #1e293b; color: #e2e8f0; font-size: 11px;
+    font-family: 'Inter', sans-serif; font-weight: 400; text-transform: none;
+    letter-spacing: 0; padding: 8px 12px; border-radius: 6px; white-space: normal;
+    width: 220px; z-index: 100; line-height: 1.5; border: 1px solid #334155;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); pointer-events: none;
+    transition: opacity 0.15s, visibility 0.15s;
+  }
+  .tip .tip-text::after {
+    content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;
+    border-width: 5px; border-style: solid; border-color: #1e293b transparent transparent transparent;
+  }
+  .tip:hover .tip-text { visibility: visible; opacity: 1; }
+
+  /* Pipeline strip */
+  .pipeline-step {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1;
+    padding: 8px 4px; border-radius: 6px; transition: all 0.2s; cursor: default;
+    position: relative;
+  }
+  .pipeline-step.step-active { background: rgba(59,130,246,0.08); }
+  .pipeline-step .step-icon {
+    width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; border: 2px solid #334155; background: #111520; transition: all 0.3s;
+  }
+  .pipeline-step.step-active .step-icon { border-color: #3b82f6; background: rgba(59,130,246,0.15); }
+  .pipeline-step.step-done .step-icon { border-color: #22c55e; background: rgba(34,197,94,0.15); }
+  .pipeline-arrow { color: #334155; font-size: 16px; display: flex; align-items: center; padding: 0 2px; margin-top: -6px; }
+  .pipeline-arrow.arrow-active { color: #3b82f6; }
+
+  /* Onboarding overlay */
+  .onboard-overlay {
+    position: fixed; inset: 0; z-index: 200; background: rgba(6,8,13,0.92);
+    backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .onboard-card {
+    background: #0c1018; border: 1px solid #1e293b; border-radius: 12px;
+    max-width: 620px; width: 90%; padding: 40px; box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  }
+  .onboard-step-row {
+    display: flex; align-items: flex-start; gap: 16px; padding: 14px 0;
+    border-bottom: 1px solid rgba(30,41,59,0.4);
+  }
+  .onboard-step-row:last-child { border-bottom: none; }
+  .onboard-num {
+    width: 28px; height: 28px; border-radius: 50%; background: rgba(59,130,246,0.15);
+    border: 1px solid rgba(59,130,246,0.3); display: flex; align-items: center;
+    justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    font-weight: 700; color: #60a5fa; flex-shrink: 0;
+  }
+
+  /* Empty state */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px 16px; text-align: center; gap: 8px;
+  }
+  .empty-state-icon {
+    width: 40px; height: 40px; border-radius: 50%; background: rgba(30,41,59,0.5);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 4px;
+  }
+
+  /* Info button */
+  .info-btn {
+    width: 18px; height: 18px; border-radius: 50%; background: rgba(30,41,59,0.6);
+    border: 1px solid #334155; display: inline-flex; align-items: center; justify-content: center;
+    cursor: help; font-size: 10px; color: #64748b; transition: all 0.15s;
+  }
+  .info-btn:hover { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.3); color: #94a3b8; }
+
+  /* Gateway panel */
+  .gw-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(6,8,13,0.7); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .gw-overlay.open { opacity: 1; pointer-events: auto; }
+  .gw-panel {
+    position: fixed; top: 0; right: -420px; bottom: 0; z-index: 101;
+    width: 400px; background: #0c1018; border-left: 1px solid #1e293b;
+    display: flex; flex-direction: column; transition: right 0.25s ease;
+    box-shadow: -8px 0 32px rgba(0,0,0,0.4);
+  }
+  .gw-panel.open { right: 0; }
+  .gw-input {
+    width: 100%; padding: 8px 12px; border-radius: 4px;
+    background: #111520; border: 1px solid #1e293b; color: #e2e8f0;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    outline: none; transition: border-color 0.15s;
+  }
+  .gw-input:focus { border-color: #3b82f6; }
+  .gw-input::placeholder { color: #475569; }
+  .gw-select {
+    width: 100%; padding: 8px 12px; border-radius: 4px;
+    background: #111520; border: 1px solid #1e293b; color: #e2e8f0;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    outline: none; cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%2364748b'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  .gw-select:focus { border-color: #3b82f6; }
+  .gw-btn {
+    padding: 8px 16px; border-radius: 4px; font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    cursor: pointer; transition: all 0.15s; border: 1px solid;
+  }
+  .gw-btn-primary {
+    background: rgba(34,197,94,0.15); color: #4ade80; border-color: rgba(34,197,94,0.3);
+  }
+  .gw-btn-primary:hover { background: rgba(34,197,94,0.25); border-color: rgba(34,197,94,0.5); }
+  .gw-btn-danger {
+    background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.2);
+    padding: 4px 10px; font-size: 9px;
+  }
+  .gw-btn-danger:hover { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); }
+  .gw-agent-card {
+    padding: 12px; background: #111520; border: 1px solid #1e293b; border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .gw-agent-card:hover { background: #161a26; }
+  .gw-key-box {
+    padding: 8px 12px; background: #111520; border: 1px solid #1e293b; border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #94a3b8;
+    word-break: break-all; cursor: pointer; position: relative;
+  }
+  .gw-key-box:hover { border-color: #334155; }
+  .gw-proto-card {
+    padding: 14px; background: #111520; border: 1px solid #1e293b; border-radius: 6px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .gw-proto-card:hover { background: #161a26; border-color: #334155; transform: translateX(2px); }
+  .gw-proto-pill {
+    padding: 6px 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    cursor: pointer; transition: all 0.15s; border: 1px solid #1e293b;
+    background: #111520; color: #64748b;
+  }
+  .gw-proto-pill:hover { background: #161a26; border-color: #334155; color: #94a3b8; }
+  .gw-proto-active { background: rgba(59,130,246,0.12) !important; color: #60a5fa !important; border-color: rgba(59,130,246,0.3) !important; }
+  .gw-cap-tag {
+    padding: 3px 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    border: 1px solid #1e293b; background: #111520; color: #64748b; user-select: none;
+  }
+  .gw-cap-tag:hover { border-color: #334155; color: #94a3b8; }
+  .gw-cap-tag.selected { background: rgba(34,197,94,0.1); color: #4ade80; border-color: rgba(34,197,94,0.25); }
+
+  /* Thought stream */
+  .thought-entry {
+    display: flex; gap: 8px; padding: 7px 12px;
+    border-bottom: 1px solid rgba(30,41,59,0.3); font-size: 10px;
+    transition: background 0.15s; animation: thoughtFade 0.3s ease;
+  }
+  .thought-entry:hover { background: rgba(30,41,59,0.2); }
+  @keyframes thoughtFade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .thought-ts { color: #475569; font-family: 'JetBrains Mono', monospace; font-size: 9px; white-space: nowrap; min-width: 42px; }
+  .thought-agent { color: #60a5fa; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600; white-space: nowrap; min-width: 70px; }
+  .thought-text { color: #94a3b8; line-height: 1.5; word-break: break-word; }
+  .thought-cat-observation { border-left: 2px solid #3b82f6; }
+  .thought-cat-decision { border-left: 2px solid #22c55e; }
+  .thought-cat-warning { border-left: 2px solid #f59e0b; }
+  .thought-cat-learning { border-left: 2px solid #a855f7; }
+
+  /* Memory session card */
+  .memory-session {
+    padding: 10px 12px; background: #111520; border: 1px solid #1e293b;
+    border-radius: 4px; margin-bottom: 8px; font-size: 10px;
+  }
+  .memory-session:hover { background: #161a26; }
+  .memory-lesson { color: #a855f7; font-size: 10px; padding: 4px 0 2px 12px; border-left: 2px solid rgba(168,85,247,0.3); margin: 4px 0; }
 </style>
 </head>
 <body class="overflow-hidden select-none">
 
+<!-- ═══ ONBOARDING OVERLAY ═══ -->
+<div id="onboard-overlay" class="onboard-overlay" style="display:none">
+  <div class="onboard-card">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center">
+        <span class="material-symbols-outlined text-accent text-xl" style="font-variation-settings:'FILL' 1">hub</span>
+      </div>
+      <div>
+        <h1 class="font-headline font-bold text-white text-xl">Welcome to Swarm Trade</h1>
+        <p class="text-muted text-sm">Autonomous multi-agent trading platform</p>
+      </div>
+    </div>
+    <p class="text-slate-400 text-sm leading-relaxed mt-4 mb-6">
+      Your swarm of AI agents works together to find opportunities, assess risk, and execute trades automatically. Here's how to read the dashboard:
+    </p>
+
+    <div class="space-y-0">
+      <div class="onboard-step-row">
+        <div class="onboard-num">1</div>
+        <div>
+          <div class="text-sm font-semibold text-white">Market Data &amp; Price Chart</div>
+          <div class="text-xs text-muted mt-1 leading-relaxed">The center shows live price action with candlestick charts. Your P&L and portfolio allocation are on the right.</div>
+        </div>
+      </div>
+      <div class="onboard-step-row">
+        <div class="onboard-num">2</div>
+        <div>
+          <div class="text-sm font-semibold text-white">AI Agents <span class="text-muted font-normal">(left sidebar)</span></div>
+          <div class="text-xs text-muted mt-1 leading-relaxed">38 specialized agents — scouts find data, analysts generate signals, risk agents approve/reject, and executors fill trades. Green dot = active now.</div>
+        </div>
+      </div>
+      <div class="onboard-step-row">
+        <div class="onboard-num">3</div>
+        <div>
+          <div class="text-sm font-semibold text-white">Signals <span class="text-muted font-normal">(right sidebar, top)</span></div>
+          <div class="text-xs text-muted mt-1 leading-relaxed">Agents produce buy/sell signals with strength and confidence. The composite score combines them — green bar right = buy pressure, red bar left = sell pressure.</div>
+        </div>
+      </div>
+      <div class="onboard-step-row">
+        <div class="onboard-num">4</div>
+        <div>
+          <div class="text-sm font-semibold text-white">Risk Review <span class="text-muted font-normal">(right sidebar, bottom)</span></div>
+          <div class="text-xs text-muted mt-1 leading-relaxed">Every trade must pass a committee of risk agents. Click any trade in the table to see each agent's vote. 3+ approvals = consensus.</div>
+        </div>
+      </div>
+      <div class="onboard-step-row">
+        <div class="onboard-num">5</div>
+        <div>
+          <div class="text-sm font-semibold text-white">Pending Trades &amp; Trade History <span class="text-muted font-normal">(center, bottom)</span></div>
+          <div class="text-xs text-muted mt-1 leading-relaxed">Watch trades flow from pending → approved → filled. Switch tabs to see execution history with fill prices, slippage, and P&L per trade.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t border-border">
+      <label class="flex items-center gap-2 cursor-pointer text-xs text-muted">
+        <input type="checkbox" id="onboard-dismiss" class="w-3.5 h-3.5 rounded border-border-light bg-s-low text-electric focus:ring-electric/30">
+        Don't show this again
+      </label>
+      <button onclick="closeOnboarding()" class="px-6 py-2 bg-electric text-white rounded-md text-sm font-semibold hover:bg-electric-dim transition-colors">
+        Got it — Show Dashboard
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ TOP NAV ═══ -->
 <header id="topnav" class="fixed top-0 w-full z-50 flex items-center px-4 justify-between bg-surface/95 backdrop-blur-xl h-12 border-b border-border">
-  <!-- Left: Brand -->
   <div class="flex items-center gap-5">
     <div class="flex items-center gap-2.5">
       <div class="w-7 h-7 rounded-md bg-accent/10 border border-accent/20 flex items-center justify-center">
         <span class="material-symbols-outlined text-accent text-base" style="font-variation-settings:'FILL' 1">hub</span>
       </div>
-      <div>
-        <span class="font-headline font-bold text-white text-sm tracking-tight">Swarm Trade</span>
-      </div>
+      <span class="font-headline font-bold text-white text-sm tracking-tight">Swarm Trade</span>
     </div>
     <div class="h-5 w-px bg-border"></div>
     <span class="mode-badge border border-electric/30 text-electric bg-electric/10" id="mode-badge">MOCK</span>
@@ -286,12 +413,10 @@ tailwind.config = {
       <span class="text-muted-dim text-[10px] ml-0.5" id="latency"></span>
     </div>
   </div>
-
-  <!-- Right: KPIs + Controls -->
   <div class="flex items-center gap-3">
     <div class="kpi-card flex items-center gap-3">
       <div>
-        <div class="kpi-label">Daily PnL</div>
+        <div class="kpi-label">Today's Profit / Loss</div>
         <div class="kpi-value text-muted" id="daily-pnl">$0.0000</div>
       </div>
     </div>
@@ -299,13 +424,23 @@ tailwind.config = {
       <div class="kpi-label">UTC</div>
       <div class="kpi-value text-electric text-xs" id="utc-clock">--:--:--</div>
     </div>
+    <button id="gw-toggle-btn" class="kill-btn kill-btn-idle" style="background:rgba(59,130,246,0.15);color:#60a5fa;border-color:rgba(59,130,246,0.3)" onclick="toggleGatewayPanel()">
+      <span class="flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-xs">cable</span>
+        Gateway
+      </span>
+    </button>
     <div class="h-5 w-px bg-border"></div>
     <button id="kill-btn" class="kill-btn kill-btn-idle" onclick="toggleKillSwitch()">
       <span class="flex items-center gap-1.5">
         <span class="material-symbols-outlined text-xs">power_settings_new</span>
-        Kill Switch
+        Emergency Stop
       </span>
     </button>
+    <div class="tip">
+      <span class="info-btn" onclick="showOnboarding()">?</span>
+      <span class="tip-text">Reopen the welcome guide to learn how the dashboard works.</span>
+    </div>
   </div>
 </header>
 
@@ -313,15 +448,16 @@ tailwind.config = {
 <div class="flex pt-12 h-screen pb-7 bg-void gap-px">
 
   <!-- LEFT SIDEBAR: Agent Swarm -->
-  <aside class="w-[250px] flex flex-col shrink-0 overflow-hidden panel rounded-none border-t-0 border-l-0 border-b-0" style="border-radius:0">
+  <aside class="w-[250px] flex flex-col shrink-0 overflow-hidden bg-surface border-r border-border">
     <div class="panel-header">
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-accent text-sm" style="font-variation-settings:'FILL' 1">hub</span>
-        <span class="panel-header-title text-accent">Agent Swarm</span>
+        <span class="panel-header-title text-accent">AI Agents</span>
+        <span class="panel-desc">your trading swarm</span>
       </div>
       <div class="flex items-center gap-2 text-[9px] font-mono text-muted">
         <span id="agent-active-count" class="text-accent font-semibold">0</span>
-        <span>/</span>
+        <span class="text-muted-dim">active /</span>
         <span id="agent-count">0</span>
       </div>
     </div>
@@ -330,12 +466,46 @@ tailwind.config = {
     </div>
   </aside>
 
-  <!-- CENTER: Charts + Trades -->
+  <!-- CENTER: Pipeline + Charts + Trades -->
   <main class="flex-1 flex flex-col overflow-hidden gap-px">
+
+    <!-- Pipeline Overview Strip -->
+    <div class="bg-surface border-b border-border px-4 py-2 shrink-0">
+      <div class="flex items-center gap-1" id="pipeline-strip">
+        <div class="pipeline-step step-active" id="pipe-market" data-tip="Scouts pull live market data every tick">
+          <div class="step-icon"><span class="material-symbols-outlined text-sm text-electric">wifi_tethering</span></div>
+          <span class="text-[9px] font-semibold text-muted uppercase">Market Data</span>
+          <span class="text-[8px] text-muted-dim font-mono" id="pipe-market-val">--</span>
+        </div>
+        <div class="pipeline-arrow" id="arrow-1">→</div>
+        <div class="pipeline-step" id="pipe-signals" data-tip="Analysts generate buy/sell signals from market data">
+          <div class="step-icon"><span class="material-symbols-outlined text-sm text-amber">sensors</span></div>
+          <span class="text-[9px] font-semibold text-muted uppercase">Signals</span>
+          <span class="text-[8px] text-muted-dim font-mono" id="pipe-signals-val">awaiting</span>
+        </div>
+        <div class="pipeline-arrow" id="arrow-2">→</div>
+        <div class="pipeline-step" id="pipe-strategy" data-tip="Strategy evaluates signals and proposes trades">
+          <div class="step-icon"><span class="material-symbols-outlined text-sm text-purple-400">psychology</span></div>
+          <span class="text-[9px] font-semibold text-muted uppercase">Strategy</span>
+          <span class="text-[8px] text-muted-dim font-mono" id="pipe-strategy-val">idle</span>
+        </div>
+        <div class="pipeline-arrow" id="arrow-3">→</div>
+        <div class="pipeline-step" id="pipe-risk" data-tip="Risk agents vote to approve or reject each trade">
+          <div class="step-icon"><span class="material-symbols-outlined text-sm text-amber">shield</span></div>
+          <span class="text-[9px] font-semibold text-muted uppercase">Risk Check</span>
+          <span class="text-[8px] text-muted-dim font-mono" id="pipe-risk-val">--</span>
+        </div>
+        <div class="pipeline-arrow" id="arrow-4">→</div>
+        <div class="pipeline-step" id="pipe-exec" data-tip="Approved trades get filled on-chain via the executor">
+          <div class="step-icon"><span class="material-symbols-outlined text-sm text-accent">bolt</span></div>
+          <span class="text-[9px] font-semibold text-muted uppercase">Execution</span>
+          <span class="text-[8px] text-muted-dim font-mono" id="pipe-exec-val">0 filled</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Price + PnL Charts Area -->
     <div class="flex-[6] bg-surface relative flex flex-col overflow-hidden border-b border-border">
-      <!-- Chart Header -->
       <div class="flex justify-between items-center px-4 py-2.5 border-b border-border/50">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
@@ -357,23 +527,32 @@ tailwind.config = {
           </div>
           <div class="h-4 w-px bg-border"></div>
           <div class="flex gap-4 text-[10px] font-mono text-muted">
-            <div>Trades <span class="text-white font-semibold" id="stat-trades">0</span></div>
-            <div>Win Rate <span class="text-accent font-semibold" id="stat-winrate">--</span></div>
-            <div>Gas <span class="text-electric font-semibold" id="stat-gas">--</span></div>
+            <div class="tip">Trades <span class="text-white font-semibold" id="stat-trades">0</span>
+              <span class="tip-text" style="width:160px">Total trades executed today</span>
+            </div>
+            <div class="tip">Win Rate <span class="text-accent font-semibold" id="stat-winrate">--</span>
+              <span class="tip-text" style="width:180px">Percentage of trades that were profitable</span>
+            </div>
+            <div class="tip">Gas <span class="text-electric font-semibold" id="stat-gas">--</span>
+              <span class="tip-text" style="width:180px">Current network gas fee in gwei (transaction cost)</span>
+            </div>
           </div>
         </div>
       </div>
-      <!-- Charts Row -->
       <div class="flex-1 flex gap-px min-h-0 bg-void">
-        <!-- Price Canvas (left 60%) -->
         <div class="flex-[6] relative min-h-0 bg-surface p-2">
           <canvas id="price-chart" class="w-full h-full"></canvas>
         </div>
-        <!-- PnL + Portfolio (right 40%) -->
         <div class="flex-[4] flex flex-col gap-px min-h-0">
           <div class="flex-1 relative bg-surface p-3 min-h-0">
             <div class="flex items-center justify-between mb-1">
-              <span class="text-[9px] font-mono text-muted uppercase font-semibold">Cumulative PnL</span>
+              <div class="flex items-center gap-1.5">
+                <span class="text-[9px] font-mono text-muted uppercase font-semibold">Cumulative P&L</span>
+                <div class="tip">
+                  <span class="info-btn" style="width:14px;height:14px;font-size:8px">?</span>
+                  <span class="tip-text" style="width:180px">Running total of profits and losses from all trades today</span>
+                </div>
+              </div>
               <span class="material-symbols-outlined text-muted text-xs">show_chart</span>
             </div>
             <canvas id="pnl-chart" class="w-full h-full"></canvas>
@@ -383,7 +562,13 @@ tailwind.config = {
               <canvas id="portfolio-chart" class="w-full h-full"></canvas>
             </div>
             <div class="flex-1">
-              <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-2">Allocation</div>
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-[9px] font-mono text-muted uppercase font-semibold">Portfolio</span>
+                <div class="tip">
+                  <span class="info-btn" style="width:14px;height:14px;font-size:8px">?</span>
+                  <span class="tip-text" style="width:180px">How your funds are allocated across assets right now</span>
+                </div>
+              </div>
               <div id="portfolio-legend" class="font-mono text-[9px] space-y-1.5 overflow-y-auto max-h-[80px]">
                 <div class="text-muted">No positions</div>
               </div>
@@ -397,47 +582,57 @@ tailwind.config = {
     <div class="flex-[4] flex flex-col bg-surface overflow-hidden">
       <div class="flex items-center border-b border-border shrink-0 bg-surface px-1">
         <button class="tab-btn tab-active px-4 py-2.5 font-body text-[10px] font-semibold uppercase tracking-wide" data-tab="intents">
-          Active Intents <span class="text-muted font-normal ml-1" id="intent-count">0</span>
+          Pending Trades <span class="text-muted font-normal ml-1" id="intent-count">0</span>
         </button>
         <button class="tab-btn tab-inactive px-4 py-2.5 font-body text-[10px] font-semibold uppercase tracking-wide" data-tab="execlog">
-          Execution Log <span class="text-muted font-normal ml-1" id="exec-count">0</span>
+          Trade History <span class="text-muted font-normal ml-1" id="exec-count">0</span>
         </button>
+        <div class="ml-auto pr-3 text-[9px] text-muted-dim flex items-center gap-1">
+          <span class="material-symbols-outlined text-xs">info</span>
+          Click any trade to see its risk review
+        </div>
       </div>
-      <!-- Intents Tab -->
       <div id="tab-intents" class="flex-1 overflow-y-auto">
         <table class="data-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>Trade ID</th>
               <th>Direction</th>
               <th>Route</th>
               <th>Amount</th>
-              <th>TTL</th>
-              <th>Risk</th>
+              <th class="tip">Time Left<span class="tip-text" style="width:160px;bottom:auto;top:calc(100% + 6px)">Seconds until this trade expires if not executed</span></th>
+              <th class="tip">Risk Votes<span class="tip-text" style="width:180px;bottom:auto;top:calc(100% + 6px)">Approved / Total risk agents that voted. Needs 3+ to pass.</span></th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="intents-body"></tbody>
         </table>
-        <div id="intents-empty" class="text-center text-muted text-xs py-10 font-mono">Waiting for trade intents...</div>
+        <div id="intents-empty" class="empty-state">
+          <div class="empty-state-icon"><span class="material-symbols-outlined text-muted text-lg">hourglass_empty</span></div>
+          <div class="text-sm font-medium text-muted">No pending trades yet</div>
+          <div class="text-xs text-muted-dim leading-relaxed max-w-xs">When the strategy agent detects a strong enough signal, it will propose a trade here. Each trade needs approval from the risk committee before execution.</div>
+        </div>
       </div>
-      <!-- Exec Log Tab -->
       <div id="tab-execlog" class="flex-1 overflow-y-auto hidden">
         <table class="data-table">
           <thead>
             <tr>
               <th>Time</th>
-              <th>ID</th>
-              <th>Status</th>
-              <th>Tx Hash</th>
+              <th>Trade ID</th>
+              <th>Result</th>
+              <th class="tip">Tx Hash<span class="tip-text" style="width:180px;bottom:auto;top:calc(100% + 6px)">On-chain transaction hash — proof the trade was executed</span></th>
               <th>Fill Price</th>
-              <th>Slippage</th>
-              <th>PnL</th>
+              <th class="tip">Slippage<span class="tip-text" style="width:190px;bottom:auto;top:calc(100% + 6px)">Difference between expected and actual execution price</span></th>
+              <th>Profit / Loss</th>
             </tr>
           </thead>
           <tbody id="execlog-body"></tbody>
         </table>
-        <div id="execlog-empty" class="text-center text-muted text-xs py-10 font-mono">No executions yet...</div>
+        <div id="execlog-empty" class="empty-state">
+          <div class="empty-state-icon"><span class="material-symbols-outlined text-muted text-lg">receipt_long</span></div>
+          <div class="text-sm font-medium text-muted">No trades executed yet</div>
+          <div class="text-xs text-muted-dim leading-relaxed max-w-xs">Completed trades will appear here with fill prices, slippage, and profit/loss for each.</div>
+        </div>
       </div>
     </div>
   </main>
@@ -449,7 +644,8 @@ tailwind.config = {
       <div class="panel-header">
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-electric text-sm">sensors</span>
-          <span class="panel-header-title text-electric">Signal Analysis</span>
+          <span class="panel-header-title text-electric">Signals</span>
+          <span class="panel-desc">buy/sell pressure from agents</span>
         </div>
         <span class="font-mono text-[10px] font-semibold" id="weighted-score-header">0.00</span>
       </div>
@@ -457,10 +653,15 @@ tailwind.config = {
         <div id="signals-panel" class="space-y-4">
           <!-- Populated by JS -->
         </div>
-        <!-- Weighted Score -->
         <div class="mt-4 pt-4 border-t border-border">
-          <div class="flex justify-between text-[10px] font-mono text-muted uppercase mb-2">
-            <span class="font-semibold">Composite Score</span>
+          <div class="flex justify-between items-center text-[10px] font-mono text-muted uppercase mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="font-semibold">Overall Direction</span>
+              <div class="tip">
+                <span class="info-btn" style="width:14px;height:14px;font-size:8px">?</span>
+                <span class="tip-text">Weighted average of all signals. Above +0.20 triggers a buy, below -0.20 triggers a sell. Between = no action.</span>
+              </div>
+            </div>
             <span class="text-xs font-bold" id="weighted-score">0.00</span>
           </div>
           <div class="signal-track">
@@ -468,27 +669,59 @@ tailwind.config = {
             <div id="score-fill" class="signal-fill signal-fill-pos" style="width:0"></div>
           </div>
           <div class="flex justify-between text-[8px] text-muted-dim mt-1.5 font-mono">
-            <span>-1.0 SHORT</span>
-            <span class="text-amber text-[9px] font-semibold">|0.20|</span>
-            <span>LONG +1.0</span>
+            <span>← Sell</span>
+            <span class="text-amber text-[9px] font-semibold">threshold ±0.20</span>
+            <span>Buy →</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Risk Verdicts -->
+    <!-- Risk / Thoughts / Memory (tabbed) -->
     <div class="flex-1 flex flex-col bg-surface overflow-hidden">
       <div class="panel-header">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-amber text-sm">shield</span>
-          <span class="panel-header-title text-amber">Risk Consensus</span>
+        <div class="flex items-center gap-1">
+          <button id="tab-risk" onclick="switchRightTab('risk')" class="px-2.5 py-1 rounded transition-all" style="border:none;cursor:pointer;font-size:9px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;background:rgba(245,158,11,0.1);color:#fbbf24">
+            <span style="display:flex;align-items:center;gap:4px"><span class="material-symbols-outlined" style="font-size:12px">shield</span>Risk</span>
+          </button>
+          <button id="tab-thoughts" onclick="switchRightTab('thoughts')" class="px-2.5 py-1 rounded transition-all" style="border:none;cursor:pointer;font-size:9px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;background:transparent;color:#64748b">
+            <span style="display:flex;align-items:center;gap:4px"><span class="material-symbols-outlined" style="font-size:12px">neurology</span>Thoughts <span id="thought-count" style="font-size:8px;font-family:'JetBrains Mono',monospace;margin-left:2px;opacity:0.7">0</span></span>
+          </button>
+          <button id="tab-memory" onclick="switchRightTab('memory')" class="px-2.5 py-1 rounded transition-all" style="border:none;cursor:pointer;font-size:9px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;background:transparent;color:#64748b">
+            <span style="display:flex;align-items:center;gap:4px"><span class="material-symbols-outlined" style="font-size:12px">history</span>Memory</span>
+          </button>
         </div>
       </div>
-      <div class="flex-1 overflow-y-auto p-3">
+      <!-- Risk tab -->
+      <div id="panel-risk" class="flex-1 overflow-y-auto p-3">
         <div id="risk-panel" class="space-y-2">
-          <div class="text-center text-muted text-[10px] py-6 font-mono">Waiting for intents...</div>
+          <div class="empty-state" style="padding:24px 12px">
+            <div class="empty-state-icon" style="width:32px;height:32px"><span class="material-symbols-outlined text-muted text-base">how_to_vote</span></div>
+            <div class="text-[11px] font-medium text-muted">No trade selected</div>
+            <div class="text-[10px] text-muted-dim leading-relaxed">Click a trade in the table to see how each risk agent voted — position size, drawdown, VaR, stress test, and compliance.</div>
+          </div>
         </div>
         <div id="quorum-bar" class="quorum-bar mt-3 hidden"></div>
+      </div>
+      <!-- Thoughts tab (live agent reasoning stream) -->
+      <div id="panel-thoughts" class="flex-1 overflow-y-auto hidden" style="padding:0">
+        <div id="thought-stream">
+          <div class="empty-state" style="padding:24px 12px">
+            <div class="empty-state-icon" style="width:32px;height:32px"><span class="material-symbols-outlined text-muted text-base">neurology</span></div>
+            <div class="text-[11px] font-medium text-muted">Agent thought stream</div>
+            <div class="text-[10px] text-muted-dim leading-relaxed">Watch agents reason in real-time — observations, decisions, warnings, and learnings.</div>
+          </div>
+        </div>
+      </div>
+      <!-- Memory tab (cross-session learning) -->
+      <div id="panel-memory" class="flex-1 overflow-y-auto p-3 hidden">
+        <div id="memory-panel">
+          <div class="empty-state" style="padding:24px 12px">
+            <div class="empty-state-icon" style="width:32px;height:32px"><span class="material-symbols-outlined text-muted text-base">history</span></div>
+            <div class="text-[11px] font-medium text-muted">Session memory</div>
+            <div class="text-[10px] text-muted-dim leading-relaxed">Cross-session learning — the swarm remembers lessons from prior runs.</div>
+          </div>
+        </div>
       </div>
     </div>
   </aside>
@@ -513,6 +746,194 @@ tailwind.config = {
   </div>
 </footer>
 
+<!-- ═══ GATEWAY PANEL — SwarmProtocol Agent Registration ═══ -->
+<div id="gw-overlay" class="gw-overlay" onclick="toggleGatewayPanel()"></div>
+<div id="gw-panel" class="gw-panel">
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b;background:linear-gradient(180deg,rgba(30,41,59,0.5) 0%,transparent 100%)">
+    <div class="flex items-center gap-2">
+      <span class="material-symbols-outlined text-electric text-base">cable</span>
+      <span class="font-body text-[11px] font-semibold uppercase tracking-wider text-electric">Register Agent</span>
+      <div class="flex items-center gap-1.5 ml-2">
+        <div id="gw-status-dot" class="w-2 h-2 rounded-full bg-muted-dim"></div>
+        <span id="gw-status-text" class="font-mono text-[9px] text-muted">---</span>
+      </div>
+    </div>
+    <button onclick="toggleGatewayPanel()" class="text-muted hover:text-white transition-colors" style="background:none;border:none;cursor:pointer">
+      <span class="material-symbols-outlined text-lg">close</span>
+    </button>
+  </div>
+
+  <!-- Step indicator -->
+  <div class="flex items-center px-4 py-2.5 border-b border-border/50 gap-1" id="gw-steps-bar">
+    <div id="gw-step-ind-1" class="flex items-center gap-1.5">
+      <div class="w-5 h-5 rounded-full bg-electric/20 border border-electric/40 flex items-center justify-center text-[9px] font-mono font-bold text-electric">1</div>
+      <span class="text-[9px] font-mono text-electric font-semibold">Type</span>
+    </div>
+    <div class="w-4 h-px bg-border mx-1"></div>
+    <div id="gw-step-ind-2" class="flex items-center gap-1.5 opacity-40">
+      <div class="w-5 h-5 rounded-full bg-s-high border border-border flex items-center justify-center text-[9px] font-mono font-bold text-muted">2</div>
+      <span class="text-[9px] font-mono text-muted font-semibold">Identity</span>
+    </div>
+    <div class="w-4 h-px bg-border mx-1"></div>
+    <div id="gw-step-ind-3" class="flex items-center gap-1.5 opacity-40">
+      <div class="w-5 h-5 rounded-full bg-s-high border border-border flex items-center justify-center text-[9px] font-mono font-bold text-muted">3</div>
+      <span class="text-[9px] font-mono text-muted font-semibold">Connected</span>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto">
+
+    <!-- ══ STEP 1: Agent Type + Protocol ══ -->
+    <div id="gw-step-pick" class="p-4 space-y-4">
+
+      <!-- Protocol row -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold tracking-wider mb-2">Wire Protocol</div>
+        <div class="flex gap-2">
+          <button onclick="gwPickProto('openclaw')" id="gw-proto-openclaw" class="gw-proto-pill gw-proto-active flex-1">OpenClaw</button>
+          <button onclick="gwPickProto('hermes')" id="gw-proto-hermes" class="gw-proto-pill flex-1">Hermes</button>
+          <button onclick="gwPickProto('ironclaw')" id="gw-proto-ironclaw" class="gw-proto-pill flex-1">IronClaw</button>
+          <button onclick="gwPickProto('raw')" id="gw-proto-raw" class="gw-proto-pill flex-1">Raw</button>
+        </div>
+      </div>
+
+      <!-- Agent Type categories -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold tracking-wider mb-2">Agent Type</div>
+        <div id="gw-type-grid" class="space-y-1.5">
+          <!-- Populated by JS from registry -->
+        </div>
+      </div>
+
+      <!-- Connected agents (always visible) -->
+      <div class="border-t border-border pt-4">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[9px] font-mono text-muted uppercase font-semibold tracking-wider">Registered Agents</div>
+          <span id="gw-agent-count" class="font-mono text-[10px] text-electric font-semibold">0</span>
+        </div>
+        <div id="gw-agents-list" class="space-y-2">
+          <div class="text-center text-muted text-[10px] py-3 font-mono">No agents registered</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ STEP 2: Agent Identity + Capabilities ══ -->
+    <div id="gw-step-config" class="p-4 space-y-4 hidden">
+      <button onclick="gwGoStep('pick')" class="flex items-center gap-1 text-muted hover:text-white transition-colors text-[10px] font-mono" style="background:none;border:none;cursor:pointer;padding:0">
+        <span class="material-symbols-outlined text-xs">arrow_back</span> Back
+      </button>
+
+      <!-- Selected type + protocol badge -->
+      <div class="flex items-center gap-3 p-3 bg-s-low rounded border border-border">
+        <div id="gw-cfg-icon" class="w-10 h-10 rounded-md flex items-center justify-center shrink-0"></div>
+        <div class="flex-1 min-w-0">
+          <div id="gw-cfg-type-label" class="font-mono text-xs text-white font-bold"></div>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span id="gw-cfg-cat-badge" class="text-[8px] font-mono font-semibold uppercase"></span>
+            <span class="text-border">|</span>
+            <span id="gw-cfg-proto-badge" class="text-[8px] font-mono font-semibold uppercase text-electric"></span>
+          </div>
+          <div id="gw-cfg-type-desc" class="text-[8px] text-muted-dim mt-0.5"></div>
+        </div>
+      </div>
+
+      <!-- Identity fields -->
+      <div class="space-y-3">
+        <div>
+          <label class="text-[9px] font-mono text-muted-dim uppercase block mb-1">Agent Name <span class="text-danger">*</span></label>
+          <input id="gw-agent-name" class="gw-input" placeholder="my-momentum-agent" />
+        </div>
+        <div>
+          <label class="text-[9px] font-mono text-muted-dim uppercase block mb-1">Description <span class="text-muted-dim">(optional)</span></label>
+          <input id="gw-agent-desc" class="gw-input" placeholder="What does this agent do?" />
+        </div>
+        <div>
+          <label class="text-[9px] font-mono text-muted-dim uppercase block mb-1">Signal Weight <span class="text-muted-dim">(influence: 0.01 - 1.0)</span></label>
+          <input id="gw-agent-weight" class="gw-input" type="number" value="0.06" min="0.01" max="1" step="0.01" />
+        </div>
+      </div>
+
+      <!-- Capabilities -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold tracking-wider mb-2">Capabilities</div>
+        <div id="gw-caps-grid" class="flex flex-wrap gap-1.5">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Payload preview -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-1">Signal Payload Format</div>
+        <pre id="gw-cfg-payload" class="text-[8px] font-mono text-slate-400 p-2.5 bg-void rounded border border-border overflow-x-auto whitespace-pre leading-relaxed max-h-[140px]"></pre>
+      </div>
+
+      <button onclick="gwRegisterAgent()" class="gw-btn gw-btn-primary w-full">
+        <span class="flex items-center justify-center gap-2">
+          <span class="material-symbols-outlined text-xs">app_registration</span>
+          Register Agent
+        </span>
+      </button>
+    </div>
+
+    <!-- ══ STEP 3: Registered! ══ -->
+    <div id="gw-step-done" class="p-4 space-y-4 hidden">
+      <!-- Success banner -->
+      <div class="p-3 bg-accent/5 border border-accent/20 rounded">
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined text-accent text-xl" style="font-variation-settings:'FILL' 1">check_circle</span>
+          <div>
+            <div class="font-mono text-xs text-accent font-bold">Agent Registered</div>
+            <div id="gw-done-name" class="text-[10px] text-muted mt-0.5"></div>
+          </div>
+        </div>
+        <div class="mt-2 p-2 bg-void/50 rounded">
+          <div class="text-[8px] font-mono text-muted-dim uppercase mb-0.5">Agent Swarm Number</div>
+          <div id="gw-done-asn" class="font-mono text-sm text-electric font-bold tracking-wider"></div>
+        </div>
+      </div>
+
+      <!-- API Key -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-1">API Key <span class="text-danger font-normal">(save this — shown once)</span></div>
+        <div id="gw-done-key" class="gw-key-box" onclick="gwCopyText(this.textContent)">—</div>
+        <div id="gw-done-copy-msg" class="text-[9px] font-mono text-accent mt-1 hidden">Copied to clipboard</div>
+      </div>
+
+      <!-- Endpoints -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-2">Endpoints</div>
+        <div class="space-y-1.5 font-mono text-[9px]">
+          <div class="flex gap-2"><span class="badge badge-blue">POST</span><span class="text-slate-300">/api/gateway/signal</span></div>
+          <div class="flex gap-2"><span class="badge badge-green">GET</span><span class="text-slate-300">/api/gateway/market</span></div>
+          <div class="flex gap-2"><span class="badge badge-green">GET</span><span class="text-slate-300">/api/gateway/portfolio</span></div>
+          <div class="flex gap-2"><span class="badge badge-amber">WS</span><span id="gw-done-ws" class="text-slate-300">/ws/agent?api_key=...</span></div>
+        </div>
+      </div>
+
+      <!-- Quick-start curl -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-1">Quick Start</div>
+        <pre id="gw-done-curl" class="text-[8px] font-mono text-slate-400 p-2.5 bg-void rounded border border-border overflow-x-auto whitespace-pre leading-relaxed max-h-[160px]"></pre>
+      </div>
+
+      <!-- WebSocket example -->
+      <div>
+        <div class="text-[9px] font-mono text-muted uppercase font-semibold mb-1">WebSocket Stream</div>
+        <pre id="gw-done-ws-example" class="text-[8px] font-mono text-slate-400 p-2.5 bg-void rounded border border-border overflow-x-auto whitespace-pre leading-relaxed max-h-[160px]"></pre>
+      </div>
+
+      <button onclick="gwGoStep('pick')" class="gw-btn w-full" style="background:rgba(59,130,246,0.1);color:#60a5fa;border-color:rgba(59,130,246,0.2)">
+        <span class="flex items-center justify-center gap-2">
+          <span class="material-symbols-outlined text-xs">add</span>
+          Register Another Agent
+        </span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════
 // Swarm Trade Dashboard — WebSocket Client
@@ -523,63 +944,106 @@ const S = {
   verdicts: {}, dailyPnl: 0, tradeCount: 0, wins: 0, losses: 0,
   uptime: 0, killSwitch: false, priceHistory: [], startPrice: null,
   pnlHistory: [], portfolioAlloc: {},
+  thoughts: [], memorySessions: [],
 };
+
+// ── Onboarding ────────────────────────────────────────────────
+function showOnboarding() {
+  document.getElementById("onboard-overlay").style.display = "flex";
+}
+function closeOnboarding() {
+  document.getElementById("onboard-overlay").style.display = "none";
+  if (document.getElementById("onboard-dismiss").checked) {
+    localStorage.setItem("swarmtrade_onboarded", "1");
+  }
+}
+if (!localStorage.getItem("swarmtrade_onboarded")) {
+  showOnboarding();
+}
+
+// ── Pipeline state ────────────────────────────────────────────
+function updatePipeline() {
+  const hasMarket = S.priceHistory.length > 0;
+  const hasSignals = Object.keys(S.signals).length > 0;
+  const hasIntents = S.intents.length > 0;
+  const hasFills = S.reports.length > 0;
+
+  const setStep = (id, active, done, val) => {
+    const el = document.getElementById(id);
+    el.classList.toggle("step-active", active && !done);
+    el.classList.toggle("step-done", done);
+  };
+  const setArrow = (id, active) => {
+    document.getElementById(id).classList.toggle("arrow-active", active);
+  };
+
+  setStep("pipe-market", hasMarket, false);
+  setStep("pipe-signals", hasSignals, false);
+  setStep("pipe-strategy", hasIntents, false);
+  setStep("pipe-risk", hasIntents, false);
+  setStep("pipe-exec", hasFills, hasFills);
+
+  setArrow("arrow-1", hasMarket);
+  setArrow("arrow-2", hasSignals);
+  setArrow("arrow-3", hasIntents);
+  setArrow("arrow-4", hasFills);
+
+  // Update values
+  if (hasMarket) {
+    const sym = Object.keys(S.prices)[0];
+    document.getElementById("pipe-market-val").textContent = `${sym} live`;
+    document.getElementById("pipe-market-val").className = "text-[8px] text-accent font-mono";
+  }
+  if (hasSignals) {
+    const count = Object.keys(S.signals).length;
+    document.getElementById("pipe-signals-val").textContent = `${count} active`;
+    document.getElementById("pipe-signals-val").className = "text-[8px] text-amber font-mono";
+  }
+  if (hasIntents) {
+    const pending = S.intents.filter(i => !i._status).length;
+    document.getElementById("pipe-strategy-val").textContent = `${pending} pending`;
+    document.getElementById("pipe-strategy-val").className = "text-[8px] text-purple-400 font-mono";
+
+    // Check latest intent risk state
+    const latest = S.intents[S.intents.length - 1];
+    const vlist = S.verdicts[latest?.id] || [];
+    if (vlist.length > 0) {
+      const approved = vlist.filter(v => v.approve).length;
+      document.getElementById("pipe-risk-val").textContent = `${approved}/${vlist.length} ok`;
+      document.getElementById("pipe-risk-val").className = `text-[8px] font-mono ${approved >= 3 ? "text-accent" : "text-amber"}`;
+    }
+  }
+  if (hasFills) {
+    document.getElementById("pipe-exec-val").textContent = `${S.reports.length} filled`;
+    document.getElementById("pipe-exec-val").className = "text-[8px] text-accent font-mono";
+  }
+}
 
 // ── Chart.js instances ────────────────────────────────────
 let pnlChartInstance = null;
 let portfolioChartInstance = null;
 
 function initChartJs() {
-  // PnL line chart
   const pnlCtx = document.getElementById("pnl-chart");
   pnlChartInstance = new Chart(pnlCtx, {
     type: "line",
-    data: {
-      labels: [],
-      datasets: [{
-        data: [],
-        borderColor: "#22c55e",
-        backgroundColor: "rgba(34,197,94,0.06)",
-        borderWidth: 1.5,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-      }]
-    },
+    data: { labels: [], datasets: [{ data: [], borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.06)", borderWidth: 1.5, fill: true, tension: 0.3, pointRadius: 0 }] },
     options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: false,
+      responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { display: false },
-        y: {
-          grid: { color: "rgba(30,41,59,0.5)", lineWidth: 0.5 },
-          border: { display: false },
-          ticks: { color: "#64748b", font: { size: 8, family: "JetBrains Mono" },
-                   callback: v => (v >= 0 ? "+" : "") + v.toFixed(2) },
-        }
+        y: { grid: { color: "rgba(30,41,59,0.5)", lineWidth: 0.5 }, border: { display: false },
+          ticks: { color: "#64748b", font: { size: 8, family: "JetBrains Mono" }, callback: v => (v >= 0 ? "+" : "") + v.toFixed(2) } }
       }
     }
   });
 
-  // Portfolio donut
   const portCtx = document.getElementById("portfolio-chart");
   portfolioChartInstance = new Chart(portCtx, {
     type: "doughnut",
-    data: {
-      labels: ["Cash"],
-      datasets: [{
-        data: [100],
-        backgroundColor: ["#334155"],
-        borderWidth: 0,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: false,
-      cutout: "68%",
-      plugins: { legend: { display: false } },
-    }
+    data: { labels: ["Cash"], datasets: [{ data: [100], backgroundColor: ["#334155"], borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false, cutout: "68%", plugins: { legend: { display: false } } }
   });
 }
 
@@ -588,80 +1052,46 @@ function updatePnlChart() {
   const chart = pnlChartInstance;
   chart.data.labels = S.pnlHistory.map((_, i) => i);
   chart.data.datasets[0].data = S.pnlHistory;
-
   const current = S.pnlHistory[S.pnlHistory.length - 1] || 0;
-  if (current >= 0) {
-    chart.data.datasets[0].borderColor = "#22c55e";
-    chart.data.datasets[0].backgroundColor = "rgba(34,197,94,0.06)";
-  } else {
-    chart.data.datasets[0].borderColor = "#ef4444";
-    chart.data.datasets[0].backgroundColor = "rgba(239,68,68,0.06)";
-  }
+  chart.data.datasets[0].borderColor = current >= 0 ? "#22c55e" : "#ef4444";
+  chart.data.datasets[0].backgroundColor = current >= 0 ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)";
   chart.update();
 }
 
 function updatePortfolioChart(walletData) {
   if (!portfolioChartInstance || !walletData) return;
   const colors = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#a855f7", "#06b6d4", "#ec4899", "#14b8a6"];
-  const labels = [];
-  const data = [];
-
+  const labels = [], data = [], bgColors = [];
   const allocs = walletData.allocations || {};
   let i = 0;
-  const bgColors = [];
   for (const [asset, info] of Object.entries(allocs)) {
     const val = info.current_value || info.value || 0;
-    if (val > 0) {
-      labels.push(asset);
-      data.push(val);
-      bgColors.push(colors[i % colors.length]);
-      i++;
-    }
+    if (val > 0) { labels.push(asset); data.push(val); bgColors.push(colors[i++ % colors.length]); }
   }
-
   const cash = walletData.available_cash || walletData.cash || 0;
-  if (cash > 0 || data.length === 0) {
-    labels.push("Cash");
-    data.push(cash || 100);
-    bgColors.push("#334155");
-  }
+  if (cash > 0 || data.length === 0) { labels.push("Cash"); data.push(cash || 100); bgColors.push("#334155"); }
 
   const chart = portfolioChartInstance;
-  chart.data.labels = labels;
-  chart.data.datasets[0].data = data;
-  chart.data.datasets[0].backgroundColor = bgColors;
+  chart.data.labels = labels; chart.data.datasets[0].data = data; chart.data.datasets[0].backgroundColor = bgColors;
   chart.update();
 
-  // Update legend
   const legend = document.getElementById("portfolio-legend");
-  let html = "";
   const total = data.reduce((a, b) => a + b, 0);
+  let html = "";
   for (let j = 0; j < labels.length; j++) {
     const pct = data[j] / total * 100;
-    html += `<div class="flex items-center gap-2">
-      <div class="w-2 h-2 rounded-sm shrink-0" style="background:${bgColors[j]}"></div>
-      <span class="text-slate-300 flex-1">${labels[j]}</span>
-      <span class="text-muted tabular-nums">${pct.toFixed(0)}%</span>
-    </div>`;
+    html += `<div class="flex items-center gap-2"><div class="w-2 h-2 rounded-sm shrink-0" style="background:${bgColors[j]}"></div><span class="text-slate-300 flex-1">${labels[j]}</span><span class="text-muted tabular-nums">${pct.toFixed(0)}%</span></div>`;
   }
   legend.innerHTML = html || '<div class="text-muted">No positions</div>';
 }
 
-let ws = null;
-let reconnectTimer = null;
-let demoMode = false;
-let demoInterval = null;
-let wsRetries = 0;
+let ws = null, reconnectTimer = null, demoMode = false, demoInterval = null, wsRetries = 0;
 
-// ── WebSocket ─────────────────────────────────────────────────
 function connect() {
   try {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws`);
-  } catch (e) {
-    startDemoMode();
-    return;
-  }
+  } catch (e) { startDemoMode(); return; }
 
   ws.onopen = () => {
     wsRetries = 0;
@@ -670,36 +1100,25 @@ function connect() {
     document.getElementById("sys-status").textContent = "SYS_READY";
     if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
   };
-
   ws.onclose = () => {
     document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-amber status-pulse";
     wsRetries++;
-    if (wsRetries >= 2 && !demoMode) {
-      startDemoMode();
-    } else if (!demoMode) {
-      document.getElementById("conn-text").textContent = "RECONNECTING";
-      reconnectTimer = setTimeout(connect, 2000);
-    }
+    if (wsRetries >= 2 && !demoMode) startDemoMode();
+    else if (!demoMode) { document.getElementById("conn-text").textContent = "RECONNECTING"; reconnectTimer = setTimeout(connect, 2000); }
   };
-
   ws.onerror = () => ws.close();
-
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    handleMessage(msg);
-  };
+  ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
 }
 
-// ── Demo Mode — runs when no backend is available ────────────
 function startDemoMode() {
   demoMode = true;
   document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-accent status-pulse";
   document.getElementById("conn-text").textContent = "DEMO MODE";
   document.getElementById("sys-status").textContent = "DEMO_LIVE";
   document.getElementById("mode-badge").textContent = "DEMO";
+  updateGatewayStatus();
   document.getElementById("mode-badge").className = "mode-badge border border-accent/30 text-accent bg-accent/10";
 
-  // Pre-populate agents
   const agentDefs = [
     ["DataScout","scout"],["Momentum","analyst"],["MeanReversion","analyst"],
     ["Volatility","analyst"],["RSI","ta"],["MACD","ta"],["Bollinger","ta"],
@@ -718,82 +1137,45 @@ function startDemoMode() {
     ["WashTradeDetector","compliance"],["MarginMonitor","compliance"],
     ["Auditor","audit"],["WalletManager","wallet"],
   ];
-  for (const [name, role] of agentDefs) {
-    S.agents[name] = { name, role, topic: "", status: "idle", last_tick: null, ticks: 0 };
-  }
+  for (const [name, role] of agentDefs) S.agents[name] = { name, role, topic: "", status: "idle", last_tick: null, ticks: 0 };
   renderAgents();
 
-  // Simulated price state
-  let price = 2200;
-  let tick = 0;
+  let price = 2200, tick = 0;
   const rng = () => (Math.random() - 0.5) * 2;
   const phases = [
-    { end: 100, drift: 0.0001, vol: 0.002 },
-    { end: 200, drift: 0.0008, vol: 0.003 },
-    { end: 280, drift: -0.0003, vol: 0.008 },
-    { end: 380, drift: 0.0004, vol: 0.004 },
-    { end: 500, drift: 0.0005, vol: 0.003 },
-    { end: Infinity, drift: 0.0001, vol: 0.002 },
+    { end: 100, drift: 0.0001, vol: 0.002 }, { end: 200, drift: 0.0008, vol: 0.003 },
+    { end: 280, drift: -0.0003, vol: 0.008 }, { end: 380, drift: 0.0004, vol: 0.004 },
+    { end: 500, drift: 0.0005, vol: 0.003 }, { end: Infinity, drift: 0.0001, vol: 0.002 },
   ];
 
   demoInterval = setInterval(() => {
     const phase = phases.find(p => tick < p.end);
     price *= Math.exp(phase.drift + phase.vol * rng());
 
-    handleMessage({ type: "market", ts: Date.now()/1000, data: {
-      prices: { ETH: +price.toFixed(2) }, gas_gwei: 10 + Math.random() * 30
-    }});
+    handleMessage({ type: "market", ts: Date.now()/1000, data: { prices: { ETH: +price.toFixed(2) }, gas_gwei: 10 + Math.random() * 30 }});
 
     if (tick % 3 === 0) {
       const agents = ["momentum","mean_rev","rsi","macd","bollinger","vwap","ml"];
       const agent = agents[tick % agents.length];
       const str = (rng() * 0.5);
       handleMessage({ type: "signal", ts: Date.now()/1000, data: {
-        agent_id: agent, asset: "ETH",
-        direction: str > 0 ? "long" : "short",
-        strength: +str.toFixed(4), confidence: +(0.4 + Math.random() * 0.5).toFixed(4),
-        rationale: "demo signal"
+        agent_id: agent, asset: "ETH", direction: str > 0 ? "long" : "short",
+        strength: +str.toFixed(4), confidence: +(0.4 + Math.random() * 0.5).toFixed(4), rationale: "demo signal"
       }});
     }
 
     const names = Object.keys(S.agents);
-    for (let i = 0; i < 5; i++) {
-      const a = names[Math.floor(Math.random() * names.length)];
-      S.agents[a].status = "active";
-      S.agents[a].last_tick = Date.now() / 1000;
-      S.agents[a].ticks++;
-    }
+    for (let i = 0; i < 5; i++) { const a = names[Math.floor(Math.random() * names.length)]; S.agents[a].status = "active"; S.agents[a].last_tick = Date.now() / 1000; S.agents[a].ticks++; }
     renderAgents();
 
     if (tick % 15 === 10 && tick > 20) {
       const dir = rng() > 0 ? "LONG" : "SHORT";
       const id = Math.random().toString(36).slice(2, 10);
       const amt = 200 + Math.random() * 800;
-      handleMessage({ type: "intent", ts: Date.now()/1000, data: {
-        id, direction: dir, asset_in: dir==="LONG"?"USD":"ETH",
-        asset_out: dir==="LONG"?"ETH":"USD", amount_in: +amt.toFixed(2),
-        min_out: 0, ttl: Date.now()/1000 + 30, supporting: []
-      }});
-
-      setTimeout(() => {
-        for (const rid of ["size","drawdown","var","stress","compliance"]) {
-          handleMessage({ type: "verdict", ts: Date.now()/1000, data: {
-            intent_id: id, agent_id: rid, approve: Math.random() > 0.1,
-            reason: "demo check passed"
-          }});
-        }
-      }, 500);
-
-      setTimeout(() => {
-        const pnl = (rng() * 4);
-        handleMessage({ type: "report", ts: Date.now()/1000, data: {
-          intent_id: id, status: "filled", tx_hash: "0xDEMO" + id,
-          fill_price: +price.toFixed(2), slippage: 0.0005,
-          pnl: +pnl.toFixed(4), note: "demo fill"
-        }});
-      }, 1200);
+      handleMessage({ type: "intent", ts: Date.now()/1000, data: { id, direction: dir, asset_in: dir==="LONG"?"USD":"ETH", asset_out: dir==="LONG"?"ETH":"USD", amount_in: +amt.toFixed(2), min_out: 0, ttl: Date.now()/1000 + 30, supporting: [] }});
+      setTimeout(() => { for (const rid of ["size","drawdown","var","stress","compliance"]) handleMessage({ type: "verdict", ts: Date.now()/1000, data: { intent_id: id, agent_id: rid, approve: Math.random() > 0.1, reason: "demo check passed" }}); }, 500);
+      setTimeout(() => { const pnl = (rng() * 4); handleMessage({ type: "report", ts: Date.now()/1000, data: { intent_id: id, status: "filled", tx_hash: "0xDEMO" + id, fill_price: +price.toFixed(2), slippage: 0.0005, pnl: +pnl.toFixed(4), note: "demo fill" }}); }, 1200);
     }
-
     tick++;
   }, 300);
 }
@@ -807,89 +1189,74 @@ function handleMessage(msg) {
     case "verdict": handleVerdict(msg.data); break;
     case "report": handleReport(msg.data); break;
     case "wallet": updatePortfolioChart(msg.data); break;
-    case "kill_switch":
-      S.killSwitch = msg.data.enabled;
-      updateKillSwitch();
-      break;
+    case "kill_switch": S.killSwitch = msg.data.enabled; updateKillSwitch(); break;
+    case "gateway_agent_registered":
+      // Private event (only to registering client) — has api_key
+      gwShowRegistered(msg.data);
+      // Also add to local state (may already be there from broadcast)
+      if (!gwState.agents.find(a => a.agent_id === msg.data.agent_id)) {
+        gwState.agents.push(msg.data);
+      }
+      renderGatewayAgents(); updateGatewayStatus(); break;
+    case "gateway_agent_connected":
+      // Broadcast event (no api_key) — add to agent list
+      if (!gwState.agents.find(a => a.agent_id === msg.data.agent_id)) {
+        gwState.agents.push(msg.data);
+      }
+      renderGatewayAgents(); updateGatewayStatus(); break;
+    case "gateway_agent_disconnected":
+      gwState.agents = gwState.agents.filter(a => a.agent_id !== msg.data.agent_id);
+      renderGatewayAgents(); updateGatewayStatus(); break;
+    case "agents_update":
+      S.agents = msg.data.agents || S.agents; renderAgents(); break;
+    case "thought": handleThought(msg.data); break;
   }
 }
 
-// ── Handlers ──────────────────────────────────────────────────
 function handleSnapshot(d) {
-  S.prices = d.prices || {};
-  S.signals = d.signals || {};
-  S.agents = d.agents || {};
-  S.intents = d.intents || [];
-  S.reports = d.reports || [];
-  S.verdicts = d.verdicts || {};
-  S.dailyPnl = d.state?.daily_pnl || 0;
-  S.tradeCount = d.state?.trade_count || 0;
-  S.wins = d.state?.wins || 0;
-  S.losses = d.state?.losses || 0;
-  S.uptime = d.state?.uptime || 0;
-  S.killSwitch = d.state?.kill_switch || false;
-
-  renderAgents();
-  renderSignals();
-  renderIntents();
-  renderReports();
-  updateStats();
-  updateKillSwitch();
-
-  for (const [sym, price] of Object.entries(S.prices)) {
-    if (!S.startPrice) S.startPrice = price;
-    S.priceHistory.push({ t: Date.now(), p: price });
-  }
-
-  S.pnlHistory = [S.dailyPnl];
-  updatePnlChart();
+  S.prices = d.prices || {}; S.signals = d.signals || {}; S.agents = d.agents || {};
+  S.intents = d.intents || []; S.reports = d.reports || []; S.verdicts = d.verdicts || {};
+  S.dailyPnl = d.state?.daily_pnl || 0; S.tradeCount = d.state?.trade_count || 0;
+  S.wins = d.state?.wins || 0; S.losses = d.state?.losses || 0;
+  S.uptime = d.state?.uptime || 0; S.killSwitch = d.state?.kill_switch || false;
+  renderAgents(); renderSignals(); renderIntents(); renderReports(); updateStats(); updateKillSwitch(); updatePipeline();
+  for (const [sym, price] of Object.entries(S.prices)) { if (!S.startPrice) S.startPrice = price; S.priceHistory.push({ t: Date.now(), p: price }); }
+  S.pnlHistory = [S.dailyPnl]; updatePnlChart();
   if (d.wallet) updatePortfolioChart(d.wallet);
+  if (d.thoughts) { S.thoughts = d.thoughts; renderThoughts(); }
+  handleGatewaySnapshot(d);
 }
 
 function handleMarket(d) {
   Object.assign(S.prices, d.prices);
-  const sym = Object.keys(d.prices)[0];
-  const price = d.prices[sym];
+  const sym = Object.keys(d.prices)[0], price = d.prices[sym];
   if (!S.startPrice) S.startPrice = price;
   S.priceHistory.push({ t: Date.now(), p: price });
   if (S.priceHistory.length > 600) S.priceHistory = S.priceHistory.slice(-600);
-
   document.getElementById("main-price").textContent = `$${price.toFixed(2)}`;
   const delta = ((price / S.startPrice - 1) * 100);
   const deltaEl = document.getElementById("price-delta");
   deltaEl.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`;
   deltaEl.className = `text-xs font-mono font-semibold ${delta >= 0 ? "text-accent" : "text-danger"}`;
-
   document.getElementById("stat-gas").textContent = `${d.gas_gwei?.toFixed(0) || "--"} gwei`;
   document.getElementById("pair-label").textContent = `${sym} / USD`;
-
-  if (S.agents["DataScout"]) {
-    S.agents["DataScout"].status = "active";
-    S.agents["DataScout"].last_tick = Date.now() / 1000;
-    S.agents["DataScout"].ticks = (S.agents["DataScout"].ticks || 0) + 1;
-  }
-  renderAgents();
-  drawChart();
+  if (S.agents["DataScout"]) { S.agents["DataScout"].status = "active"; S.agents["DataScout"].last_tick = Date.now() / 1000; S.agents["DataScout"].ticks = (S.agents["DataScout"].ticks || 0) + 1; }
+  renderAgents(); drawChart(); updatePipeline();
 }
 
-function handleSignal(d) {
-  S.signals[d.agent_id] = d;
-  renderSignals();
-}
+function handleSignal(d) { S.signals[d.agent_id] = d; renderSignals(); updatePipeline(); }
 
 function handleIntent(d) {
   S.intents.push(d);
   if (S.intents.length > 100) S.intents = S.intents.slice(-100);
-  S.verdicts[d.id] = [];
-  renderIntents();
+  S.verdicts[d.id] = []; renderIntents();
   document.getElementById("intent-count").textContent = S.intents.length;
+  updatePipeline();
 }
 
 function handleVerdict(d) {
   if (!S.verdicts[d.intent_id]) S.verdicts[d.intent_id] = [];
-  S.verdicts[d.intent_id].push(d);
-  renderIntents();
-  renderRiskPanel(d.intent_id);
+  S.verdicts[d.intent_id].push(d); renderIntents(); renderRiskPanel(d.intent_id); updatePipeline();
 }
 
 function handleReport(d) {
@@ -899,69 +1266,58 @@ function handleReport(d) {
   if (d.status === "filled" && d.pnl > 0) S.wins++;
   else if (d.status === "filled") S.losses++;
   S.dailyPnl += d.pnl || 0;
-
   const idx = S.intents.findIndex(i => i.id === d.intent_id);
   if (idx >= 0) S.intents[idx]._status = d.status;
-
-  renderReports();
-  renderIntents();
-  updateStats();
+  renderReports(); renderIntents(); updateStats();
   document.getElementById("exec-count").textContent = S.reports.length;
-
   S.pnlHistory.push(S.dailyPnl);
   if (S.pnlHistory.length > 300) S.pnlHistory = S.pnlHistory.slice(-300);
-  updatePnlChart();
+  updatePnlChart(); updatePipeline();
 }
 
 // ── Rendering ─────────────────────────────────────────────────
 
 const roleConfig = {
-  scout:      { icon: "radar",        label: "Scouts",       color: "#3b82f6" },
-  analyst:    { icon: "analytics",    label: "Analysts",     color: "#22c55e" },
-  ta:         { icon: "show_chart",   label: "Technical",    color: "#06b6d4" },
-  ml:         { icon: "psychology",   label: "ML Models",    color: "#a855f7" },
-  external:   { icon: "language",     label: "External",     color: "#f59e0b" },
-  meta:       { icon: "merge",        label: "Meta",         color: "#ec4899" },
-  strategy:   { icon: "architecture", label: "Strategy",     color: "#e2e8f0" },
-  coordinator:{ icon: "hub",          label: "Coordinator",  color: "#22c55e" },
-  risk:       { icon: "shield",       label: "Risk",         color: "#f59e0b" },
-  execution:  { icon: "bolt",         label: "Execution",    color: "#3b82f6" },
-  quant_risk: { icon: "functions",    label: "Quant Risk",   color: "#ef4444" },
-  quant:      { icon: "calculate",    label: "Quant",        color: "#8b5cf6" },
-  portfolio:  { icon: "pie_chart",    label: "Portfolio",    color: "#14b8a6" },
-  compliance: { icon: "gavel",        label: "Compliance",   color: "#f97316" },
-  audit:      { icon: "fact_check",   label: "Audit",        color: "#64748b" },
-  wallet:     { icon: "account_balance_wallet", label: "Wallet", color: "#22d3ee" },
+  scout:      { icon: "radar",        label: "Scouts",       desc: "pull live market data",       color: "#3b82f6" },
+  analyst:    { icon: "analytics",    label: "Analysts",     desc: "analyze trends & patterns",   color: "#22c55e" },
+  ta:         { icon: "show_chart",   label: "Technical",    desc: "RSI, MACD, Bollinger, etc.",  color: "#06b6d4" },
+  ml:         { icon: "psychology",   label: "ML Models",    desc: "machine learning signals",    color: "#a855f7" },
+  external:   { icon: "language",     label: "External",     desc: "news & whale tracking",       color: "#f59e0b" },
+  meta:       { icon: "merge",        label: "Meta",         desc: "combine multiple signals",    color: "#ec4899" },
+  strategy:   { icon: "architecture", label: "Strategy",     desc: "decide when to trade",        color: "#e2e8f0" },
+  coordinator:{ icon: "hub",          label: "Coordinator",  desc: "orchestrate the swarm",       color: "#22c55e" },
+  risk:       { icon: "shield",       label: "Risk",         desc: "approve or reject trades",    color: "#f59e0b" },
+  execution:  { icon: "bolt",         label: "Execution",    desc: "fill trades on-chain",        color: "#3b82f6" },
+  quant_risk: { icon: "functions",    label: "Quant Risk",   desc: "VaR & stress testing",        color: "#ef4444" },
+  quant:      { icon: "calculate",    label: "Quant",        desc: "factor models & attribution", color: "#8b5cf6" },
+  portfolio:  { icon: "pie_chart",    label: "Portfolio",    desc: "optimize & hedge positions",   color: "#14b8a6" },
+  compliance: { icon: "gavel",        label: "Compliance",   desc: "detect wash trades & limits", color: "#f97316" },
+  audit:      { icon: "fact_check",   label: "Audit",        desc: "log everything for review",   color: "#64748b" },
+  wallet:     { icon: "account_balance_wallet", label: "Wallet", desc: "manage funds & keys",     color: "#22d3ee" },
 };
 
 function renderAgents() {
   const el = document.getElementById("agent-tree");
   const agents = Object.values(S.agents);
   let activeCount = 0;
-
-  // Group by role
   const groups = {};
-  for (const a of agents) {
-    if (!groups[a.role]) groups[a.role] = [];
-    groups[a.role].push(a);
-    if (a.status === "active") activeCount++;
-  }
+  for (const a of agents) { if (!groups[a.role]) groups[a.role] = []; groups[a.role].push(a); if (a.status === "active") activeCount++; }
 
   let html = "";
   for (const [role, members] of Object.entries(groups)) {
-    const cfg = roleConfig[role] || { icon: "circle", label: role, color: "#64748b" };
+    const cfg = roleConfig[role] || { icon: "circle", label: role, desc: "", color: "#64748b" };
     const activeInGroup = members.filter(m => m.status === "active").length;
-
     html += `<div class="agent-group-header">
       <span class="material-symbols-outlined" style="font-size:12px;color:${cfg.color}">${cfg.icon}</span>
-      <span style="color:${cfg.color}">${cfg.label}</span>
+      <div class="flex flex-col">
+        <span style="color:${cfg.color}">${cfg.label}</span>
+        <span style="font-size:8px;color:#475569;text-transform:none;letter-spacing:0;font-weight:400;margin-top:1px">${cfg.desc}</span>
+      </div>
       <span class="ml-auto text-muted-dim">${activeInGroup}/${members.length}</span>
     </div>`;
-
     for (const a of members) {
       const isActive = a.status === "active";
-      const age = a.last_tick ? `${Math.max(0, ((Date.now()/1000) - a.last_tick)).toFixed(0)}s` : "";
-
+      const age = a.last_tick ? `${Math.max(0, ((Date.now()/1000) - a.last_tick)).toFixed(0)}s ago` : "";
       html += `<div class="agent-row ${isActive ? "active" : ""}">
         <div class="w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-accent" : "bg-muted-dim/40"}"></div>
         <span class="flex-1 truncate">${a.name}</span>
@@ -969,7 +1325,6 @@ function renderAgents() {
       </div>`;
     }
   }
-
   el.innerHTML = html;
   document.getElementById("agent-count").textContent = agents.length;
   document.getElementById("agent-active-count").textContent = activeCount;
@@ -978,226 +1333,156 @@ function renderAgents() {
 function renderSignals() {
   const panel = document.getElementById("signals-panel");
   const names = { momentum: "Momentum", mean_rev: "Mean Reversion", vol: "Volatility", prism: "PRISM AI" };
+  const descs = { momentum: "Trend-following signal", mean_rev: "Overbought/oversold detector", vol: "Volatility regime", prism: "ML ensemble model" };
   const colors = { momentum: "#22c55e", mean_rev: "#3b82f6", vol: "#f59e0b", prism: "#a855f7" };
-
-  let html = "";
-  let weightedScore = 0;
+  let html = "", weightedScore = 0;
   const weights = { momentum: 0.5, mean_rev: 0.3, prism: 0.2 };
   let totalW = 0;
 
   for (const [key, label] of Object.entries(names)) {
-    const sig = S.signals[key];
-    const color = colors[key];
+    const sig = S.signals[key], color = colors[key], desc = descs[key];
     if (!sig) {
-      html += `
-        <div class="space-y-2 opacity-30">
-          <div class="flex justify-between text-[10px] font-mono text-muted">
-            <span>${label}</span><span>--</span>
-          </div>
-          <div class="signal-track"><div class="signal-center-mark"></div></div>
-        </div>`;
+      html += `<div class="space-y-2 opacity-30"><div class="flex justify-between text-[10px] font-mono text-muted"><span>${label}</span><span>awaiting</span></div><div class="signal-track"><div class="signal-center-mark"></div></div><div class="text-[8px] text-muted-dim">${desc}</div></div>`;
       continue;
     }
-
-    const str = sig.strength;
-    const conf = sig.confidence;
-    const dir = sig.direction.toUpperCase();
+    const str = sig.strength, conf = sig.confidence, dir = sig.direction.toUpperCase();
     const dirColor = dir === "LONG" ? "text-accent" : dir === "SHORT" ? "text-danger" : "text-muted";
-
-    if (weights[key]) {
-      weightedScore += weights[key] * str * conf;
-      totalW += weights[key];
-    }
-
+    const dirLabel = dir === "LONG" ? "Buy" : dir === "SHORT" ? "Sell" : "Neutral";
+    if (weights[key]) { weightedScore += weights[key] * str * conf; totalW += weights[key]; }
     const barWidth = Math.abs(str) * 50;
     const fillClass = str >= 0 ? "signal-fill signal-fill-pos" : "signal-fill signal-fill-neg";
-
-    html += `
-      <div class="space-y-2">
-        <div class="flex justify-between items-center text-[10px] font-mono">
-          <span class="font-semibold" style="color:${color}">${label}</span>
-          <span class="${dirColor} font-semibold">${dir} ${str >= 0 ? "+" : ""}${str.toFixed(3)}</span>
-        </div>
-        <div class="signal-track">
-          <div class="signal-center-mark"></div>
-          <div class="${fillClass}" style="width:${barWidth}%"></div>
-        </div>
-        <div class="flex justify-between text-[8px] text-muted-dim">
-          <span>STR ${str >= 0 ? "+" : ""}${str.toFixed(4)}</span>
-          <span>CONF ${(conf * 100).toFixed(1)}%</span>
-        </div>
-      </div>`;
+    html += `<div class="space-y-2">
+      <div class="flex justify-between items-center text-[10px] font-mono">
+        <span class="font-semibold" style="color:${color}">${label}</span>
+        <span class="${dirColor} font-semibold">${dirLabel} ${str >= 0 ? "+" : ""}${str.toFixed(3)}</span>
+      </div>
+      <div class="signal-track"><div class="signal-center-mark"></div><div class="${fillClass}" style="width:${barWidth}%"></div></div>
+      <div class="flex justify-between text-[8px] text-muted-dim">
+        <span>${desc}</span>
+        <span>Confidence ${(conf * 100).toFixed(0)}%</span>
+      </div>
+    </div>`;
   }
-
   panel.innerHTML = html;
 
   if (totalW > 0) weightedScore /= totalW;
-  const scoreEl = document.getElementById("weighted-score");
-  const scoreHeaderEl = document.getElementById("weighted-score-header");
   const scoreText = (weightedScore >= 0 ? "+" : "") + weightedScore.toFixed(4);
-  scoreEl.textContent = scoreText;
-  scoreHeaderEl.textContent = scoreText;
   const scoreColor = weightedScore > 0.2 ? "text-accent" : weightedScore < -0.2 ? "text-danger" : "text-muted";
-  scoreEl.className = `text-xs font-bold ${scoreColor}`;
-  scoreHeaderEl.className = `font-mono text-[10px] font-semibold ${scoreColor}`;
+  document.getElementById("weighted-score").textContent = scoreText;
+  document.getElementById("weighted-score").className = `text-xs font-bold ${scoreColor}`;
+  document.getElementById("weighted-score-header").textContent = scoreText;
+  document.getElementById("weighted-score-header").className = `font-mono text-[10px] font-semibold ${scoreColor}`;
 
   const fillEl = document.getElementById("score-fill");
   const absW = Math.min(50, Math.abs(weightedScore) * 50);
-  if (weightedScore >= 0) {
-    fillEl.className = "signal-fill signal-fill-pos";
-    fillEl.style.cssText = `width:${absW}%;left:50%`;
-  } else {
-    fillEl.className = "signal-fill signal-fill-neg";
-    fillEl.style.cssText = `width:${absW}%;right:50%;left:auto`;
-  }
+  if (weightedScore >= 0) { fillEl.className = "signal-fill signal-fill-pos"; fillEl.style.cssText = `width:${absW}%;left:50%`; }
+  else { fillEl.className = "signal-fill signal-fill-neg"; fillEl.style.cssText = `width:${absW}%;right:50%;left:auto`; }
 }
 
 function renderIntents() {
-  const body = document.getElementById("intents-body");
-  const empty = document.getElementById("intents-empty");
-
-  if (S.intents.length === 0) {
-    body.innerHTML = "";
-    empty.classList.remove("hidden");
-    return;
-  }
+  const body = document.getElementById("intents-body"), empty = document.getElementById("intents-empty");
+  if (S.intents.length === 0) { body.innerHTML = ""; empty.classList.remove("hidden"); return; }
   empty.classList.add("hidden");
-
   const items = [...S.intents].reverse().slice(0, 30);
   let html = "";
-
   for (const intent of items) {
     const vlist = S.verdicts[intent.id] || [];
-    const approved = vlist.filter(v => v.approve).length;
-    const rejected = vlist.filter(v => !v.approve).length;
-    const total = vlist.length;
+    const approved = vlist.filter(v => v.approve).length, rejected = vlist.filter(v => !v.approve).length, total = vlist.length;
     const resolved = intent._status;
-
     const ttlLeft = Math.max(0, intent.ttl - Date.now() / 1000);
     const ttlStr = resolved ? "--" : `${ttlLeft.toFixed(0)}s`;
     const ttlColor = ttlLeft < 3 && !resolved ? "text-danger" : "text-amber";
-
     let statusBadge;
-    if (resolved === "filled") {
-      statusBadge = `<span class="badge badge-green">Filled</span>`;
-    } else if (resolved === "rejected" || rejected > 0) {
-      statusBadge = `<span class="badge badge-red">Rejected</span>`;
-    } else if (resolved === "expired") {
-      statusBadge = `<span class="badge badge-amber">Expired</span>`;
-    } else if (total >= 3 && rejected === 0) {
-      statusBadge = `<span class="badge badge-green">Approved</span>`;
-    } else {
-      statusBadge = `<span class="badge badge-blue">Pending</span>`;
-    }
-
+    if (resolved === "filled") statusBadge = `<span class="badge badge-green">Filled</span>`;
+    else if (resolved === "rejected" || rejected > 0) statusBadge = `<span class="badge badge-red">Rejected</span>`;
+    else if (resolved === "expired") statusBadge = `<span class="badge badge-amber">Expired</span>`;
+    else if (total >= 3 && rejected === 0) statusBadge = `<span class="badge badge-green">Approved</span>`;
+    else statusBadge = `<span class="badge badge-blue">Pending</span>`;
     const riskStr = total > 0 ? `${approved}/${total}` : "--";
     const riskColor = rejected > 0 ? "text-danger" : approved >= 3 ? "text-accent" : "text-amber";
     const dirColor = intent.direction === "LONG" ? "text-accent" : "text-danger";
-
-    html += `
-      <tr class="cursor-default" onclick="renderRiskPanel('${intent.id}')">
-        <td class="text-electric">${intent.id}</td>
-        <td class="${dirColor} font-semibold">${intent.direction}</td>
-        <td>${intent.asset_in} <span class="text-muted">→</span> ${intent.asset_out}</td>
-        <td class="tabular-nums">$${intent.amount_in.toFixed(2)}</td>
-        <td class="${ttlColor} tabular-nums">${ttlStr}</td>
-        <td class="${riskColor} font-semibold">${riskStr}</td>
-        <td>${statusBadge}</td>
-      </tr>`;
+    const dirLabel = intent.direction === "LONG" ? "Buy" : "Sell";
+    html += `<tr class="cursor-pointer" onclick="renderRiskPanel('${intent.id}')">
+      <td class="text-electric">${intent.id}</td>
+      <td class="${dirColor} font-semibold">${dirLabel}</td>
+      <td>${intent.asset_in} <span class="text-muted">→</span> ${intent.asset_out}</td>
+      <td class="tabular-nums">$${intent.amount_in.toFixed(2)}</td>
+      <td class="${ttlColor} tabular-nums">${ttlStr}</td>
+      <td class="${riskColor} font-semibold">${riskStr}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
   }
   body.innerHTML = html;
 }
 
 function renderReports() {
-  const body = document.getElementById("execlog-body");
-  const empty = document.getElementById("execlog-empty");
-
-  if (S.reports.length === 0) {
-    body.innerHTML = "";
-    empty.classList.remove("hidden");
-    return;
-  }
+  const body = document.getElementById("execlog-body"), empty = document.getElementById("execlog-empty");
+  if (S.reports.length === 0) { body.innerHTML = ""; empty.classList.remove("hidden"); return; }
   empty.classList.add("hidden");
-
   const items = [...S.reports].reverse().slice(0, 50);
   let html = "";
-
   for (const r of items) {
     const statusColor = r.status === "filled" ? "text-accent" : r.status === "rejected" ? "text-danger" : "text-amber";
     const pnlColor = (r.pnl || 0) > 0 ? "text-accent" : (r.pnl || 0) < 0 ? "text-danger" : "text-muted";
     const tx = r.tx_hash ? (r.tx_hash.length > 16 ? r.tx_hash.slice(0, 14) + "..." : r.tx_hash) : "--";
     const price = r.fill_price ? `$${r.fill_price.toFixed(2)}` : "--";
     const slip = r.slippage != null ? `${(r.slippage * 100).toFixed(2)}%` : "--";
-    const pnl = r.pnl != null ? `${r.pnl >= 0 ? "+" : ""}${r.pnl.toFixed(4)}` : "--";
+    const pnl = r.pnl != null ? `${r.pnl >= 0 ? "+" : ""}$${r.pnl.toFixed(4)}` : "--";
     const timeStr = new Date().toLocaleTimeString("en-US", { hour12: false });
-
-    html += `
-      <tr>
-        <td class="text-muted tabular-nums">${timeStr}</td>
-        <td class="text-electric">${r.intent_id}</td>
-        <td class="${statusColor} font-semibold uppercase">${r.status}</td>
-        <td class="text-muted-dim">${tx}</td>
-        <td class="tabular-nums">${price}</td>
-        <td class="text-muted tabular-nums">${slip}</td>
-        <td class="${pnlColor} font-semibold tabular-nums">${pnl}</td>
-      </tr>`;
+    html += `<tr>
+      <td class="text-muted tabular-nums">${timeStr}</td>
+      <td class="text-electric">${r.intent_id}</td>
+      <td class="${statusColor} font-semibold uppercase">${r.status}</td>
+      <td class="text-muted-dim">${tx}</td>
+      <td class="tabular-nums">${price}</td>
+      <td class="text-muted tabular-nums">${slip}</td>
+      <td class="${pnlColor} font-semibold tabular-nums">${pnl}</td>
+    </tr>`;
   }
   body.innerHTML = html;
 }
 
 function renderRiskPanel(intentId) {
-  const panel = document.getElementById("risk-panel");
-  const bar = document.getElementById("quorum-bar");
+  const panel = document.getElementById("risk-panel"), bar = document.getElementById("quorum-bar");
   const vlist = S.verdicts[intentId];
-
   if (!vlist || vlist.length === 0) {
-    panel.innerHTML = `<div class="text-center text-muted text-[10px] py-6 font-mono">Waiting for verdicts...</div>`;
-    bar.classList.add("hidden");
-    return;
+    panel.innerHTML = `<div class="empty-state" style="padding:24px 12px"><div class="empty-state-icon" style="width:32px;height:32px"><span class="material-symbols-outlined text-muted text-base">hourglass_top</span></div><div class="text-[11px] font-medium text-muted">Waiting for risk agents to vote...</div><div class="text-[10px] text-muted-dim">Each risk agent evaluates this trade independently</div></div>`;
+    bar.classList.add("hidden"); return;
   }
-
-  const nameMap = { size: "Position Size", allowlist: "Allowlist", drawdown: "Drawdown", var: "Value at Risk", stress: "Stress Test", compliance: "Compliance" };
-  let html = "";
-  let approved = 0;
-
+  const nameMap = { size: "Position Size", allowlist: "Allowlist", drawdown: "Max Drawdown", var: "Value at Risk", stress: "Stress Test", compliance: "Compliance" };
+  const descMap = { size: "Is the trade size reasonable?", drawdown: "Would this exceed loss limits?", var: "Within portfolio risk budget?", stress: "Survives extreme scenarios?", compliance: "Meets regulatory rules?" };
+  let html = "", approved = 0;
   for (const v of vlist) {
     const label = nameMap[v.agent_id] || v.agent_id;
+    const desc = descMap[v.agent_id] || v.reason;
     const icon = v.approve ? "check_circle" : "cancel";
     const iconColor = v.approve ? "#22c55e" : "#ef4444";
     const cardClass = v.approve ? "verdict-approved" : "verdict-rejected";
+    const resultText = v.approve ? "Approved" : "Rejected";
     if (v.approve) approved++;
-
-    html += `
-      <div class="verdict-card ${cardClass}">
-        <div>
-          <div class="text-[9px] text-muted uppercase font-medium">${v.agent_id}</div>
-          <div class="text-[11px] font-semibold text-slate-200 mt-0.5">${label}</div>
-          <div class="text-[9px] text-muted-dim mt-0.5">${v.reason}</div>
-        </div>
+    html += `<div class="verdict-card ${cardClass}">
+      <div>
+        <div class="text-[11px] font-semibold text-slate-200">${label}</div>
+        <div class="text-[9px] text-muted-dim mt-0.5">${desc}</div>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span class="text-[9px] font-semibold" style="color:${iconColor}">${resultText}</span>
         <span class="material-symbols-outlined text-lg" style="font-variation-settings:'FILL' 1;color:${iconColor}">${icon}</span>
-      </div>`;
+      </div>
+    </div>`;
   }
   panel.innerHTML = html;
-
   const rejected = vlist.length - approved;
   bar.classList.remove("hidden");
-  if (rejected > 0) {
-    bar.className = "quorum-bar mt-3 bg-danger/10 border border-danger/25 text-danger";
-    bar.textContent = `VETO — ${rejected} AGENT(S) REJECTED — EXECUTION BLOCKED`;
-  } else if (approved >= 3) {
-    bar.className = "quorum-bar mt-3 bg-accent/10 border border-accent/25 text-accent";
-    bar.textContent = `${approved}/${vlist.length} APPROVED — CONSENSUS REACHED`;
-  } else {
-    bar.className = "quorum-bar mt-3 bg-amber/10 border border-amber/25 text-amber";
-    bar.textContent = `${approved}/${vlist.length} — AWAITING QUORUM`;
-  }
+  if (rejected > 0) { bar.className = "quorum-bar mt-3 bg-danger/10 border border-danger/25 text-danger"; bar.textContent = `BLOCKED — ${rejected} risk agent(s) rejected this trade`; }
+  else if (approved >= 3) { bar.className = "quorum-bar mt-3 bg-accent/10 border border-accent/25 text-accent"; bar.textContent = `APPROVED — ${approved}/${vlist.length} agents reached consensus`; }
+  else { bar.className = "quorum-bar mt-3 bg-amber/10 border border-amber/25 text-amber"; bar.textContent = `REVIEWING — ${approved}/${vlist.length} approved, need 3 for consensus`; }
 }
 
 function updateStats() {
   const pnlEl = document.getElementById("daily-pnl");
   pnlEl.textContent = `${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}`;
   pnlEl.className = `kpi-value ${S.dailyPnl >= 0 ? "text-accent" : "text-danger"}`;
-
   document.getElementById("stat-trades").textContent = S.tradeCount;
   const wr = S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--";
   document.getElementById("stat-winrate").textContent = `${wr}%`;
@@ -1207,23 +1492,17 @@ function updateKillSwitch() {
   const btn = document.getElementById("kill-btn");
   if (S.killSwitch) {
     btn.className = "kill-btn kill-btn-active";
-    btn.innerHTML = `<span class="flex items-center gap-1.5">
-      <span class="material-symbols-outlined text-xs">power_settings_new</span>
-      Kill Active
-    </span>`;
+    btn.innerHTML = `<span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-xs">power_settings_new</span>STOP ACTIVE</span>`;
   } else {
     btn.className = "kill-btn kill-btn-idle";
-    btn.innerHTML = `<span class="flex items-center gap-1.5">
-      <span class="material-symbols-outlined text-xs">power_settings_new</span>
-      Kill Switch
-    </span>`;
+    btn.innerHTML = `<span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-xs">power_settings_new</span>Emergency Stop</span>`;
   }
 }
 
 function toggleKillSwitch() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     const newState = !S.killSwitch;
-    if (newState && !confirm("ACTIVATE KILL SWITCH?\n\nThis will halt ALL trade execution immediately.")) return;
+    if (newState && !confirm("ACTIVATE EMERGENCY STOP?\n\nThis will halt ALL trade execution immediately.")) return;
     ws.send(JSON.stringify({ action: "kill_switch", enabled: newState }));
   }
 }
@@ -1233,60 +1512,24 @@ function drawChart() {
   const canvas = document.getElementById("price-chart");
   const ctx = canvas.getContext("2d");
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width * devicePixelRatio;
-  canvas.height = rect.height * devicePixelRatio;
-  canvas.style.width = rect.width + "px";
-  canvas.style.height = rect.height + "px";
+  canvas.width = rect.width * devicePixelRatio; canvas.height = rect.height * devicePixelRatio;
+  canvas.style.width = rect.width + "px"; canvas.style.height = rect.height + "px";
   ctx.scale(devicePixelRatio, devicePixelRatio);
-
-  const w = rect.width, h = rect.height;
-  const data = S.priceHistory;
+  const w = rect.width, h = rect.height, data = S.priceHistory;
   if (data.length < 2) return;
-
   ctx.clearRect(0, 0, w, h);
 
-  // Grid
-  ctx.strokeStyle = "rgba(30,41,59,0.4)";
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i < 8; i++) {
-    const y = (h / 8) * i;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-  }
-  for (let i = 0; i < 12; i++) {
-    const x = (w / 12) * i;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-  }
+  ctx.strokeStyle = "rgba(30,41,59,0.4)"; ctx.lineWidth = 0.5;
+  for (let i = 0; i < 8; i++) { const y = (h / 8) * i; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  for (let i = 0; i < 12; i++) { const x = (w / 12) * i; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
 
-  const prices = data.map(d => d.p);
-  const minP = Math.min(...prices);
-  const maxP = Math.max(...prices);
-  const range = maxP - minP || 1;
-  const pad = 20;
+  const prices = data.map(d => d.p), minP = Math.min(...prices), maxP = Math.max(...prices), range = maxP - minP || 1, pad = 20;
+  ctx.fillStyle = "rgba(148,163,184,0.4)"; ctx.font = "9px JetBrains Mono"; ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) { const price = minP + (range * i / 4); const y = h - pad - ((price - minP) / range) * (h - pad * 2); ctx.fillText(`$${price.toFixed(2)}`, w - 4, y + 3); }
 
-  // Price labels
-  ctx.fillStyle = "rgba(148,163,184,0.4)";
-  ctx.font = "9px JetBrains Mono";
-  ctx.textAlign = "right";
-  for (let i = 0; i <= 4; i++) {
-    const price = minP + (range * i / 4);
-    const y = h - pad - ((price - minP) / range) * (h - pad * 2);
-    ctx.fillText(`$${price.toFixed(2)}`, w - 4, y + 3);
-  }
-
-  // Candlesticks
-  const candleSize = 5;
-  const candles = [];
-  for (let i = 0; i < prices.length; i += candleSize) {
-    const slice = prices.slice(i, i + candleSize);
-    if (slice.length === 0) continue;
-    candles.push({
-      o: slice[0], c: slice[slice.length - 1],
-      h: Math.max(...slice), l: Math.min(...slice),
-    });
-  }
-
+  const candleSize = 5, candles = [];
+  for (let i = 0; i < prices.length; i += candleSize) { const slice = prices.slice(i, i + candleSize); if (slice.length === 0) continue; candles.push({ o: slice[0], c: slice[slice.length - 1], h: Math.max(...slice), l: Math.min(...slice) }); }
   if (candles.length === 0) return;
-
   const cw = Math.max(2, (w - 40) / candles.length - 1);
 
   candles.forEach((c, i) => {
@@ -1294,64 +1537,32 @@ function drawChart() {
     const bullish = c.c >= c.o;
     const color = bullish ? "#22c55e" : "#ef4444";
     const colorDim = bullish ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)";
-
-    // Wick
     const wickTop = h - pad - ((c.h - minP) / range) * (h - pad * 2);
     const wickBot = h - pad - ((c.l - minP) / range) * (h - pad * 2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, wickTop);
-    ctx.lineTo(x, wickBot);
-    ctx.stroke();
-
-    // Body
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, wickTop); ctx.lineTo(x, wickBot); ctx.stroke();
     const bodyTop = h - pad - ((Math.max(c.o, c.c) - minP) / range) * (h - pad * 2);
     const bodyBot = h - pad - ((Math.min(c.o, c.c) - minP) / range) * (h - pad * 2);
     const bodyH = Math.max(1, bodyBot - bodyTop);
-    ctx.fillStyle = colorDim;
-    ctx.fillRect(x - cw / 2, bodyTop, cw, bodyH);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 0.5;
-    ctx.strokeRect(x - cw / 2, bodyTop, cw, bodyH);
+    ctx.fillStyle = colorDim; ctx.fillRect(x - cw / 2, bodyTop, cw, bodyH);
+    ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.strokeRect(x - cw / 2, bodyTop, cw, bodyH);
   });
 
-  // Current price line
   const lastPrice = prices[prices.length - 1];
   const priceY = h - pad - ((lastPrice - minP) / range) * (h - pad * 2);
-  ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = "rgba(34,197,94,0.3)";
-  ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(0, priceY);
-  ctx.lineTo(w, priceY);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = "rgba(34,197,94,0.3)"; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(0, priceY); ctx.lineTo(w, priceY); ctx.stroke(); ctx.setLineDash([]);
 
-  // Current price label
-  const labelW = 72;
-  const labelH = 18;
   ctx.fillStyle = "#22c55e";
-  const radius = 3;
-  ctx.beginPath();
-  ctx.roundRect(2, priceY - labelH/2, labelW, labelH, radius);
-  ctx.fill();
-  ctx.fillStyle = "#06080d";
-  ctx.font = "bold 10px JetBrains Mono";
-  ctx.textAlign = "left";
+  ctx.beginPath(); ctx.roundRect(2, priceY - 9, 72, 18, 3); ctx.fill();
+  ctx.fillStyle = "#06080d"; ctx.font = "bold 10px JetBrains Mono"; ctx.textAlign = "left";
   ctx.fillText(`$${lastPrice.toFixed(2)}`, 8, priceY + 3.5);
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => {
-      b.classList.remove("tab-active");
-      b.classList.add("tab-inactive");
-    });
-    btn.classList.remove("tab-inactive");
-    btn.classList.add("tab-active");
-
+    document.querySelectorAll(".tab-btn").forEach(b => { b.classList.remove("tab-active"); b.classList.add("tab-inactive"); });
+    btn.classList.remove("tab-inactive"); btn.classList.add("tab-active");
     const tab = btn.dataset.tab;
     document.getElementById("tab-intents").classList.toggle("hidden", tab !== "intents");
     document.getElementById("tab-execlog").classList.toggle("hidden", tab !== "execlog");
@@ -1359,44 +1570,447 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 });
 
 // ── Clock & Ticker ────────────────────────────────────────────
-function updateClock() {
-  const now = new Date();
-  document.getElementById("utc-clock").textContent = now.toISOString().slice(11, 19);
-}
+function updateClock() { document.getElementById("utc-clock").textContent = new Date().toISOString().slice(11, 19); }
 
 function updateTicker() {
   const el = document.getElementById("ticker-content");
   const parts = [];
-  for (const [sym, price] of Object.entries(S.prices)) {
-    parts.push(`<span><span class="text-electric font-semibold">${sym}</span> $${price.toFixed(2)}</span>`);
-  }
-  parts.push(`<span>Trades: ${S.tradeCount} | Filled: ${S.wins + S.losses} | Win Rate: ${S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--"}%</span>`);
-  parts.push(`<span>PnL: ${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}</span>`);
-  if (S.killSwitch) parts.push(`<span class="text-danger font-bold">KILL SWITCH ACTIVE</span>`);
+  for (const [sym, price] of Object.entries(S.prices)) parts.push(`<span><span class="text-electric font-semibold">${sym}</span> $${price.toFixed(2)}</span>`);
+  parts.push(`<span>Trades: ${S.tradeCount} | Win Rate: ${S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--"}%</span>`);
+  parts.push(`<span>P&L: ${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}</span>`);
+  if (S.killSwitch) parts.push(`<span class="text-danger font-bold">EMERGENCY STOP ACTIVE</span>`);
   el.innerHTML = parts.join("");
 }
 
 function updateUptime() {
   const s = Math.floor((Date.now() / 1000) - (S.startTime || Date.now() / 1000));
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  document.getElementById("uptime").textContent =
-    `${String(h).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const m = Math.floor(s / 60), h = Math.floor(m / 60);
+  document.getElementById("uptime").textContent = `${String(h).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
 S.startTime = Date.now() / 1000;
 
-// ── Init ──────────────────────────────────────────────────────
-initChartJs();
-connect();
-setInterval(updateClock, 1000);
-setInterval(updateTicker, 3000);
-setInterval(updateUptime, 1000);
-setInterval(() => { renderIntents(); }, 1000);
+// ── Gateway — SwarmProtocol Agent Registration ──────────────
+let gwState = { enabled: false, masterKey: null, agents: [], types: {}, categories: {}, capabilities: [] };
+let gwSelectedProtocol = "openclaw";
+let gwSelectedType = "signal-custom";
+let gwSelectedCaps = new Set();
 
-window.addEventListener("resize", () => {
-  if (S.priceHistory.length > 1) drawChart();
-});
+const GW_PROTO_META = {
+  openclaw:  { name: "OpenClaw",  icon: "precision_manufacturing", color: "#22c55e" },
+  hermes:    { name: "Hermes",    icon: "chat",                    color: "#3b82f6" },
+  ironclaw:  { name: "IronClaw",  icon: "bolt",                    color: "#f59e0b" },
+  raw:       { name: "Raw",       icon: "code",                    color: "#64748b" },
+};
+
+const GW_PAYLOADS = {
+  openclaw: JSON.stringify({ tool_calls: [{ name: "submit_signal", arguments: { asset: "ETH", action: "buy", conviction: 0.85, reasoning: "breakout" }}]}, null, 2),
+  hermes: JSON.stringify({ role: "assistant", content: "Bullish divergence", structured_output: { signal: "bullish", asset: "ETH", confidence: 0.75, target_price: 2500 }}, null, 2),
+  ironclaw: JSON.stringify({ actions: [{ type: "trade_signal", params: { ticker: "ETH", side: "long", confidence: 0.85, urgency: "high", analysis: "support holding" }}]}, null, 2),
+  raw: JSON.stringify({ asset: "ETH", direction: "long", strength: 0.7, confidence: 0.8, rationale: "analysis" }, null, 2),
+};
+
+function gwCurlExample(proto, key) {
+  const body = GW_PAYLOADS[proto];
+  return `curl -X POST ${location.origin}/api/gateway/signal \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -d '${body.replace(/\n/g, "\n  ")}'`;
+}
+
+function gwWsExample(proto, key) {
+  const wsp = location.protocol === "https:" ? "wss:" : "ws:";
+  return `const ws = new WebSocket("${wsp}//${location.host}/ws/agent?api_key=${key}");
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: "signal",
+    ...${GW_PAYLOADS[proto].replace(/\n/g, "\n    ")}
+  }));
+};
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  // types: market, execution, signal_ack, welcome
+  console.log(msg.type, msg);
+};`;
+}
+
+function toggleGatewayPanel() {
+  const panel = document.getElementById("gw-panel");
+  const overlay = document.getElementById("gw-overlay");
+  const isOpen = panel.classList.contains("open");
+  panel.classList.toggle("open", !isOpen);
+  overlay.classList.toggle("open", !isOpen);
+  if (!isOpen) gwGoStep("pick");
+}
+
+function gwGoStep(step) {
+  ["pick", "config", "done"].forEach(s => {
+    document.getElementById(`gw-step-${s}`).classList.toggle("hidden", s !== step);
+  });
+  // Update step indicators
+  const stepNum = { pick: 1, config: 2, done: 3 }[step];
+  for (let i = 1; i <= 3; i++) {
+    const el = document.getElementById(`gw-step-ind-${i}`);
+    if (i <= stepNum) {
+      el.style.opacity = "1";
+      const dot = el.querySelector("div");
+      dot.className = "w-5 h-5 rounded-full bg-electric/20 border border-electric/40 flex items-center justify-center text-[9px] font-mono font-bold text-electric";
+    } else {
+      el.style.opacity = "0.4";
+      const dot = el.querySelector("div");
+      dot.className = "w-5 h-5 rounded-full bg-s-high border border-border flex items-center justify-center text-[9px] font-mono font-bold text-muted";
+    }
+  }
+}
+
+function gwPickProto(proto) {
+  gwSelectedProtocol = proto;
+  document.querySelectorAll(".gw-proto-pill").forEach(el => el.classList.remove("gw-proto-active"));
+  document.getElementById(`gw-proto-${proto}`).classList.add("gw-proto-active");
+}
+
+function gwRenderTypeGrid() {
+  const grid = document.getElementById("gw-type-grid");
+  const cats = gwState.categories || {};
+  const types = gwState.types || {};
+
+  // Group types by category
+  const grouped = {};
+  for (const [typeId, info] of Object.entries(types)) {
+    const cat = info.category || "other";
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push({ id: typeId, ...info });
+  }
+
+  let html = "";
+  for (const [catId, catInfo] of Object.entries(cats)) {
+    const items = grouped[catId] || [];
+    if (items.length === 0) continue;
+    html += `<div class="mb-2">
+      <div class="flex items-center gap-1.5 mb-1.5">
+        <span class="material-symbols-outlined text-xs" style="color:${catInfo.color};font-variation-settings:'FILL' 1">${catInfo.icon}</span>
+        <span class="text-[8px] font-mono font-semibold uppercase tracking-wider" style="color:${catInfo.color}">${catInfo.label}</span>
+      </div>`;
+    for (const t of items) {
+      const sel = gwSelectedType === t.id;
+      html += `<div class="gw-proto-card ${sel ? "gw-type-selected" : ""}" onclick="gwSelectType('${t.id}')" style="padding:8px 12px;margin-bottom:4px;${sel ? `border-color:${catInfo.color}40;background:${catInfo.color}08` : ""}">
+        <div class="flex items-center gap-2">
+          <div class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${sel ? catInfo.color : "#334155"}"></div>
+          <div class="flex-1 min-w-0">
+            <div class="font-mono text-[10px] text-white font-semibold">${t.label}</div>
+            <div class="text-[8px] text-muted-dim truncate">${t.description}</div>
+          </div>
+          ${sel ? `<span class="material-symbols-outlined text-accent text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>` : ""}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // "Next" button at bottom
+  html += `<button onclick="gwGoToConfig()" class="gw-btn gw-btn-primary w-full mt-2">
+    <span class="flex items-center justify-center gap-2">
+      <span class="material-symbols-outlined text-xs">arrow_forward</span>
+      Configure Agent
+    </span>
+  </button>`;
+
+  grid.innerHTML = html;
+}
+
+function gwSelectType(typeId) {
+  gwSelectedType = typeId;
+  gwRenderTypeGrid();
+}
+
+function gwGoToConfig() {
+  const typeInfo = gwState.types[gwSelectedType] || {};
+  const catInfo = gwState.categories[typeInfo.category] || { icon: "circle", color: "#64748b", label: "Custom" };
+  const protoMeta = GW_PROTO_META[gwSelectedProtocol];
+
+  // Populate config header
+  const iconEl = document.getElementById("gw-cfg-icon");
+  iconEl.style.background = catInfo.color + "15";
+  iconEl.style.border = `1px solid ${catInfo.color}30`;
+  iconEl.innerHTML = `<span class="material-symbols-outlined text-lg" style="color:${catInfo.color};font-variation-settings:'FILL' 1">${catInfo.icon}</span>`;
+  document.getElementById("gw-cfg-type-label").textContent = typeInfo.label || gwSelectedType;
+  document.getElementById("gw-cfg-cat-badge").textContent = catInfo.label;
+  document.getElementById("gw-cfg-cat-badge").style.color = catInfo.color;
+  document.getElementById("gw-cfg-proto-badge").textContent = protoMeta.name;
+  document.getElementById("gw-cfg-type-desc").textContent = typeInfo.description || "";
+
+  // Payload
+  document.getElementById("gw-cfg-payload").textContent = GW_PAYLOADS[gwSelectedProtocol];
+
+  // Capabilities checkboxes
+  gwSelectedCaps = new Set();
+  const capsGrid = document.getElementById("gw-caps-grid");
+  capsGrid.innerHTML = (gwState.capabilities || []).map(c =>
+    `<span class="gw-cap-tag" onclick="gwToggleCap(this, '${c}')">${c}</span>`
+  ).join("");
+
+  // Clear name
+  document.getElementById("gw-agent-name").value = "";
+  document.getElementById("gw-agent-name").placeholder = `my-${gwSelectedType.split("-").pop()}-agent`;
+  document.getElementById("gw-agent-desc").value = "";
+
+  gwGoStep("config");
+}
+
+function gwToggleCap(el, cap) {
+  if (gwSelectedCaps.has(cap)) {
+    gwSelectedCaps.delete(cap);
+    el.classList.remove("selected");
+  } else {
+    gwSelectedCaps.add(cap);
+    el.classList.add("selected");
+  }
+}
+
+function updateGatewayStatus() {
+  const dot = document.getElementById("gw-status-dot");
+  const text = document.getElementById("gw-status-text");
+
+  if (demoMode) {
+    dot.className = "w-2 h-2 rounded-full bg-amber";
+    text.textContent = "DEMO";
+    text.className = "font-mono text-[9px] text-amber";
+    return;
+  }
+  if (gwState.enabled) {
+    const n = gwState.agents.length;
+    dot.className = "w-2 h-2 rounded-full bg-accent status-pulse";
+    text.textContent = n > 0 ? `${n} REGISTERED` : "ACTIVE";
+    text.className = "font-mono text-[9px] text-accent";
+  } else {
+    dot.className = "w-2 h-2 rounded-full bg-muted-dim";
+    text.textContent = "DISABLED";
+    text.className = "font-mono text-[9px] text-muted";
+  }
+}
+
+function gwCopyText(text) {
+  navigator.clipboard.writeText(text);
+  const msg = document.getElementById("gw-done-copy-msg");
+  if (msg) { msg.classList.remove("hidden"); setTimeout(() => msg.classList.add("hidden"), 2000); }
+}
+
+function renderGatewayAgents() {
+  const list = document.getElementById("gw-agents-list");
+  const countEl = document.getElementById("gw-agent-count");
+  countEl.textContent = gwState.agents.length;
+
+  if (gwState.agents.length === 0) {
+    list.innerHTML = '<div class="text-center text-muted text-[10px] py-3 font-mono">No agents registered</div>';
+    return;
+  }
+
+  let html = "";
+  for (const a of gwState.agents) {
+    const proto = GW_PROTO_META[a.protocol] || GW_PROTO_META.raw;
+    const catInfo = gwState.categories[a.category] || { icon: "circle", color: "#64748b" };
+    html += `
+      <div class="gw-agent-card" style="padding:10px">
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded flex items-center justify-center shrink-0" style="background:${catInfo.color}12;border:1px solid ${catInfo.color}25">
+            <span class="material-symbols-outlined text-sm" style="color:${catInfo.color};font-variation-settings:'FILL' 1">${catInfo.icon}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[10px] text-white font-semibold truncate">${a.name}</span>
+              <span class="font-mono text-[7px] px-1.5 py-0.5 rounded" style="background:${proto.color}15;color:${proto.color};border:1px solid ${proto.color}25">${proto.name}</span>
+            </div>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="font-mono text-[7px] text-muted-dim">${a.asn || ""}</span>
+              <span class="font-mono text-[7px] text-muted">${a.agent_type_label || a.agent_type}</span>
+              <span class="font-mono text-[7px] text-muted">w:${a.weight} | ${a.signal_count || 0}sig</span>
+            </div>
+          </div>
+          <button onclick="gwDisconnectAgent('${a.agent_id}')" class="gw-btn gw-btn-danger shrink-0" title="Disconnect">
+            <span class="material-symbols-outlined text-[10px]">close</span>
+          </button>
+        </div>
+      </div>`;
+  }
+  list.innerHTML = html;
+}
+
+function gwRegisterAgent() {
+  const name = document.getElementById("gw-agent-name").value.trim();
+  const description = document.getElementById("gw-agent-desc").value.trim();
+  const weight = parseFloat(document.getElementById("gw-agent-weight").value) || 0.06;
+
+  if (!name) {
+    document.getElementById("gw-agent-name").style.borderColor = "#ef4444";
+    setTimeout(() => document.getElementById("gw-agent-name").style.borderColor = "", 2000);
+    return;
+  }
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      action: "gateway_connect",
+      name,
+      protocol: gwSelectedProtocol,
+      agent_type: gwSelectedType,
+      weight,
+      capabilities: [...gwSelectedCaps],
+      description,
+    }));
+  }
+}
+
+function gwDisconnectAgent(agentId) {
+  if (!confirm(`Disconnect agent ${agentId}?`)) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "gateway_disconnect", agent_id: agentId }));
+  }
+}
+
+function gwShowRegistered(data) {
+  const proto = GW_PROTO_META[data.protocol] || GW_PROTO_META.raw;
+  document.getElementById("gw-done-name").textContent = `${data.name} — ${data.agent_type_label || data.agent_type} — ${proto.name}`;
+  document.getElementById("gw-done-asn").textContent = data.asn || "—";
+  document.getElementById("gw-done-key").textContent = data.api_key;
+  document.getElementById("gw-done-ws").textContent = `/ws/agent?api_key=${data.api_key.slice(0, 12)}...`;
+  document.getElementById("gw-done-curl").textContent = gwCurlExample(data.protocol, data.api_key);
+  document.getElementById("gw-done-ws-example").textContent = gwWsExample(data.protocol, data.api_key);
+  gwGoStep("done");
+}
+
+function handleGatewaySnapshot(data) {
+  if (!data || !data.gateway) return;
+  gwState.enabled = data.gateway.enabled;
+  gwState.masterKey = data.gateway.master_key;
+  gwState.agents = data.gateway.agents || [];
+  gwState.types = data.gateway.types || {};
+  gwState.categories = data.gateway.categories || {};
+  gwState.capabilities = data.gateway.capabilities || [];
+  updateGatewayStatus();
+  renderGatewayAgents();
+  gwRenderTypeGrid();
+
+  const btn = document.getElementById("gw-toggle-btn");
+  if (gwState.enabled && gwState.agents.length > 0) {
+    btn.style.background = "rgba(34,197,94,0.15)";
+    btn.style.color = "#4ade80";
+    btn.style.borderColor = "rgba(34,197,94,0.3)";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Thought Stream + Memory Panel
+// ═══════════════════════════════════════════════════════════════
+
+let activeRightTab = "risk";
+
+function switchRightTab(tab) {
+  activeRightTab = tab;
+  ["risk", "thoughts", "memory"].forEach(t => {
+    const panel = document.getElementById("panel-" + t);
+    const btn = document.getElementById("tab-" + t);
+    if (t === tab) {
+      panel.style.display = ""; panel.classList.remove("hidden");
+      btn.style.background = t === "risk" ? "rgba(245,158,11,0.1)" : t === "thoughts" ? "rgba(59,130,246,0.1)" : "rgba(168,85,247,0.1)";
+      btn.style.color = t === "risk" ? "#fbbf24" : t === "thoughts" ? "#60a5fa" : "#c084fc";
+    } else {
+      panel.style.display = "none"; panel.classList.add("hidden");
+      btn.style.background = "transparent"; btn.style.color = "#64748b";
+    }
+  });
+  if (tab === "memory") loadMemory();
+}
+
+function handleThought(d) {
+  S.thoughts.push(d);
+  if (S.thoughts.length > 200) S.thoughts = S.thoughts.slice(-200);
+  document.getElementById("thought-count").textContent = S.thoughts.length;
+  if (activeRightTab === "thoughts") renderThoughts();
+}
+
+function renderThoughts() {
+  const container = document.getElementById("thought-stream");
+  if (S.thoughts.length === 0) return;
+  const catIcons = { observation: "visibility", decision: "check_circle", warning: "warning", learning: "school" };
+  const catColors = { observation: "#3b82f6", decision: "#22c55e", warning: "#f59e0b", learning: "#a855f7" };
+  const recent = S.thoughts.slice(-80).reverse();
+  container.innerHTML = recent.map(t => {
+    const time = new Date((t.ts || 0) * 1000);
+    const timeStr = time.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const cat = t.category || "observation";
+    return `<div class="thought-entry thought-cat-${cat}">
+      <span class="thought-ts">${timeStr}</span>
+      <span class="thought-agent" style="color:${catColors[cat] || '#60a5fa'}">${(t.agent || "?").substring(0, 14)}</span>
+      <span class="thought-text">${escapeHtml(t.thought || "")}</span>
+    </div>`;
+  }).join("");
+  document.getElementById("thought-count").textContent = S.thoughts.length;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function loadMemory() {
+  const panel = document.getElementById("memory-panel");
+  panel.innerHTML = '<div class="text-[10px] text-muted-dim text-center py-4">Loading...</div>';
+  fetch("/api/memory?token=" + encodeURIComponent(wsToken || ""))
+    .then(r => r.json())
+    .then(data => {
+      let html = "";
+      // Current session
+      if (data.current_session) {
+        const cs = data.current_session;
+        html += `<div class="text-[9px] font-mono text-muted uppercase font-semibold mb-2">Current Session</div>`;
+        html += `<div class="memory-session">
+          <div class="flex justify-between items-center">
+            <span class="text-white font-semibold font-mono text-[11px]">PnL: <span class="${cs.total_pnl >= 0 ? 'text-accent' : 'text-danger'}">${cs.total_pnl >= 0 ? '+' : ''}${cs.total_pnl?.toFixed(4)}</span></span>
+            <span class="text-muted-dim">${cs.trades_total || 0} trades (${((cs.win_rate || 0) * 100).toFixed(0)}% WR)</span>
+          </div>
+          <div class="text-muted-dim mt-1">Duration: ${Math.round((cs.duration_s || 0) / 60)}m | Fees: ${cs.total_fees?.toFixed(4)} | Rejections: ${cs.risk_rejections || 0}</div>
+          ${(cs.regimes_seen || []).length ? '<div class="text-muted-dim mt-1">Regimes: ' + cs.regimes_seen.join(' → ') + '</div>' : ''}
+        </div>`;
+      }
+      // Past sessions
+      const sessions = (data.sessions || []).slice().reverse();
+      if (sessions.length > 0) {
+        html += `<div class="text-[9px] font-mono text-muted uppercase font-semibold mt-4 mb-2">Past Sessions (${sessions.length})</div>`;
+        sessions.forEach(s => {
+          const ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : "?";
+          html += `<div class="memory-session">
+            <div class="flex justify-between items-center">
+              <span class="text-white font-mono text-[10px]">${ts}</span>
+              <span class="font-mono text-[10px] ${s.total_pnl >= 0 ? 'text-accent' : 'text-danger'}">${s.total_pnl >= 0 ? '+' : ''}${s.total_pnl?.toFixed(4)}</span>
+            </div>
+            <div class="text-muted-dim mt-1">${s.trades_total || 0} trades | WR ${((s.win_rate || 0) * 100).toFixed(0)}% | Fees ${s.total_fees?.toFixed(4)}</div>
+          </div>`;
+        });
+      }
+      // Strategy notes excerpt
+      if (data.notes) {
+        html += `<div class="text-[9px] font-mono text-muted uppercase font-semibold mt-4 mb-2">Strategy Notes</div>`;
+        const lines = data.notes.split("\n").filter(l => l.trim()).slice(-20);
+        html += `<div class="p-2 bg-void rounded border border-border" style="max-height:200px;overflow-y:auto">
+          <pre class="text-[9px] font-mono text-slate-400 whitespace-pre-wrap leading-relaxed">${escapeHtml(lines.join("\n"))}</pre>
+        </div>`;
+      }
+      if (!html) html = '<div class="text-[10px] text-muted-dim text-center py-4">No session history yet. Run the platform to start building memory.</div>';
+      panel.innerHTML = html;
+    })
+    .catch(() => {
+      panel.innerHTML = '<div class="text-[10px] text-muted-dim text-center py-4">Memory not available (auth required or server unreachable)</div>';
+    });
+}
+
+// Store the token from URL or empty
+const wsToken = new URLSearchParams(window.location.search).get("token") || "";
+
+// ── Init ──────────────────────────────────────────────────────
+initChartJs(); connect();
+setInterval(updateClock, 1000); setInterval(updateTicker, 3000);
+setInterval(updateUptime, 1000); setInterval(() => { renderIntents(); }, 1000);
+window.addEventListener("resize", () => { if (S.priceHistory.length > 1) drawChart(); });
 </script>
 </body>
 </html>

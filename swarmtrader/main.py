@@ -84,6 +84,7 @@ from .web import WebDashboard
 from .gateway import AgentGateway
 from .checkpoint import Checkpoint
 from .demo import DemoScout, MultiAssetDemoScout
+from .memory import AgentMemory
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -220,6 +221,27 @@ async def run(args: argparse.Namespace):
         allocations=alloc_cfg,
     )
     log.info("Wallet: capital=%.0f max_alloc=%.0f%%", args.capital, args.max_alloc)
+
+    # ── Agent Memory — cross-session learning ──────────────────
+    memory = AgentMemory(
+        bus, portfolio, state,
+        soul_path=Path("SOUL.md"),
+        notes_path=Path("strategy_notes.md"),
+        session_log_path=Path("session_log.json"),
+    )
+    soul = memory.read_soul()
+    if soul:
+        log.info("SOUL loaded: %d chars", len(soul))
+    past_notes = memory.read_notes()
+    if past_notes:
+        log.info("Strategy notes loaded: %d lines from prior sessions",
+                 past_notes.count("\n"))
+    past_sessions = memory.get_past_sessions(limit=5)
+    if past_sessions:
+        last = past_sessions[-1]
+        log.info("Last session: PnL=%s trades=%s WR=%s",
+                 last.get("total_pnl"), last.get("trades_total"),
+                 last.get("win_rate"))
 
     # ── Checkpoint — restore state from previous run ──────────
     ckpt = None
@@ -476,8 +498,9 @@ async def run(args: argparse.Namespace):
         supervisor.register("dashboard", dash.run, stale_after=5.0, stoppable=dash)
 
     # ── Agent Gateway ──────────────────────────────────────────
+    # Auto-enable gateway when --web is used so it's accessible from the UI
     gateway = None
-    if args.gateway or os.getenv("SWARM_GATEWAY"):
+    if args.gateway or args.web or os.getenv("SWARM_GATEWAY"):
         master_key = args.gateway_key or os.getenv("SWARM_GATEWAY_KEY")
         gateway = AgentGateway(
             bus, strategist=strategist, portfolio=portfolio,
@@ -504,6 +527,7 @@ async def run(args: argparse.Namespace):
             bus, state, db_path=Path(args.db),
             kill_switch=kill_switch, port=args.web_port,
             wallet=wallet, gateway=gateway,
+            memory=memory,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
@@ -560,6 +584,13 @@ async def run(args: argparse.Namespace):
             except (asyncio.CancelledError, Exception):
                 pass
         log.info("SWARM SHUTDOWN complete")
+
+    # ── Write session memory ──────────────────────────────────────
+    try:
+        memory.write_session_notes()
+        log.info("Session memory persisted to strategy_notes.md")
+    except Exception as e:
+        log.warning("Failed to write session notes: %s", e)
 
     log.info("FINAL daily_pnl=%+.4f trades=%d equity=%.4f fees=%.4f",
              state["daily_pnl"], state.get("trade_count", 0),

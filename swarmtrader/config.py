@@ -36,6 +36,16 @@ class RiskConfig:
 
 
 @dataclass
+class KrakenAPIConfig:
+    """Kraken API connection configuration."""
+    api_key: str = ""
+    api_secret: str = ""
+    tier: str = "starter"                    # starter | intermediate | pro
+    use_rest_api: bool = True                # True = direct REST, False = CLI
+    base_url: str = "https://api.kraken.com"
+
+
+@dataclass
 class ExecutionConfig:
     """Execution and exchange parameters."""
     mode: str = "mock"                       # mock, paper, live
@@ -47,6 +57,7 @@ class ExecutionConfig:
     cli_timeout_seconds: float = 15.0
     poll_interval: float = 2.0               # REST ticker poll
     ws_stale_threshold: float = 10.0         # WS no-data warning
+    default_order_type: str = "market"       # market | limit
 
 
 @dataclass
@@ -93,6 +104,7 @@ class TradingConfig:
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
+    kraken: KrakenAPIConfig = field(default_factory=KrakenAPIConfig)
 
     @classmethod
     def from_env(cls) -> TradingConfig:
@@ -126,6 +138,15 @@ class TradingConfig:
         cfg.execution.mode = os.getenv("SWARM_MODE", cfg.execution.mode)
         cfg.execution.max_retries = int(
             os.getenv("SWARM_EXEC_MAX_RETRIES", cfg.execution.max_retries))
+        cfg.execution.default_order_type = os.getenv(
+            "SWARM_DEFAULT_ORDER_TYPE", cfg.execution.default_order_type)
+
+        # Kraken API
+        cfg.kraken.api_key = os.getenv("KRAKEN_API_KEY", cfg.kraken.api_key)
+        cfg.kraken.api_secret = os.getenv("KRAKEN_PRIVATE_KEY", cfg.kraken.api_secret)
+        cfg.kraken.tier = os.getenv("KRAKEN_TIER", cfg.kraken.tier)
+        cfg.kraken.use_rest_api = os.getenv(
+            "KRAKEN_USE_REST_API", "1").lower() in ("1", "true", "yes")
 
         # Circuit breaker
         cfg.circuit_breaker.max_drawdown_usd = float(

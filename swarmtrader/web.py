@@ -5,24 +5,39 @@ SWARM_DASHBOARD_TOKEN env var (or auto-generated on startup).
 Static assets (CSS/JS) are unauthenticated.
 """
 from __future__ import annotations
-import asyncio, hashlib, json, logging, os, secrets, time, sqlite3
+import asyncio, hmac, json, logging, math, os, secrets, time, sqlite3
 from pathlib import Path
 from aiohttp import web
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
 from .report import load_from_db, generate_html_report
-from .gateway import AgentGateway
+from .gateway import AgentGateway, ConnectedAgent
 
 log = logging.getLogger("swarm.web")
 
+# ── Helpers ────────────────────────────────────────────────────────
 
 def _generate_token() -> str:
     """Generate a cryptographically random dashboard token."""
     return secrets.token_urlsafe(32)
 
 
-def _constant_time_compare(a: str, b: str) -> bool:
-    """Constant-time string comparison to prevent timing attacks."""
-    return hashlib.sha256(a.encode()).digest() == hashlib.sha256(b.encode()).digest()
+def _safe_float(value, *, default: float = 0.0, min_val: float | None = None,
+                max_val: float | None = None) -> float | None:
+    """Parse a float safely, rejecting NaN/Inf and enforcing bounds.
+
+    Returns None if the value is invalid.
+    """
+    try:
+        f = float(value)
+    except (ValueError, TypeError):
+        return None
+    if not math.isfinite(f):
+        return None
+    if min_val is not None and f < min_val:
+        return None
+    if max_val is not None and f > max_val:
+        return None
+    return f
 
 
 @web.middleware
@@ -33,8 +48,9 @@ async def auth_middleware(request: web.Request, handler):
     """
     path = request.path
 
-    # Allow static assets and health check without auth
-    if path.startswith("/static/") or path == "/health":
+    # Allow static assets, health check, and HTML pages without auth
+    if (path.startswith("/static/") or path == "/health"
+            or path == "/" or path == "/slides" or path == "/report"):
         return await handler(request)
 
     token = request.app.get("_dashboard_token")
@@ -46,12 +62,12 @@ async def auth_middleware(request: web.Request, handler):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         provided = auth_header[7:]
-        if _constant_time_compare(provided, token):
+        if hmac.compare_digest(provided, token):
             return await handler(request)
 
     # Check query param (for WebSocket connections from browsers)
     provided = request.query.get("token", "")
-    if provided and _constant_time_compare(provided, token):
+    if provided and hmac.compare_digest(provided, token):
         return await handler(request)
 
     return web.json_response(
@@ -63,9 +79,14 @@ async def auth_middleware(request: web.Request, handler):
 class WebDashboard:
     """Serves the frontend and streams Bus events over WebSocket."""
 
+    # Rate-limit: max WebSocket commands per client per minute
+    _CMD_RATE_LIMIT = 60
+    _CMD_WINDOW_SECS = 60.0
+
     def __init__(self, bus: Bus, state: dict, db_path: Path,
                  kill_switch, host: str = "0.0.0.0", port: int = 8080,
-                 wallet=None, gateway: AgentGateway | None = None):
+                 wallet=None, gateway: AgentGateway | None = None,
+                 memory=None):
         self.bus = bus
         self.state = state
         self.db_path = db_path
@@ -74,7 +95,12 @@ class WebDashboard:
         self.port = port
         self.wallet = wallet  # WalletManager instance (optional)
         self.gateway = gateway  # AgentGateway instance (optional)
+        self.memory = memory  # AgentMemory instance (optional)
         self._clients: set[web.WebSocketResponse] = set()
+        self._runner: web.AppRunner | None = None
+
+        # Per-client rate limit tracking: ws -> list of timestamps
+        self._cmd_times: dict[web.WebSocketResponse, list[float]] = {}
 
         # Cached state for new clients
         self.prices: dict[str, float] = {}
@@ -115,8 +141,41 @@ class WebDashboard:
         bus.subscribe("wallet.update", self._on_wallet_update)
         bus.subscribe("wallet.low_funds", self._on_wallet_low_funds)
         bus.subscribe("wallet.rebalance", self._on_wallet_rebalance)
+        bus.subscribe("memory.thought", self._on_thought)
 
         self._init_agents()
+
+    def _gateway_snapshot(self) -> dict:
+        """Build gateway state for WS snapshot."""
+        from .gateway import AGENT_TYPE_REGISTRY, AGENT_CATEGORIES, AGENT_CAPABILITIES
+        if not self.gateway:
+            return {"enabled": False, "agents": [],
+                    "types": {}, "categories": {}, "capabilities": []}
+        return {
+            "enabled": True,
+            "master_key": self.gateway.master_key,
+            "agents": [
+                {
+                    "agent_id": a.agent_id,
+                    "asn": a.asn,
+                    "name": a.name,
+                    "agent_type": a.agent_type,
+                    "agent_type_label": AGENT_TYPE_REGISTRY.get(a.agent_type, {}).get("label", a.agent_type),
+                    "category": AGENT_TYPE_REGISTRY.get(a.agent_type, {}).get("category", ""),
+                    "protocol": a.protocol,
+                    "status": a.status,
+                    "description": a.description,
+                    "signal_count": a.signal_count,
+                    "weight": round(a.weight, 4),
+                    "capabilities": a.capabilities,
+                    "connected_at": a.connected_at,
+                }
+                for a in self.gateway.agents.values()
+            ],
+            "types": AGENT_TYPE_REGISTRY,
+            "categories": AGENT_CATEGORIES,
+            "capabilities": AGENT_CAPABILITIES,
+        }
 
     def _init_agents(self):
         """Pre-populate agent list."""
@@ -185,15 +244,48 @@ class WebDashboard:
             self.agents[name]["last_tick"] = time.time()
             self.agents[name]["ticks"] += 1
 
+    # ── Broadcasting ───────────────────────────────────────────────
+
     async def _broadcast(self, event_type: str, data: dict):
+        """Send a message to all connected WebSocket clients concurrently."""
         msg = json.dumps({"type": event_type, "ts": time.time(), "data": data})
-        dead = set()
-        for ws in self._clients:
+        clients = list(self._clients)  # snapshot to avoid mutation during iteration
+        if not clients:
+            return
+
+        async def _send(ws: web.WebSocketResponse):
             try:
-                await ws.send_str(msg)
+                await asyncio.wait_for(ws.send_str(msg), timeout=5.0)
             except Exception:
-                dead.add(ws)
-        self._clients -= dead
+                self._clients.discard(ws)
+                self._cmd_times.pop(ws, None)
+
+        await asyncio.gather(*[_send(ws) for ws in clients])
+
+    async def _send_to(self, ws: web.WebSocketResponse, event_type: str, data: dict):
+        """Send a message to a single WebSocket client."""
+        msg = json.dumps({"type": event_type, "ts": time.time(), "data": data})
+        try:
+            await asyncio.wait_for(ws.send_str(msg), timeout=5.0)
+        except Exception:
+            self._clients.discard(ws)
+            self._cmd_times.pop(ws, None)
+
+    # ── Rate limiting ──────────────────────────────────────────────
+
+    def _check_rate_limit(self, ws: web.WebSocketResponse) -> bool:
+        """Return True if the command is allowed, False if rate-limited."""
+        now = time.time()
+        times = self._cmd_times.setdefault(ws, [])
+        cutoff = now - self._CMD_WINDOW_SECS
+        # Prune old entries
+        self._cmd_times[ws] = times = [t for t in times if t > cutoff]
+        if len(times) >= self._CMD_RATE_LIMIT:
+            return False
+        times.append(now)
+        return True
+
+    # ── Bus event handlers ─────────────────────────────────────────
 
     async def _on_snapshot(self, snap: MarketSnapshot):
         self.prices.update(snap.prices)
@@ -223,6 +315,15 @@ class WebDashboard:
         if sig.agent_id in agent_map:
             self._set_agent_active(agent_map[sig.agent_id])
 
+        # Generate thought from strong signals
+        if abs(sig.strength) >= 0.3 and sig.confidence >= 0.4 and self.memory:
+            dir_word = "bullish" if sig.direction == "long" else "bearish" if sig.direction == "short" else "neutral"
+            self.memory.record_thought(
+                sig.agent_id,
+                f"{dir_word} on {sig.asset} (str={sig.strength:+.2f} conf={sig.confidence:.2f}): {sig.rationale[:80]}",
+                "observation",
+            )
+
         await self._broadcast("signal", d)
 
     async def _on_intent(self, intent: TradeIntent):
@@ -242,6 +343,14 @@ class WebDashboard:
             self.recent_intents = self.recent_intents[-100:]
         self.verdicts[intent.id] = []
         self._set_agent_active("Strategist")
+        if self.memory:
+            n_sigs = len(intent.supporting)
+            self.memory.record_thought(
+                "Strategist",
+                f"Proposing {d['direction']} trade on {intent.asset_out if d['direction'] == 'LONG' else intent.asset_in} "
+                f"(${intent.amount_in:.0f}, {n_sigs} supporting signals)",
+                "decision",
+            )
         await self._broadcast("intent", d)
 
     async def _on_verdict(self, v: RiskVerdict):
@@ -282,8 +391,10 @@ class WebDashboard:
         elif rep.status == "filled":
             self.losses += 1
 
-        self._set_agent_active("Simulator")
-        self._set_agent_active("Executor")
+        # Only mark execution agents active on actual fills
+        if rep.status == "filled":
+            self._set_agent_active("Simulator")
+            self._set_agent_active("Executor")
         self._set_agent_active("Auditor")
         await self._broadcast("report", d)
 
@@ -296,6 +407,9 @@ class WebDashboard:
 
     async def _on_wallet_rebalance(self, data: dict):
         await self._broadcast("wallet_rebalance", data)
+
+    async def _on_thought(self, data: dict):
+        await self._broadcast("thought", data)
 
     # ── Quantitative system event handlers ─────────────────────────
 
@@ -325,15 +439,15 @@ class WebDashboard:
         self._set_agent_active("DataQuality")
         await self._broadcast("data_quality", data)
 
-    # ── HTTP Handlers ───────────────────────────────────────────────
+    # ── WebSocket Handler ──────────────────────────────────────────
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=30.0)
         await ws.prepare(request)
         self._clients.add(ws)
         log.info("WebSocket client connected (%d total)", len(self._clients))
 
-        # Send full state snapshot to new client
+        # Send full state snapshot to new client (no secrets)
         snapshot = {
             "type": "snapshot",
             "ts": time.time(),
@@ -353,26 +467,36 @@ class WebDashboard:
                     "kill_switch": self.kill_switch.active,
                 },
                 "wallet": self.wallet.summary() if self.wallet else None,
+                "thoughts": self.memory.get_thoughts(30) if self.memory else [],
+                "gateway": self._gateway_snapshot(),
             },
         }
         await ws.send_str(json.dumps(snapshot))
 
-        # Listen for client messages (kill switch toggle, etc.)
-        async for msg in ws:
-            if msg.type == web.WSMsgType.TEXT:
-                try:
-                    cmd = json.loads(msg.data)
-                    await self._handle_cmd(cmd, ws)
-                except Exception as e:
-                    log.warning("Bad WS message: %s", e)
-            elif msg.type == web.WSMsgType.ERROR:
-                break
+        try:
+            # Listen for client messages (kill switch toggle, etc.)
+            async for msg in ws:
+                if msg.type == web.WSMsgType.TEXT:
+                    try:
+                        cmd = json.loads(msg.data)
+                        await self._handle_cmd(cmd, ws)
+                    except Exception as e:
+                        log.warning("Bad WS message: %s", e)
+                elif msg.type == web.WSMsgType.ERROR:
+                    break
+        finally:
+            self._clients.discard(ws)
+            self._cmd_times.pop(ws, None)
+            log.info("WebSocket client disconnected (%d remaining)", len(self._clients))
 
-        self._clients.discard(ws)
-        log.info("WebSocket client disconnected (%d remaining)", len(self._clients))
         return ws
 
     async def _handle_cmd(self, cmd: dict, ws: web.WebSocketResponse):
+        # Rate limit check
+        if not self._check_rate_limit(ws):
+            await self._send_to(ws, "error", {"message": "rate limited, slow down"})
+            return
+
         action = cmd.get("action")
         if action == "kill_switch":
             enabled = cmd.get("enabled", False)
@@ -381,64 +505,206 @@ class WebDashboard:
             else:
                 self.kill_switch.disengage()
             await self._broadcast("kill_switch", {"enabled": self.kill_switch.active})
+
         elif action == "wallet_deposit" and self.wallet:
-            try:
-                amount = float(cmd.get("amount", 0))
-            except (ValueError, TypeError):
+            amount = _safe_float(cmd.get("amount", 0), min_val=0.01, max_val=1_000_000)
+            if amount is None:
                 return
-            if 0 < amount <= 1_000_000:
-                self.wallet.deposit(amount, cmd.get("note", ""))
-                await self._broadcast("wallet", self.wallet.summary())
+            self.wallet.deposit(amount, cmd.get("note", ""))
+            await self._broadcast("wallet", self.wallet.summary())
+
         elif action == "wallet_withdraw" and self.wallet:
-            try:
-                amount = float(cmd.get("amount", 0))
-            except (ValueError, TypeError):
+            amount = _safe_float(cmd.get("amount", 0), min_val=0.01, max_val=1_000_000)
+            if amount is None:
                 return
-            if 0 < amount <= 1_000_000:
-                result = self.wallet.withdraw(amount, cmd.get("note", ""))
-                resp = self.wallet.summary()
-                if result is None:
-                    resp["error"] = "insufficient funds"
-                await self._broadcast("wallet", resp)
+            result = self.wallet.withdraw(amount, cmd.get("note", ""))
+            resp = self.wallet.summary()
+            if result is None:
+                resp["error"] = "insufficient funds"
+            await self._broadcast("wallet", resp)
+
+        elif action == "gateway_connect" and self.gateway:
+            await self._ws_gateway_connect(cmd, ws)
+
+        elif action == "gateway_disconnect" and self.gateway:
+            await self._ws_gateway_disconnect(cmd)
+
         elif action == "wallet_set_allocation" and self.wallet:
             asset = cmd.get("asset", "")
-            if asset:
-                self.wallet.set_allocation(
-                    asset,
-                    target_pct=float(cmd.get("target_pct", 0)),
-                    max_pct=float(cmd.get("max_pct", 50)),
-                )
-                await self._broadcast("wallet", self.wallet.summary())
+            target_pct = _safe_float(cmd.get("target_pct", 0), min_val=0, max_val=100)
+            max_pct = _safe_float(cmd.get("max_pct", 50), min_val=0, max_val=100)
+            if not asset or target_pct is None or max_pct is None:
+                return
+            self.wallet.set_allocation(asset, target_pct=target_pct, max_pct=max_pct)
+            await self._broadcast("wallet", self.wallet.summary())
+
+    def _connect_external_agent(self, name: str, protocol: str, weight: float,
+                                agent_type: str = "signal-custom",
+                                capabilities: list | None = None,
+                                description: str = "",
+                                metadata: dict | None = None) -> dict:
+        """Shared logic for connecting an external agent via gateway.
+
+        Returns full registration dict including agent_id, api_key, asn.
+        """
+        from .gateway import generate_asn, AGENT_TYPE_REGISTRY
+
+        agent_id = f"ext_{name.lower().replace(' ', '_').replace('-', '_')}"
+        api_key = secrets.token_hex(32)
+        asn = generate_asn()
+
+        if agent_type not in AGENT_TYPE_REGISTRY:
+            agent_type = "signal-custom"
+
+        agent = ConnectedAgent(
+            agent_id=agent_id, name=name, protocol=protocol,
+            api_key=api_key, agent_type=agent_type, asn=asn,
+            description=description[:200], weight=weight,
+            capabilities=capabilities or [],
+            metadata=metadata or {},
+        )
+        self.gateway.agents[agent_id] = agent
+
+        # Register with Strategist weights
+        if self.gateway.strategist:
+            self.gateway.strategist.weights[agent_id] = weight
+            self.gateway.bus.subscribe(
+                f"signal.{agent_id}", self.gateway.strategist._on_signal
+            )
+            total = sum(self.gateway.strategist.weights.values()) or 1.0
+            for k in self.gateway.strategist.weights:
+                self.gateway.strategist.weights[k] /= total
+
+        # Map agent_type category to dashboard role
+        type_info = AGENT_TYPE_REGISTRY.get(agent_type, {})
+        cat = type_info.get("category", "external")
+        role_map = {
+            "signal-generators": "external", "data-research": "analyst",
+            "ai-ml": "ml", "risk-compliance": "risk",
+            "execution": "execution", "meta-orchestration": "meta",
+        }
+        role = role_map.get(cat, "external")
+
+        # Register in the dashboard agent tree
+        self.agents[name] = {
+            "name": name, "role": role, "topic": f"signal.{agent_id}",
+            "status": "idle", "last_tick": None, "ticks": 0,
+        }
+        self.bus.subscribe(f"signal.{agent_id}", self._on_signal)
+
+        log.info("AGENT REGISTERED: %s asn=%s type=%s protocol=%s weight=%.3f",
+                 agent_id, asn, agent_type, protocol, weight)
+
+        return {
+            "agent_id": agent_id,
+            "asn": asn,
+            "api_key": api_key,
+            "name": name,
+            "agent_type": agent_type,
+            "agent_type_label": type_info.get("label", agent_type),
+            "category": cat,
+            "protocol": protocol,
+            "weight": weight,
+            "status": "online",
+            "capabilities": capabilities or [],
+            "description": description[:200],
+        }
+
+    def _disconnect_external_agent(self, agent_id: str) -> ConnectedAgent | None:
+        """Shared logic for disconnecting an external agent.
+
+        Returns the disconnected agent, or None if not found.
+        """
+        agent = self.gateway.agents.pop(agent_id, None)
+        if not agent:
+            return None
+
+        # Clean up gateway state via its public dict attributes
+        self.gateway._latest_signals.pop(agent_id, None)
+
+        if self.gateway.strategist and agent_id in self.gateway.strategist.weights:
+            del self.gateway.strategist.weights[agent_id]
+            total = sum(self.gateway.strategist.weights.values()) or 1.0
+            for k in self.gateway.strategist.weights:
+                self.gateway.strategist.weights[k] /= total
+
+        self.agents.pop(agent.name, None)
+        log.info("AGENT DISCONNECTED: %s", agent_id)
+        return agent
+
+    async def _ws_gateway_connect(self, cmd: dict, ws: web.WebSocketResponse):
+        """Handle gateway_connect command from a WebSocket client."""
+        name = cmd.get("name", "").strip()
+        protocol = cmd.get("protocol", "openclaw")
+        if not name or protocol not in ("openclaw", "hermes", "ironclaw", "raw"):
+            return
+
+        weight = _safe_float(cmd.get("weight", 0.06), min_val=0.0, max_val=1.0)
+        if weight is None:
+            return
+
+        agent_type = cmd.get("agent_type", "signal-custom")
+        capabilities = cmd.get("capabilities", [])
+        description = cmd.get("description", "")
+
+        reg = self._connect_external_agent(
+            name, protocol, weight,
+            agent_type=agent_type,
+            capabilities=capabilities,
+            description=description,
+        )
+
+        # Send full registration (with API key) only to the requesting client
+        await self._send_to(ws, "gateway_agent_registered", reg)
+        # Broadcast agent list update (no secrets) to all clients
+        safe = {k: v for k, v in reg.items() if k != "api_key"}
+        await self._broadcast("gateway_agent_connected", safe)
+        await self._broadcast("agents_update", {"agents": self.agents})
+
+    async def _ws_gateway_disconnect(self, cmd: dict):
+        """Handle gateway_disconnect command from a WebSocket client."""
+        agent_id = cmd.get("agent_id", "")
+        agent = self._disconnect_external_agent(agent_id)
+        if agent:
+            await self._broadcast("gateway_agent_disconnected", {"agent_id": agent_id})
+            await self._broadcast("agents_update", {"agents": self.agents})
+
+    # ── HTTP Handlers ───────────────────────────────────────────────
 
     async def _handle_history(self, request: web.Request) -> web.Response:
-        """Query trade history from SQLite."""
+        """Query trade history from SQLite (runs in thread to avoid blocking)."""
         try:
             limit = min(10000, max(1, int(request.query.get("limit", "100"))))
         except (ValueError, TypeError):
             limit = 100
         status = request.query.get("status", None)
+
+        def _query():
+            conn = sqlite3.connect(self.db_path, timeout=5.0)
+            try:
+                conn.row_factory = sqlite3.Row
+                if status:
+                    rows = conn.execute(
+                        "SELECT * FROM reports WHERE status=? ORDER BY ts DESC LIMIT ?",
+                        (status, limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM reports ORDER BY ts DESC LIMIT ?", (limit,)
+                    ).fetchall()
+                intents = conn.execute(
+                    "SELECT * FROM intents ORDER BY ts DESC LIMIT ?", (limit,)
+                ).fetchall()
+                return {"reports": [dict(r) for r in rows], "intents": [dict(i) for i in intents]}
+            finally:
+                conn.close()
+
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            if status:
-                rows = conn.execute(
-                    "SELECT * FROM reports WHERE status=? ORDER BY ts DESC LIMIT ?",
-                    (status, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM reports ORDER BY ts DESC LIMIT ?", (limit,)
-                ).fetchall()
-            intents = conn.execute(
-                "SELECT * FROM intents ORDER BY ts DESC LIMIT ?", (limit,)
-            ).fetchall()
-            conn.close()
-            return web.json_response({
-                "reports": [dict(r) for r in rows],
-                "intents": [dict(i) for i in intents],
-            })
+            result = await asyncio.to_thread(_query)
+            return web.json_response(result)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.exception("History query failed")
+            return web.json_response({"error": "failed to load history"}, status=500)
 
     async def _handle_state(self, request: web.Request) -> web.Response:
         return web.json_response({
@@ -464,9 +730,9 @@ class WebDashboard:
         if not self.wallet:
             return web.json_response({"error": "wallet not configured"}, status=404)
         body = await request.json()
-        amount = float(body.get("amount", 0))
-        if amount <= 0:
-            return web.json_response({"error": "amount must be positive"}, status=400)
+        amount = _safe_float(body.get("amount", 0), min_val=0.01)
+        if amount is None:
+            return web.json_response({"error": "amount must be a positive finite number"}, status=400)
         self.wallet.deposit(amount, body.get("note", ""))
         return web.json_response(self.wallet.summary())
 
@@ -475,9 +741,9 @@ class WebDashboard:
         if not self.wallet:
             return web.json_response({"error": "wallet not configured"}, status=404)
         body = await request.json()
-        amount = float(body.get("amount", 0))
-        if amount <= 0:
-            return web.json_response({"error": "amount must be positive"}, status=400)
+        amount = _safe_float(body.get("amount", 0), min_val=0.01)
+        if amount is None:
+            return web.json_response({"error": "amount must be a positive finite number"}, status=400)
         result = self.wallet.withdraw(amount, body.get("note", ""))
         if result is None:
             return web.json_response({"error": "insufficient funds",
@@ -492,45 +758,202 @@ class WebDashboard:
         asset = body.get("asset", "")
         if not asset:
             return web.json_response({"error": "asset required"}, status=400)
-        self.wallet.set_allocation(
-            asset,
-            target_pct=float(body.get("target_pct", 0)),
-            max_pct=float(body.get("max_pct", 50)),
-        )
+        target_pct = _safe_float(body.get("target_pct", 0), min_val=0, max_val=100)
+        max_pct = _safe_float(body.get("max_pct", 50), min_val=0, max_val=100)
+        if target_pct is None or max_pct is None:
+            return web.json_response({"error": "target_pct and max_pct must be finite numbers 0-100"}, status=400)
+        self.wallet.set_allocation(asset, target_pct=target_pct, max_pct=max_pct)
         return web.json_response(self.wallet.summary())
 
     async def _handle_index(self, request: web.Request) -> web.FileResponse:
         return web.FileResponse(Path(__file__).parent / "static" / "index.html")
 
     async def _handle_report_json(self, request: web.Request) -> web.Response:
+        def _load():
+            return load_from_db(self.db_path)
         try:
-            report = load_from_db(self.db_path)
+            report = await asyncio.to_thread(_load)
             return web.json_response(report.to_dict())
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.exception("Report JSON generation failed")
+            return web.json_response({"error": "failed to generate report"}, status=500)
 
     async def _handle_report_html(self, request: web.Request) -> web.Response:
-        try:
+        def _generate():
             report = load_from_db(self.db_path)
             import tempfile
-            with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
-                out = Path(f.name)
-            generate_html_report(report, out)
-            html = out.read_text()
-            out.unlink()
+            out = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+                    out = Path(f.name)
+                generate_html_report(report, out)
+                return out.read_text()
+            finally:
+                if out and out.exists():
+                    out.unlink()
+
+        try:
+            html = await asyncio.to_thread(_generate)
             return web.Response(text=html, content_type="text/html")
         except Exception as e:
-            return web.Response(text=f"Error: {e}", status=500)
+            log.exception("Report HTML generation failed")
+            return web.Response(text="Error generating report", status=500)
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         """Unauthenticated health check for monitoring."""
         return web.json_response({"status": "ok", "uptime": time.time() - self.start_time})
+
+    async def _handle_thoughts(self, request: web.Request) -> web.Response:
+        """GET /api/thoughts — recent agent thought stream."""
+        if not self.memory:
+            return web.json_response({"thoughts": []})
+        limit = min(100, max(1, int(request.query.get("limit", "50"))))
+        return web.json_response({"thoughts": self.memory.get_thoughts(limit)})
+
+    async def _handle_memory(self, request: web.Request) -> web.Response:
+        """GET /api/memory — session history and strategy notes."""
+        if not self.memory:
+            return web.json_response({"notes": "", "sessions": []})
+        return web.json_response({
+            "notes": self.memory.read_notes(),
+            "sessions": self.memory.get_past_sessions(limit=10),
+            "current_session": self.memory.session_summary(),
+        })
 
     async def _handle_slides(self, request: web.Request) -> web.FileResponse:
         slides_path = Path(__file__).parent / "static" / "slides.html"
         if slides_path.exists():
             return web.FileResponse(slides_path)
         return web.Response(text="Slides not found", status=404)
+
+    # ── Emergency Controls ─────────────────────────────────────────
+
+    async def _handle_cancel_all(self, request: web.Request) -> web.Response:
+        """POST /api/cancel-all — Cancel ALL open orders on Kraken."""
+        try:
+            from .kraken_api import get_client
+            client = get_client()
+            if client._cfg.api_key and client._cfg.api_secret:
+                result = await client.cancel_all()
+                count = result.get("count", 0)
+                await self._broadcast({"type": "dashboard.emergency",
+                                       "action": "cancel_all", "count": count})
+                return web.json_response({"ok": True, "cancelled": count})
+            return web.json_response({"ok": False, "error": "No API keys configured"}, status=400)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    async def _handle_flatten(self, request: web.Request) -> web.Response:
+        """POST /api/flatten — Cancel all orders + engage kill switch."""
+        try:
+            # Engage kill switch first
+            self.kill_switch.engage("dashboard_flatten")
+            # Cancel all orders
+            from .kraken_api import get_client
+            client = get_client()
+            count = 0
+            if client._cfg.api_key and client._cfg.api_secret:
+                result = await client.cancel_all()
+                count = result.get("count", 0)
+            await self._broadcast({"type": "dashboard.emergency",
+                                   "action": "flatten", "count": count})
+            await self._broadcast({"type": "kill_switch", "active": True,
+                                   "reason": "dashboard_flatten"})
+            return web.json_response({"ok": True, "cancelled": count, "kill_switch": True})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    async def _handle_pause(self, request: web.Request) -> web.Response:
+        """POST /api/pause — Toggle kill switch (pause/resume trading)."""
+        if self.kill_switch.active:
+            self.kill_switch.disengage()
+            await self._broadcast({"type": "kill_switch", "active": False})
+            return web.json_response({"ok": True, "paused": False})
+        else:
+            self.kill_switch.engage("dashboard_pause")
+            await self._broadcast({"type": "kill_switch", "active": True,
+                                   "reason": "dashboard_pause"})
+            return web.json_response({"ok": True, "paused": True})
+
+    # ── Gateway Management (frontend-facing) ───────────────────────
+
+    async def _handle_gateway_status(self, request: web.Request) -> web.Response:
+        """GET /api/gateway/status — gateway config + connected agents (no secrets)."""
+        if not self.gateway:
+            return web.json_response({"enabled": False})
+        return web.json_response({
+            "enabled": True,
+            "agents": [
+                {
+                    "agent_id": a.agent_id,
+                    "name": a.name,
+                    "protocol": a.protocol,
+                    "connected_at": a.connected_at,
+                    "last_signal_at": a.last_signal_at,
+                    "signal_count": a.signal_count,
+                    "weight": round(a.weight, 4),
+                }
+                for a in self.gateway.agents.values()
+            ],
+        })
+
+    async def _handle_gateway_connect_agent(self, request: web.Request) -> web.Response:
+        """POST /api/gateway/ui/connect — connect an external agent from the UI.
+
+        Body: { "name": "...", "protocol": "openclaw|hermes|raw", "weight": 0.06 }
+        No master_key needed — the dashboard is already authenticated.
+        """
+        if not self.gateway:
+            return web.json_response({"error": "gateway not enabled"}, status=404)
+
+        body = await request.json()
+        name = body.get("name", "").strip()
+        if not name:
+            return web.json_response({"error": "name is required"}, status=400)
+
+        protocol = body.get("protocol", "openclaw")
+        if protocol not in ("openclaw", "hermes", "ironclaw", "raw"):
+            return web.json_response({"error": "protocol must be openclaw, hermes, or raw"}, status=400)
+
+        weight = _safe_float(body.get("weight", 0.06), min_val=0.0, max_val=1.0)
+        if weight is None:
+            return web.json_response({"error": "weight must be a finite number 0-1"}, status=400)
+
+        reg = self._connect_external_agent(
+            name, protocol, weight,
+            agent_type=body.get("agent_type", "signal-custom"),
+            capabilities=body.get("capabilities", []),
+            description=body.get("description", ""),
+            metadata=body.get("metadata", {}),
+        )
+
+        safe = {k: v for k, v in reg.items() if k != "api_key"}
+        await self._broadcast("gateway_agent_connected", safe)
+        await self._broadcast("agents_update", {"agents": self.agents})
+
+        reg["endpoints"] = {
+            "signal": "POST /api/gateway/signal",
+            "market": "GET /api/gateway/market",
+            "websocket": f"WS /ws/agent?api_key={reg['api_key']}",
+        }
+        return web.json_response(reg)
+
+    async def _handle_gateway_disconnect_agent(self, request: web.Request) -> web.Response:
+        """POST /api/gateway/ui/disconnect — disconnect an agent by agent_id."""
+        if not self.gateway:
+            return web.json_response({"error": "gateway not enabled"}, status=404)
+
+        body = await request.json()
+        agent_id = body.get("agent_id", "")
+        if not agent_id:
+            return web.json_response({"error": "agent_id is required"}, status=400)
+
+        agent = self._disconnect_external_agent(agent_id)
+        if not agent:
+            return web.json_response({"error": "agent not found"}, status=404)
+
+        await self._broadcast("agents_update", {"agents": self.agents})
+        return web.json_response({"disconnected": agent_id})
 
     # ── Server Lifecycle ────────────────────────────────────────────
 
@@ -555,9 +978,19 @@ class WebDashboard:
         app.router.add_post("/api/wallet/withdraw", self._handle_wallet_withdraw)
         app.router.add_post("/api/wallet/allocations", self._handle_wallet_allocations)
         app.router.add_get("/api/report", self._handle_report_json)
+        app.router.add_get("/api/thoughts", self._handle_thoughts)
+        app.router.add_get("/api/memory", self._handle_memory)
         app.router.add_get("/report", self._handle_report_html)
         app.router.add_get("/slides", self._handle_slides)
-        # ── Agent Gateway routes ────────────────────────────────────
+        # ── Emergency controls ─────────────────────────────────────
+        app.router.add_post("/api/cancel-all", self._handle_cancel_all)
+        app.router.add_post("/api/flatten", self._handle_flatten)
+        app.router.add_post("/api/pause", self._handle_pause)
+        # ── Gateway management (frontend-facing) ───────────────────
+        app.router.add_get("/api/gateway/status", self._handle_gateway_status)
+        app.router.add_post("/api/gateway/ui/connect", self._handle_gateway_connect_agent)
+        app.router.add_post("/api/gateway/ui/disconnect", self._handle_gateway_disconnect_agent)
+        # ── Agent Gateway routes (external agent API) ──────────────
         if self.gateway:
             self.gateway.register_routes(app)
 
@@ -565,8 +998,24 @@ class WebDashboard:
                               Path(__file__).parent / "static",
                               show_index=False)
 
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port)
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        site = web.TCPSite(self._runner, self.host, self.port)
         await site.start()
         log.info("Dashboard running at http://%s:%d", self.host, self.port)
+
+    async def stop(self):
+        """Gracefully shut down the web server and close all WebSocket clients."""
+        # Close all WebSocket connections with a proper close frame
+        for ws in list(self._clients):
+            try:
+                await ws.close(code=1001, message=b"server shutting down")
+            except Exception:
+                pass
+        self._clients.clear()
+        self._cmd_times.clear()
+
+        if self._runner:
+            await self._runner.cleanup()
+            self._runner = None
+        log.info("Dashboard stopped")

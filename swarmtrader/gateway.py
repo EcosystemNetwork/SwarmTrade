@@ -3,10 +3,15 @@
 Supports:
   - OpenClaw agents (tool-calling protocol)
   - Hermes agents (message-passing protocol)
+  - IronClaw agents (action-chain protocol)
   - Raw HTTP/WebSocket agents (any framework)
 
 External agents connect, authenticate, receive market data, and publish
 trading signals that flow into the Strategist via the internal Bus.
+
+Registration follows SwarmProtocol conventions: agents declare a type
+from a categorised registry, list capabilities, and receive an ASN
+(Agent Swarm Number) on successful registration.
 
 Endpoints:
   POST /api/gateway/connect      — register an external agent
@@ -18,7 +23,7 @@ Endpoints:
   WS   /ws/agent                 — real-time bidirectional stream
 """
 from __future__ import annotations
-import asyncio, hashlib, hmac, json, logging, secrets, time
+import asyncio, hashlib, hmac, json, logging, random, secrets, string, time
 from dataclasses import dataclass, field
 from typing import Any
 from aiohttp import web
@@ -29,14 +34,185 @@ log = logging.getLogger("swarm.gateway")
 # Default weight assigned to newly connected external agents
 EXTERNAL_AGENT_DEFAULT_WEIGHT = 0.06
 
+# ── Agent Type Registry ─────────────────────────────────────────
+# Mirrors SwarmProtocol's categorised type system, scoped to trading.
+AGENT_TYPE_REGISTRY: dict[str, dict] = {
+    # ── Signal Generators ──
+    "signal-momentum": {
+        "label": "Momentum Signal",
+        "category": "signal-generators",
+        "description": "Generates buy/sell signals from momentum indicators",
+        "tags": ["momentum", "trend", "signal"],
+    },
+    "signal-mean-reversion": {
+        "label": "Mean Reversion Signal",
+        "category": "signal-generators",
+        "description": "Detects mean-reversion opportunities",
+        "tags": ["mean-reversion", "statistical", "signal"],
+    },
+    "signal-breakout": {
+        "label": "Breakout Detector",
+        "category": "signal-generators",
+        "description": "Identifies price breakouts from consolidation",
+        "tags": ["breakout", "volatility", "signal"],
+    },
+    "signal-sentiment": {
+        "label": "Sentiment Analyzer",
+        "category": "signal-generators",
+        "description": "NLP-driven sentiment from news/social feeds",
+        "tags": ["sentiment", "nlp", "news"],
+    },
+    "signal-arbitrage": {
+        "label": "Arbitrage Scanner",
+        "category": "signal-generators",
+        "description": "Cross-exchange or cross-pair arbitrage signals",
+        "tags": ["arbitrage", "spread", "multi-exchange"],
+    },
+    "signal-custom": {
+        "label": "Custom Signal Agent",
+        "category": "signal-generators",
+        "description": "Custom signal logic not covered by other types",
+        "tags": ["custom", "signal"],
+    },
+    # ── Data & Research ──
+    "data-market": {
+        "label": "Market Data Feed",
+        "category": "data-research",
+        "description": "Provides real-time or historical market data",
+        "tags": ["data", "market", "feed"],
+    },
+    "data-onchain": {
+        "label": "On-Chain Analyst",
+        "category": "data-research",
+        "description": "Tracks on-chain metrics (whale moves, TVL, flows)",
+        "tags": ["onchain", "blockchain", "data"],
+    },
+    "data-orderbook": {
+        "label": "Order Book Analyst",
+        "category": "data-research",
+        "description": "Analyses order book depth and imbalances",
+        "tags": ["orderbook", "depth", "microstructure"],
+    },
+    "data-funding": {
+        "label": "Funding Rate Tracker",
+        "category": "data-research",
+        "description": "Monitors perpetual futures funding rates",
+        "tags": ["funding", "futures", "derivatives"],
+    },
+    # ── AI / ML Models ──
+    "ml-classifier": {
+        "label": "ML Classifier",
+        "category": "ai-ml",
+        "description": "ML model that classifies market regimes or signals",
+        "tags": ["ml", "classification", "model"],
+    },
+    "ml-forecaster": {
+        "label": "Price Forecaster",
+        "category": "ai-ml",
+        "description": "Time-series forecasting model for price prediction",
+        "tags": ["ml", "forecast", "prediction"],
+    },
+    "ml-reinforcement": {
+        "label": "RL Trading Agent",
+        "category": "ai-ml",
+        "description": "Reinforcement learning agent for trade decisions",
+        "tags": ["rl", "reinforcement", "adaptive"],
+    },
+    "ml-llm": {
+        "label": "LLM Analyst",
+        "category": "ai-ml",
+        "description": "Large language model performing market analysis",
+        "tags": ["llm", "language-model", "analysis"],
+    },
+    # ── Risk & Compliance ──
+    "risk-position": {
+        "label": "Position Risk Monitor",
+        "category": "risk-compliance",
+        "description": "Monitors position sizing and exposure limits",
+        "tags": ["risk", "position", "exposure"],
+    },
+    "risk-portfolio": {
+        "label": "Portfolio Risk Analyzer",
+        "category": "risk-compliance",
+        "description": "VaR, stress testing, and portfolio-level risk",
+        "tags": ["risk", "portfolio", "var"],
+    },
+    "risk-compliance": {
+        "label": "Compliance Checker",
+        "category": "risk-compliance",
+        "description": "Regulatory and wash-trade compliance monitoring",
+        "tags": ["compliance", "regulatory", "audit"],
+    },
+    # ── Execution ──
+    "exec-router": {
+        "label": "Smart Order Router",
+        "category": "execution",
+        "description": "Routes orders across venues for best execution",
+        "tags": ["execution", "routing", "order"],
+    },
+    "exec-twap": {
+        "label": "TWAP/VWAP Executor",
+        "category": "execution",
+        "description": "Time/volume-weighted execution algorithms",
+        "tags": ["execution", "twap", "vwap", "algo"],
+    },
+    # ── Meta / Orchestration ──
+    "meta-coordinator": {
+        "label": "Swarm Coordinator",
+        "category": "meta-orchestration",
+        "description": "Orchestrates other agents, manages consensus",
+        "tags": ["coordinator", "orchestration", "meta"],
+    },
+    "meta-aggregator": {
+        "label": "Signal Aggregator",
+        "category": "meta-orchestration",
+        "description": "Aggregates signals from multiple sub-agents",
+        "tags": ["aggregator", "ensemble", "meta"],
+    },
+}
+
+AGENT_CATEGORIES = {
+    "signal-generators":  {"label": "Signal Generators",  "icon": "sensors",          "color": "#22c55e"},
+    "data-research":      {"label": "Data & Research",     "icon": "query_stats",      "color": "#3b82f6"},
+    "ai-ml":              {"label": "AI / ML Models",      "icon": "psychology",        "color": "#a855f7"},
+    "risk-compliance":    {"label": "Risk & Compliance",   "icon": "shield",           "color": "#f59e0b"},
+    "execution":          {"label": "Execution",           "icon": "bolt",             "color": "#06b6d4"},
+    "meta-orchestration": {"label": "Meta / Orchestration","icon": "hub",              "color": "#ec4899"},
+}
+
+AGENT_CAPABILITIES = [
+    "spot-trading", "futures-trading", "options-analysis",
+    "multi-exchange", "real-time-streaming", "historical-backtest",
+    "sentiment-analysis", "on-chain-data", "order-book-analysis",
+    "risk-scoring", "portfolio-optimization", "execution-algo",
+    "cross-chain", "defi-protocols", "nft-markets",
+]
+
+# ── ASN Generator ───────────────────────────────────────────────
+_asn_counter = 0
+
+def generate_asn() -> str:
+    """Generate an Agent Swarm Number in SwarmProtocol format: ASN-SWT-YYYY-XXXX-XXXX-XX"""
+    global _asn_counter
+    _asn_counter += 1
+    year = time.strftime("%Y")
+    seg1 = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    seg2 = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    chk = ''.join(random.choices(string.digits, k=2))
+    return f"ASN-SWT-{year}-{seg1}-{seg2}-{chk}"
+
 
 @dataclass
 class ConnectedAgent:
     """Tracks a connected external agent."""
     agent_id: str
     name: str
-    protocol: str           # "openclaw" | "hermes" | "raw"
+    protocol: str           # "openclaw" | "hermes" | "ironclaw" | "raw"
     api_key: str
+    agent_type: str = "signal-custom"
+    asn: str = ""
+    status: str = "online"  # online | offline | busy | paused
+    description: str = ""
     connected_at: float = field(default_factory=time.time)
     last_signal_at: float = 0.0
     signal_count: int = 0
@@ -225,6 +401,52 @@ class AgentGateway:
             "rationale": " | ".join(rationale_parts) if rationale_parts else "",
         }
 
+    def _parse_ironclaw_signal(self, body: dict) -> dict:
+        """Parse IronClaw action-chain format into normalized signal.
+
+        IronClaw agents use an action-chain with typed actions:
+        {
+            "actions": [{
+                "type": "trade_signal",
+                "params": {
+                    "ticker": "ETH",
+                    "side": "long",           // long | short | close
+                    "confidence": 0.85,       // 0-1
+                    "urgency": "high",        // low | medium | high
+                    "analysis": "..."
+                }
+            }],
+            "agent_version": "...",
+            "session_id": "..."
+        }
+        Also accepts flat format with "ticker"/"side" at top level.
+        """
+        actions = body.get("actions", [])
+        if not actions:
+            # Flat format fallback
+            params = body
+        else:
+            action = actions[0]
+            params = action.get("params", action.get("parameters", {}))
+
+        side = str(params.get("side", params.get("direction", "close"))).lower()
+        direction = {"long": "long", "short": "short", "close": "flat",
+                     "buy": "long", "sell": "short", "flat": "flat"}.get(side, "flat")
+        confidence = float(params.get("confidence", params.get("conviction", 0.5)))
+
+        # Urgency scales conviction
+        urgency_mult = {"low": 0.6, "medium": 0.8, "high": 1.0}.get(
+            str(params.get("urgency", "medium")).lower(), 0.8)
+        adj_confidence = confidence * urgency_mult
+
+        return {
+            "asset": str(params.get("ticker", params.get("asset", "ETH"))).upper().replace("USD", ""),
+            "direction": direction,
+            "strength": adj_confidence if direction == "long" else -adj_confidence if direction == "short" else 0.0,
+            "confidence": confidence,
+            "rationale": str(params.get("analysis", params.get("reasoning", ""))),
+        }
+
     def _parse_raw_signal(self, body: dict) -> dict:
         """Parse a raw/generic signal format."""
         direction = str(body.get("direction", body.get("side", "flat"))).lower()
@@ -258,12 +480,14 @@ class AgentGateway:
 
         Body: {
             "name": "my-hermes-agent",
-            "protocol": "hermes",          // openclaw | hermes | raw
-            "capabilities": ["spot", "futures"],
+            "protocol": "hermes",          // openclaw | hermes | ironclaw | raw
+            "agent_type": "signal-momentum",
+            "capabilities": ["spot-trading", "real-time-streaming"],
+            "description": "My momentum signal agent",
             "master_key": "..."            // required for first connect
         }
 
-        Returns: { "agent_id": "...", "api_key": "...", "weight": 0.06 }
+        Returns: { "agent_id": "...", "asn": "ASN-SWT-...", "api_key": "...", ... }
         """
         body = await request.json()
         master = body.get("master_key", "")
@@ -272,11 +496,16 @@ class AgentGateway:
 
         name = body.get("name", f"external_{len(self.agents)}")
         protocol = body.get("protocol", "raw")
-        if protocol not in ("openclaw", "hermes", "raw"):
-            return web.json_response({"error": "protocol must be openclaw, hermes, or raw"}, status=400)
+        if protocol not in ("openclaw", "hermes", "ironclaw", "raw"):
+            return web.json_response({"error": "protocol must be openclaw, hermes, ironclaw, or raw"}, status=400)
+
+        agent_type = body.get("agent_type", "signal-custom")
+        if agent_type not in AGENT_TYPE_REGISTRY:
+            agent_type = "signal-custom"
 
         agent_id = f"ext_{name.lower().replace(' ', '_').replace('-', '_')}"
         api_key = secrets.token_hex(32)
+        asn = generate_asn()
         weight = float(body.get("weight", EXTERNAL_AGENT_DEFAULT_WEIGHT))
 
         agent = ConnectedAgent(
@@ -284,6 +513,9 @@ class AgentGateway:
             name=name,
             protocol=protocol,
             api_key=api_key,
+            agent_type=agent_type,
+            asn=asn,
+            description=str(body.get("description", ""))[:200],
             weight=weight,
             capabilities=body.get("capabilities", []),
             metadata=body.get("metadata", {}),
@@ -300,13 +532,20 @@ class AgentGateway:
             for k in self.strategist.weights:
                 self.strategist.weights[k] /= total
 
-        log.info("AGENT CONNECTED: %s protocol=%s weight=%.3f", agent_id, protocol, weight)
+        log.info("AGENT REGISTERED: %s asn=%s type=%s protocol=%s weight=%.3f",
+                 agent_id, asn, agent_type, protocol, weight)
 
+        type_info = AGENT_TYPE_REGISTRY.get(agent_type, {})
         return web.json_response({
             "agent_id": agent_id,
+            "asn": asn,
             "api_key": api_key,
+            "agent_type": agent_type,
+            "agent_type_label": type_info.get("label", agent_type),
+            "category": type_info.get("category", ""),
             "weight": weight,
             "protocol": protocol,
+            "status": "online",
             "bus_topic": f"signal.{agent_id}",
             "endpoints": {
                 "signal": "POST /api/gateway/signal",
@@ -344,6 +583,8 @@ class AgentGateway:
             parsed = self._parse_openclaw_signal(body)
         elif agent.protocol == "hermes":
             parsed = self._parse_hermes_signal(body)
+        elif agent.protocol == "ironclaw":
+            parsed = self._parse_ironclaw_signal(body)
         else:
             parsed = self._parse_raw_signal(body)
 
@@ -425,10 +666,17 @@ class AgentGateway:
         """GET /api/gateway/agents — list connected agents."""
         agents = []
         for a in self.agents.values():
+            type_info = AGENT_TYPE_REGISTRY.get(a.agent_type, {})
             agents.append({
                 "agent_id": a.agent_id,
+                "asn": a.asn,
                 "name": a.name,
+                "agent_type": a.agent_type,
+                "agent_type_label": type_info.get("label", a.agent_type),
+                "category": type_info.get("category", ""),
                 "protocol": a.protocol,
+                "status": a.status,
+                "description": a.description,
                 "connected_at": a.connected_at,
                 "last_signal_at": a.last_signal_at,
                 "signal_count": a.signal_count,
@@ -564,6 +812,14 @@ class AgentGateway:
 
     # ── Route registration ──────────────────────────────────────────
 
+    async def handle_registry(self, request: web.Request) -> web.Response:
+        """GET /api/gateway/registry — agent type registry + capabilities."""
+        return web.json_response({
+            "types": AGENT_TYPE_REGISTRY,
+            "categories": AGENT_CATEGORIES,
+            "capabilities": AGENT_CAPABILITIES,
+        })
+
     def register_routes(self, app: web.Application):
         """Add gateway routes to an aiohttp Application."""
         app.router.add_post("/api/gateway/connect", self.handle_connect)
@@ -571,6 +827,7 @@ class AgentGateway:
         app.router.add_get("/api/gateway/market", self.handle_market)
         app.router.add_get("/api/gateway/portfolio", self.handle_portfolio)
         app.router.add_get("/api/gateway/agents", self.handle_agents_list)
+        app.router.add_get("/api/gateway/registry", self.handle_registry)
         app.router.add_delete("/api/gateway/disconnect", self.handle_disconnect)
         app.router.add_get("/ws/agent", self.handle_ws_agent)
 
