@@ -1004,6 +1004,96 @@ class WebDashboard:
         status = await get_migration_status(self.db)
         return web.json_response(status)
 
+    # ── Phase 1-40 API Handlers ──────────────────────────────────
+
+    def _get_component(self, name: str):
+        """Safely retrieve a component from state dict."""
+        return self.state.get(name)
+
+    async def _handle_commander(self, request: web.Request) -> web.Response:
+        """GET /api/commander — CommanderGate status + recent decisions."""
+        c = self._get_component("commander")
+        if c and hasattr(c, "summary"):
+            return web.json_response(c.summary())
+        return web.json_response({"status": "no commander (rule-based mode)"})
+
+    async def _handle_vault(self, request: web.Request) -> web.Response:
+        """GET /api/vault — ERC-4626 vault state, NAV, deposits."""
+        v = self._get_component("vault")
+        if v and hasattr(v, "summary"):
+            return web.json_response(v.summary())
+        return web.json_response({"status": "vault not initialized"})
+
+    async def _handle_marketplace(self, request: web.Request) -> web.Response:
+        """GET /api/marketplace — agent marketplace leaderboard + auctions."""
+        m = self._get_component("marketplace")
+        if m and hasattr(m, "summary"):
+            return web.json_response(m.summary())
+        return web.json_response({"status": "marketplace not initialized"})
+
+    async def _handle_debates(self, request: web.Request) -> web.Response:
+        """GET /api/debates — recent adversarial debate results."""
+        d = self._get_component("debate_engine")
+        if d and hasattr(d, "summary"):
+            return web.json_response(d.summary())
+        return web.json_response({"status": "debate engine not initialized"})
+
+    async def _handle_elo(self, request: web.Request) -> web.Response:
+        """GET /api/elo — agent ELO leaderboard."""
+        e = self._get_component("elo_tracker")
+        if e and hasattr(e, "summary"):
+            return web.json_response(e.summary())
+        return web.json_response({"status": "ELO tracker not initialized"})
+
+    async def _handle_narratives(self, request: web.Request) -> web.Response:
+        """GET /api/narratives — recent market narratives."""
+        n = self._get_component("narrative")
+        if n and hasattr(n, "summary"):
+            return web.json_response(n.summary())
+        return web.json_response({"status": "narrative engine not initialized"})
+
+    async def _handle_consensus(self, request: web.Request) -> web.Response:
+        """GET /api/consensus — swarm consensus voting results."""
+        c = self._get_component("consensus")
+        if c and hasattr(c, "summary"):
+            return web.json_response(c.summary())
+        return web.json_response({"status": "consensus not initialized"})
+
+    async def _handle_observability(self, request: web.Request) -> web.Response:
+        """GET /api/observability — full system health report."""
+        o = self._get_component("observability")
+        if o and hasattr(o, "summary"):
+            return web.json_response(o.summary())
+        return web.json_response({"status": "observability not initialized"})
+
+    async def _handle_treasury(self, request: web.Request) -> web.Response:
+        """GET /api/treasury — autonomous treasury state + allocations."""
+        t = self._get_component("treasury")
+        if t and hasattr(t, "summary"):
+            return web.json_response(t.summary())
+        return web.json_response({"status": "treasury not initialized"})
+
+    async def _handle_governance(self, request: web.Request) -> web.Response:
+        """GET /api/governance — DAO proposals + voting."""
+        g = self._get_component("governance")
+        if g and hasattr(g, "summary"):
+            return web.json_response(g.summary())
+        return web.json_response({"status": "governance not initialized"})
+
+    async def _handle_evolution(self, request: web.Request) -> web.Response:
+        """GET /api/evolution — genetic strategy evolution status."""
+        e = self._get_component("evolution")
+        if e and hasattr(e, "summary"):
+            return web.json_response(e.summary())
+        return web.json_response({"status": "evolution not initialized"})
+
+    async def _handle_grid(self, request: web.Request) -> web.Response:
+        """GET /api/grid — grid trading status + fills."""
+        g = self._get_component("grid")
+        if g and hasattr(g, "summary"):
+            return web.json_response(g.summary())
+        return web.json_response({"status": "grid trading not initialized"})
+
     async def _handle_thoughts(self, request: web.Request) -> web.Response:
         """GET /api/thoughts — recent agent thought stream."""
         if not self.memory:
@@ -2017,6 +2107,19 @@ class WebDashboard:
         app.router.add_get("/api/network/dm/{agent_id}/{other_id}", self._handle_network_dm_thread)
         app.router.add_get("/api/network/search", self._handle_network_search)
         app.router.add_get("/api/network/stats", self._handle_network_stats)
+        # ── Phase 1-40 endpoints ─────────────────────────────────
+        app.router.add_get("/api/commander", self._handle_commander)
+        app.router.add_get("/api/vault", self._handle_vault)
+        app.router.add_get("/api/marketplace", self._handle_marketplace)
+        app.router.add_get("/api/debates", self._handle_debates)
+        app.router.add_get("/api/elo", self._handle_elo)
+        app.router.add_get("/api/narratives", self._handle_narratives)
+        app.router.add_get("/api/consensus", self._handle_consensus)
+        app.router.add_get("/api/observability", self._handle_observability)
+        app.router.add_get("/api/treasury", self._handle_treasury)
+        app.router.add_get("/api/governance", self._handle_governance)
+        app.router.add_get("/api/evolution", self._handle_evolution)
+        app.router.add_get("/api/grid", self._handle_grid)
         # ── Operational endpoints ──────────────────────────────────
         app.router.add_get("/api/migrations", self._handle_migration_status)
         # ── Agent Gateway routes (external agent API) ──────────────

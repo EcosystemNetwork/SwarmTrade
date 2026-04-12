@@ -1,11 +1,8 @@
 """Backtesting Arena — competitive strategy tournaments.
 
-Inspired by Vault Royale (AI-powered DeFi strategies compete for users),
-ScampIA (onchain AI trading league), MirrorBattle (agents compete in PvP
-copy-trading battles), and The CoWncil (on-chain trading tournaments).
-
-Runs automated tournaments where strategies compete head-to-head:
-  1. All registered strategies backtest on same historical data
+Runs automated tournaments where strategies compete head-to-head using
+the real BacktestEngine against historical CoinGecko OHLCV data:
+  1. All registered strategies backtest on same historical candles
   2. Ranked by risk-adjusted returns (Sharpe, not raw PnL)
   3. Winners get promoted (more capital allocation, higher visibility)
   4. Losers get demoted or deactivated
@@ -18,14 +15,20 @@ Bus integration:
 from __future__ import annotations
 
 import logging
-import math
-import random
 import time
 from dataclasses import dataclass, field
 
 from .core import Bus
 
 log = logging.getLogger("swarm.arena")
+
+# Import real backtester for tournament evaluation
+try:
+    from .backtester import BacktestEngine, HistoricalDataFetcher
+    from .strategy_evolution import _GenomeBacktestStrategy, StrategyGenome
+    _HAS_BACKTESTER = True
+except ImportError:
+    _HAS_BACKTESTER = False
 
 
 @dataclass
@@ -71,9 +74,11 @@ class BacktestingArena:
       - Mixed: random selection of market conditions
     """
 
-    def __init__(self, bus: Bus, max_entries: int = 50):
+    def __init__(self, bus: Bus, max_entries: int = 50,
+                 candles: list | None = None):
         self.bus = bus
         self.max_entries = max_entries
+        self._candles = candles  # historical OHLCV for real backtesting
         self._entries: dict[str, dict] = {}  # strategy_name -> config
         self._results: list[TournamentResult] = []
         self._rankings: dict[str, float] = {}  # strategy_name -> cumulative score
@@ -112,10 +117,30 @@ class BacktestingArena:
         self._stats["entries_total"] += 1
 
     async def run_tournament(self, tournament_type: str = "sprint",
-                              data_period: str = "recent") -> TournamentResult:
-        """Run a tournament round."""
+                              data_period: str = "recent",
+                              asset: str = "ETH") -> TournamentResult:
+        """Run a tournament round.
+
+        Uses the real BacktestEngine to evaluate each strategy against
+        historical candle data.  Fetches candles from CoinGecko on first
+        call if none were provided at init.
+        """
         if not self._entries:
             log.info("Arena: no entries for tournament")
+            return TournamentResult(
+                tournament_id="empty", round_number=0,
+                entries=[], winner=None, data_period=data_period,
+            )
+
+        # Ensure we have candle data
+        if not self._candles and _HAS_BACKTESTER:
+            log.info("Arena: fetching historical candles for %s ...", asset)
+            fetcher = HistoricalDataFetcher()
+            self._candles = await fetcher.fetch_ohlcv(asset, days=365)
+            await fetcher.close()
+
+        if not self._candles or not _HAS_BACKTESTER:
+            log.warning("Arena: no candle data available, cannot run tournament")
             return TournamentResult(
                 tournament_id="empty", round_number=0,
                 entries=[], winner=None, data_period=data_period,
@@ -126,7 +151,7 @@ class BacktestingArena:
 
         entries = []
         for name, config in self._entries.items():
-            result = self._simulate_backtest(name, config, tournament_type)
+            result = self._run_real_backtest(name, config, tournament_type)
             entries.append(result)
 
         # Rank by Sharpe ratio
@@ -177,67 +202,51 @@ class BacktestingArena:
         await self.bus.publish("arena.ranking", dict(self._rankings))
         return result
 
-    def _simulate_backtest(self, name: str, config: dict,
+    def _run_real_backtest(self, name: str, config: dict,
                            tournament_type: str) -> ArenaEntry:
-        """Simulate a backtest for a strategy.
+        """Run a strategy config through the real BacktestEngine against
+        historical candle data.  Returns an ArenaEntry with actual metrics."""
+        # Build a StrategyGenome from the config dict
+        genome = StrategyGenome(
+            genome_id=name, generation=0,
+            signal_weights=config.get("signal_weights", {}),
+            risk_params=config.get("risk_params", {}),
+        )
+        strategy = _GenomeBacktestStrategy(genome)
 
-        In production: would run actual historical data through the strategy.
-        Here: generates realistic random results weighted by config quality.
-        """
-        # Config quality score (better weights = better baseline)
-        weights = config.get("signal_weights", {})
-        risk = config.get("risk_params", {})
+        # Select candle slice based on tournament type
+        candles = self._candles
+        if tournament_type == "sprint" and len(candles) > 30:
+            candles = candles[-30:]       # ~1 month
+        elif tournament_type == "stress" and len(candles) > 90:
+            # Use the most volatile 90-day window (highest range/close ratio)
+            best_start, best_vol = 0, 0.0
+            for i in range(0, len(candles) - 90, 7):
+                window = candles[i:i + 90]
+                vol = sum((c.high - c.low) / max(c.close, 1) for c in window)
+                if vol > best_vol:
+                    best_vol = vol
+                    best_start = i
+            candles = candles[best_start:best_start + 90]
+        elif tournament_type == "marathon" and len(candles) > 90:
+            candles = candles[-90:]       # ~3 months
+        # "mixed" uses full dataset
 
-        # Good configs have moderate weights (not too concentrated)
-        weight_values = list(weights.values()) if weights else [0.1]
-        concentration = max(weight_values) / max(sum(weight_values), 0.01)
-        quality = 1.0 - concentration * 0.5  # less concentrated = higher quality
-
-        kelly = risk.get("kelly_fraction", 0.25)
-        if kelly > 0.4:
-            quality *= 0.7  # over-betting penalty
-        stop_loss = risk.get("stop_loss_pct", 5)
-        if stop_loss > 10:
-            quality *= 0.8  # wide stops penalty
-
-        # Simulate returns with quality bias
-        n_trades = random.randint(20, 200)
-        base_edge = (quality - 0.5) * 0.02  # slight positive/negative edge
-        returns = [random.gauss(base_edge, 0.01) for _ in range(n_trades)]
-
-        total_return = sum(returns)
-        wins = sum(1 for r in returns if r > 0)
-        win_rate = wins / max(n_trades, 1)
-
-        # Sharpe
-        if len(returns) >= 2:
-            avg = sum(returns) / len(returns)
-            std = math.sqrt(sum((r - avg) ** 2 for r in returns) / (len(returns) - 1))
-            sharpe = (avg / max(std, 1e-9)) * math.sqrt(252)
-        else:
-            sharpe = 0.0
-
-        # Max drawdown
-        peak = dd = equity = 0.0
-        for r in returns:
-            equity += r
-            peak = max(peak, equity)
-            dd = min(dd, equity - peak)
-        max_dd = abs(dd)
-
-        # Calmar
-        calmar = total_return / max(max_dd, 0.001) if max_dd > 0 else 0
+        engine = BacktestEngine(fee_rate=0.001, slippage_bps=5.0,
+                                initial_capital=10_000.0)
+        trade_pct = genome.risk_params.get("max_position_pct", 10.0) / 100
+        result = engine.run(strategy, candles, trade_size_pct=trade_pct)
 
         return ArenaEntry(
             entry_id=f"{name}-{tournament_type}",
             strategy_name=name,
             config=config,
-            total_return=round(total_return, 4),
-            sharpe_ratio=round(sharpe, 3),
-            max_drawdown=round(max_dd, 4),
-            win_rate=round(win_rate, 3),
-            trade_count=n_trades,
-            calmar_ratio=round(calmar, 3),
+            total_return=round(result.total_return_pct / 100, 4),
+            sharpe_ratio=round(result.sharpe_ratio, 3),
+            max_drawdown=round(result.max_drawdown_pct / 100, 4),
+            win_rate=round(result.win_rate, 3),
+            trade_count=result.num_trades,
+            calmar_ratio=round(result.calmar_ratio, 3),
         )
 
     def leaderboard(self, top_n: int = 20) -> list[dict]:

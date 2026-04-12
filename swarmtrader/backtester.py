@@ -128,7 +128,11 @@ class HistoricalDataFetcher:
 
     async def fetch_ohlcv(self, asset: str, days: int = 365,
                           interval: str = "daily") -> list[OHLCV]:
-        """Fetch OHLCV from CoinGecko (free tier, no key)."""
+        """Fetch OHLCV from CoinGecko (free tier, no key).
+
+        Combines /ohlc (open/high/low/close) with /market_chart
+        (total_volumes) to produce candles with real volume data.
+        """
         # Check cache first
         cache_file = self.cache_dir / f"{asset.lower()}_{days}d_{interval}.json"
         if cache_file.exists():
@@ -150,10 +154,28 @@ class HistoricalDataFetcher:
         }
 
         cg_id = cg_ids.get(asset.upper(), asset.lower())
+
+        # Use /market_chart for price+volume, then /ohlc for OHLC structure
+        session = await self._get_session()
+
+        # Step 1: Fetch volume data from /market_chart (includes total_volumes)
+        volume_by_day: dict[int, float] = {}
+        try:
+            mc_url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart"
+            mc_params = {"vs_currency": "usd", "days": str(days), "interval": "daily"}
+            async with session.get(mc_url, params=mc_params) as resp:
+                if resp.status == 200:
+                    mc_data = await resp.json()
+                    for ts_ms, vol in mc_data.get("total_volumes", []):
+                        # Key by day (truncate to midnight)
+                        day_key = int(ts_ms / 1000) // 86400
+                        volume_by_day[day_key] = vol
+        except Exception as e:
+            log.debug("CoinGecko market_chart volume fetch: %s", e)
+
+        # Step 2: Fetch OHLC candles
         url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/ohlc"
         params = {"vs_currency": "usd", "days": str(days)}
-
-        session = await self._get_session()
         try:
             async with session.get(url, params=params) as resp:
                 if resp.status == 200:
@@ -161,15 +183,19 @@ class HistoricalDataFetcher:
                     candles = []
                     for c in raw:
                         if len(c) >= 5:
+                            ts_sec = c[0] / 1000
+                            day_key = int(ts_sec) // 86400
                             candles.append(OHLCV(
-                                ts=c[0] / 1000,
+                                ts=ts_sec,
                                 open=c[1], high=c[2],
                                 low=c[3], close=c[4],
-                                volume=0,  # CoinGecko OHLC doesn't include volume
+                                volume=volume_by_day.get(day_key, 0.0),
                             ))
                     if candles:
                         self._save_cache(cache_file, candles)
-                    log.info("Fetched %d candles for %s (%dd)", len(candles), asset, days)
+                    log.info("Fetched %d candles for %s (%dd, %d with volume)",
+                             len(candles), asset, days,
+                             sum(1 for c in candles if c.volume > 0))
                     return candles
                 elif resp.status == 429:
                     log.warning("CoinGecko rate limited, using cache")

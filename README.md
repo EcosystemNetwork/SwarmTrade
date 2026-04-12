@@ -421,23 +421,7 @@ swarmtrader/                          # 122 modules, 48,612 lines
 | [`AGENTS.md`](AGENTS.md) | Complete agent reference (120+ agents) |
 | [`SOUL.md`](SOUL.md) | Agent identity, principles, and risk discipline |
 | [`ROADMAP.md`](ROADMAP.md) | 20-phase product roadmap with revenue projections |
-| [`COMPETITIVE_INTEL.md`](COMPETITIVE_INTEL.md) | 450+ ETHGlobal projects analyzed, 40-phase integration plan |
 | [`.env.example`](.env.example) | All environment variables with descriptions |
-
-## Competitive Intelligence
-
-This platform absorbed the best patterns from 450+ agentic trading projects across the ETHGlobal showcase (18,800 total projects, 10 hackathon events, 2021-2026). Key sources include:
-
-- **Alpha Dawg** — adversarial debate + ELO reputation + memory DAG
-- **KalmanGuard** — adaptive signal filtering via Kalman filter
-- **TWAP CHOP** — price validation gate with binary search chunking
-- **Gorillionaire** — ERC-4626 vaults + rugpull detection
-- **Nimble** — competitive intent solver auctions
-- **GhostFi** — strategy-as-NFT + event correlation narratives
-- **Colony** — cross-chain agent swarm coordination
-- **Meme Sentinels** — sandboxed execution + 6-agent architecture
-
-Full analysis in [`COMPETITIVE_INTEL.md`](COMPETITIVE_INTEL.md).
 
 ## License
 

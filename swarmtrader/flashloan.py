@@ -38,6 +38,11 @@ from .core import Bus, Signal, MarketSnapshot
 
 log = logging.getLogger("swarm.flashloan")
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .dex_multi import MultiDEXScanner
+
 # Aave V3 Pool addresses by chain
 AAVE_V3_POOLS = {
     8453: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",   # Base
@@ -210,20 +215,28 @@ class ProfitSimulator:
 class FlashLoanExecutor:
     """Executes flash loan arbitrage on-chain.
 
+    Uses real DEX price feeds from MultiDEXScanner (published as
+    ``market.dex_quote`` events on the bus) to discover cross-DEX
+    price discrepancies.  No simulated/hardcoded price variance.
+
     Flow:
-      1. Encode multicall: [flashLoan, swap1, swap2, ..., repay]
-      2. Submit via Flashbots Protect (MEV-protected)
-      3. Wait for confirmation
-      4. Verify profit on-chain
+      1. Collect real DEX quotes from bus events + scanner
+      2. ArbPathFinder discovers profitable paths
+      3. ProfitSimulator validates profitability with gas cap
+      4. Submit via Flashbots Protect (MEV-protected)
+      5. Verify profit on-chain
     """
 
     def __init__(self, bus: Bus, mode: str = "simulate",
-                 min_profit_usd: float = 5.0, cooldown_s: float = 60.0):
+                 min_profit_usd: float = 5.0, cooldown_s: float = 60.0,
+                 dex_scanner: "MultiDEXScanner | None" = None):
         self.bus = bus
         self.mode = mode
         self.finder = ArbPathFinder()
         self.simulator = ProfitSimulator(min_profit_usd=min_profit_usd)
         self.cooldown_s = cooldown_s
+        self._dex_scanner = dex_scanner
+        self._dex_prices: dict[str, dict[str, float]] = {}  # {dex: {pair: price}}
         self._last_execution: dict[str, float] = {}  # path_key -> timestamp
         self._results: list[FlashLoanResult] = []
         self._stats = {
@@ -232,20 +245,42 @@ class FlashLoanExecutor:
         }
 
         bus.subscribe("market.snapshot", self._on_snapshot)
+        bus.subscribe("market.dex_quote", self._on_dex_quote)
         bus.subscribe("signal.arbitrage", self._on_arb_signal)
+
+    async def _on_dex_quote(self, data: dict):
+        """Cache live DEX quotes published by MultiDEXScanner."""
+        source = data.get("source", "")
+        asset = data.get("asset", "")
+        price = data.get("price", 0)
+        if source and asset and price > 0:
+            pair = f"{asset}/USDC"
+            self._dex_prices.setdefault(source, {})[pair] = price
 
     async def _on_snapshot(self, snap: MarketSnapshot):
         """Scan for arb opportunities on every market update."""
         self._stats["scans"] += 1
 
-        # Build price dict from snapshot (simplified)
-        # In production, this would aggregate from MultiDEXScanner
+        # Build price dict from real DEX quotes collected via bus
         prices: dict[str, dict[str, float]] = {}
-        for asset, price in snap.prices.items():
-            # Simulate slight cross-DEX variance for testing
-            prices.setdefault("uniswap", {})[f"{asset}/USDC"] = price
-            prices.setdefault("aerodrome", {})[f"{asset}/USDC"] = price * 1.0001
-            prices.setdefault("sushiswap", {})[f"{asset}/USDC"] = price * 0.9999
+
+        # First: use live DEX prices accumulated from MultiDEXScanner
+        if self._dex_prices:
+            prices = {dex: dict(pairs) for dex, pairs in self._dex_prices.items()}
+
+        # Also pull fresh quotes from the scanner if available
+        if self._dex_scanner:
+            for asset in snap.prices:
+                scanner_quotes = self._dex_scanner.get_quotes_for_arb(asset)
+                for q in scanner_quotes:
+                    src = q.get("source", "")
+                    p = q.get("price", 0)
+                    if src and p > 0:
+                        prices.setdefault(src, {})[f"{asset}/USDC"] = p
+
+        if not prices:
+            # No DEX data yet — nothing to scan
+            return
 
         opportunities = self.finder.scan(prices)
         self._stats["opportunities"] += len(opportunities)

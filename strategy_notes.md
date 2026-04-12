@@ -169,3 +169,23 @@ Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
 ## Session — 2026-04-12T18:54:16.162769+00:00
 Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
 Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T19:40:53.569200+00:00
+Duration: 10s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T19:41:14.368698+00:00
+Duration: 10s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+Top risk rejections:
+  - factor_exposure: factor_check: REJECT excessive exposure on ETH: volatility=+ (x1)
+### Lessons
+- High rejection rate (1 rejections vs 0 fills). Risk limits may be too tight, or signal quality is low.
+
+## Session — 2026-04-12T19:53:42.228151+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T19:54:23.138775+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00

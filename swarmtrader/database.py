@@ -382,6 +382,56 @@ SQLITE_SCHEMA = [
     """CREATE TABLE IF NOT EXISTS agent_achievements(
         agent_id TEXT, achievement_id TEXT,
         PRIMARY KEY (agent_id, achievement_id))""",
+    # ── Phase 1-40: ETHGlobal showcase persistence ──────────
+    """CREATE TABLE IF NOT EXISTS vault_deposits(
+        ts REAL, depositor TEXT, assets REAL, shares REAL, share_price REAL)""",
+    """CREATE TABLE IF NOT EXISTS vault_trades(
+        ts REAL, trade_id TEXT, token_in TEXT, token_out TEXT,
+        amount_in REAL, amount_out REAL, agent_id TEXT, intent_id TEXT)""",
+    """CREATE TABLE IF NOT EXISTS marketplace_auctions(
+        ts REAL, auction_id TEXT, asset TEXT, winner_agent TEXT,
+        winner_score REAL, total_bids INTEGER, margin REAL)""",
+    """CREATE TABLE IF NOT EXISTS marketplace_fees(
+        ts REAL, agent_id TEXT, intent_id TEXT, pnl REAL,
+        fee_earned REAL, fee_pct REAL)""",
+    """CREATE TABLE IF NOT EXISTS agent_elo(
+        agent_id TEXT PRIMARY KEY, elo REAL, tier TEXT,
+        wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, updated_at REAL)""",
+    """CREATE TABLE IF NOT EXISTS debates(
+        ts REAL, debate_id TEXT, asset TEXT, direction TEXT,
+        bull_score REAL, bear_score REAL, verdict TEXT, margin REAL,
+        conviction REAL, pnl REAL)""",
+    """CREATE TABLE IF NOT EXISTS memory_dag(
+        memory_id TEXT PRIMARY KEY, agent_id TEXT, category TEXT,
+        content TEXT, importance REAL, decay_rate REAL,
+        prior_ids TEXT, keywords TEXT, created_at REAL, last_accessed REAL)""",
+    """CREATE TABLE IF NOT EXISTS agent_payments(
+        ts REAL, payment_id TEXT, from_agent TEXT, to_agent TEXT,
+        amount_usd REAL, service TEXT, reference_id TEXT)""",
+    """CREATE TABLE IF NOT EXISTS treasury_state(
+        ts REAL, total_usd REAL, revenue_today REAL, revenue_total REAL,
+        expenses_today REAL, runway_months REAL, allocations TEXT)""",
+    """CREATE TABLE IF NOT EXISTS strategy_nfts(
+        token_id TEXT PRIMARY KEY, config TEXT, owner TEXT, creator TEXT,
+        parent_id TEXT, royalty_bps INTEGER, total_pnl REAL,
+        total_trades INTEGER, minted_at REAL)""",
+    """CREATE TABLE IF NOT EXISTS governance_proposals(
+        proposal_id TEXT PRIMARY KEY, proposer TEXT, title TEXT,
+        category TEXT, changes TEXT, status TEXT,
+        votes_for REAL, votes_against REAL, created_at REAL, resolved_at REAL)""",
+    """CREATE TABLE IF NOT EXISTS commander_log(
+        ts REAL, intent_id TEXT, asset_in TEXT, asset_out TEXT,
+        amount REAL, verdict TEXT, reason TEXT, fallback_mode TEXT)""",
+    """CREATE TABLE IF NOT EXISTS narratives(
+        ts REAL, narrative_id TEXT, asset TEXT, headline TEXT,
+        pattern TEXT, direction TEXT, conviction REAL, events_count INTEGER)""",
+    """CREATE TABLE IF NOT EXISTS grid_trades(
+        ts REAL, grid_id TEXT, side TEXT, price REAL,
+        amount REAL, asset TEXT, profit REAL)""",
+    """CREATE TABLE IF NOT EXISTS observability_reports(
+        ts REAL, total_agents INTEGER, healthy INTEGER,
+        degraded INTEGER, stale INTEGER, dead INTEGER,
+        signals_per_minute REAL, pnl_today REAL)""",
 ]
 
 

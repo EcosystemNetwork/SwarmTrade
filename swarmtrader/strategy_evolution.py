@@ -32,6 +32,16 @@ from .core import Bus, Signal
 
 log = logging.getLogger("swarm.evolution")
 
+# Import real backtester for fitness evaluation
+try:
+    from .backtester import (
+        BacktestEngine, BacktestStrategy, OHLCV,
+        HistoricalDataFetcher, MomentumStrategy,
+    )
+    _HAS_BACKTESTER = True
+except ImportError:
+    _HAS_BACKTESTER = False
+
 # Signal sources that strategies can weight
 SIGNAL_GENES = [
     "momentum", "mean_rev", "rsi", "macd", "bollinger",
@@ -110,6 +120,80 @@ class GenerationReport:
     ts: float = field(default_factory=time.time)
 
 
+class _GenomeBacktestStrategy:
+    """Adapts a StrategyGenome into a BacktestStrategy for the real engine.
+
+    Blends momentum, mean-reversion, and RSI signals according to the
+    genome's signal_weights, and uses its risk_params for thresholds.
+    """
+
+    def __init__(self, genome: StrategyGenome):
+        self.name = f"evolved-{genome.genome_id}"
+        self._w = genome.signal_weights
+        self._r = genome.risk_params
+        self._fast = max(3, int(self._r.get("cooldown_minutes", 10)))
+        self._slow = self._fast * 3
+
+    def on_candle(self, candle, history, position):
+        if len(history) < self._slow + 1:
+            return None
+
+        closes = [c.close for c in history[-self._slow:]]
+
+        score = 0.0
+
+        # Momentum: fast/slow SMA crossover
+        fast_ma = sum(closes[-self._fast:]) / self._fast
+        slow_ma = sum(closes) / self._slow
+        if fast_ma > slow_ma:
+            score += self._w.get("momentum", 0)
+        else:
+            score -= self._w.get("momentum", 0)
+
+        # Mean reversion: Bollinger-style
+        period = min(20, len(closes))
+        recent = closes[-period:]
+        mean = sum(recent) / period
+        std = (sum((c - mean) ** 2 for c in recent) / period) ** 0.5
+        if std > 0:
+            z = (candle.close - mean) / std
+            if z < -1.5:
+                score += self._w.get("mean_rev", 0)
+            elif z > 1.5:
+                score -= self._w.get("mean_rev", 0)
+
+        # RSI
+        if len(closes) >= 15:
+            gains, losses = [], []
+            for i in range(1, 15):
+                d = closes[-15 + i] - closes[-15 + i - 1]
+                gains.append(max(d, 0))
+                losses.append(max(-d, 0))
+            avg_g = sum(gains) / 14
+            avg_l = sum(losses) / 14
+            rsi = 100 - (100 / (1 + avg_g / avg_l)) if avg_l > 0 else 100
+            if rsi < 35:
+                score += self._w.get("rsi", 0)
+            elif rsi > 65:
+                score -= self._w.get("rsi", 0)
+
+        # MACD contribution
+        if len(closes) >= 26:
+            ema12 = sum(closes[-12:]) / 12
+            ema26 = sum(closes[-26:]) / 26
+            if ema12 > ema26:
+                score += self._w.get("macd", 0)
+            else:
+                score -= self._w.get("macd", 0)
+
+        min_conf = self._r.get("min_confidence", 0.3)
+        if score > min_conf and position <= 0:
+            return "buy"
+        elif score < -min_conf and position > 0:
+            return "sell"
+        return None
+
+
 class StrategyEvolution:
     """Genetic algorithm engine for evolving trading strategies.
 
@@ -124,7 +208,8 @@ class StrategyEvolution:
     def __init__(self, bus: Bus, population_size: int = 50,
                  elite_pct: float = 0.2, mutation_rate: float = 0.15,
                  mutation_strength: float = 0.1, crossover_rate: float = 0.7,
-                 max_generations: int = 100):
+                 max_generations: int = 100,
+                 candles: list | None = None):
         self.bus = bus
         self.population_size = population_size
         self.elite_pct = elite_pct
@@ -132,6 +217,7 @@ class StrategyEvolution:
         self.mutation_strength = mutation_strength
         self.crossover_rate = crossover_rate
         self.max_generations = max_generations
+        self._candles = candles  # historical OHLCV for real backtesting
         self._population: list[StrategyGenome] = []
         self._generation = 0
         self._genome_counter = 0
@@ -196,6 +282,23 @@ class StrategyEvolution:
 
         genome.fitness = round(sharpe_component * trade_component * dd_penalty, 4)
         return genome.fitness
+
+    def _backtest_genome(self, genome: StrategyGenome):
+        """Evaluate a genome by running it through the real BacktestEngine
+        against historical candle data."""
+        strategy = _GenomeBacktestStrategy(genome)
+        engine = BacktestEngine(
+            fee_rate=0.001,
+            slippage_bps=5.0,
+            initial_capital=10_000.0,
+        )
+        result = engine.run(
+            strategy, self._candles,
+            trade_size_pct=genome.risk_params.get("max_position_pct", 10.0) / 100,
+        )
+        # Convert BacktestResult trades into the dict format evaluate_fitness expects
+        trade_dicts = [{"pnl": t.pnl} for t in result.trades if t.side == "sell"]
+        self.evaluate_fitness(genome, trade_dicts)
 
     # ── Genetic Operators ────────────────────────────────────────
 
@@ -277,13 +380,13 @@ class StrategyEvolution:
         for genome in self._population:
             if fitness_fn:
                 fitness_fn(genome)
+            elif _HAS_BACKTESTER and self._candles and len(self._candles) >= 30:
+                # Real backtest: build a strategy from genome and run it
+                # against actual historical candles
+                self._backtest_genome(genome)
             else:
-                # Simulated fitness for development
-                fake_trades = [
-                    {"pnl": random.gauss(0, 10) * sum(genome.signal_weights.values())}
-                    for _ in range(max(10, genome.risk_params.get("max_daily_trades", 50)))
-                ]
-                self.evaluate_fitness(genome, fake_trades)
+                log.warning("No candles or backtester available — skipping genome %s", genome.genome_id)
+                genome.fitness = 0.0
 
         # Selection
         parents = self.select_parents()
@@ -357,8 +460,22 @@ class StrategyEvolution:
 
         return report
 
-    async def run_evolution(self, generations: int = 10, fitness_fn=None):
-        """Run multiple generations of evolution."""
+    async def run_evolution(self, generations: int = 10, fitness_fn=None,
+                            asset: str = "ETH"):
+        """Run multiple generations of evolution.
+
+        If no candles were provided at init and no custom fitness_fn is given,
+        fetches real historical data from CoinGecko via HistoricalDataFetcher.
+        """
+        # Ensure we have candle data for real backtesting
+        if not self._candles and not fitness_fn and _HAS_BACKTESTER:
+            log.info("Evolution: fetching historical candles for %s ...", asset)
+            fetcher = HistoricalDataFetcher()
+            self._candles = await fetcher.fetch_ohlcv(asset, days=365)
+            await fetcher.close()
+            log.info("Evolution: loaded %d candles for fitness evaluation",
+                     len(self._candles) if self._candles else 0)
+
         self.initialize_population()
         for _ in range(generations):
             await self.evolve_generation(fitness_fn)
