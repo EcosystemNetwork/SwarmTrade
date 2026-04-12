@@ -1,90 +1,162 @@
 # SWARM TRADE
 
-**Multi-agent autonomous trading platform** — 80+ cooperative AI agents performing real-time market analysis, risk management, and execution across CEX + DEX venues on 3 chains.
+**Autonomous AI trading platform** — 122 modules, 120+ cooperative agents, an AI commander that approves every trade, and intelligence absorbed from 450+ ETHGlobal showcase projects.
 
 ```
-                         ┌──────────────────────────────────────────────────────────────┐
-                         │                    SWARM TRADE ARCHITECTURE                   │
-                         └──────────────────────────────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────────────────┐
+                    │                  SWARM TRADE ARCHITECTURE                │
+                    └──────────────────────────────────────────────────────────┘
 
-    ┌─────────────────────────────┐
-    │       DATA LAYER            │     ┌────────────────────────────────────────────────┐
-    │                             │     │              SIGNAL AGENTS (80+)                │
-    │  Kraken (REST + WS v2)      │     │                                                │
-    │  Hyperliquid (perps)        │     │  Core: Momentum, MeanRev, Volatility           │
-    │  Jupiter (Solana DEX)       │────▶│  TA:   RSI, MACD, Bollinger, VWAP, Ichimoku    │
-    │  BirdEye (Solana analytics) │     │  Adv:  OrderBook, Funding, Spread, Regime       │
-    │  Pyth (oracle prices)       │     │  ML:   GradientBoosted trees (stdlib-only)      │
-    │  MockScout (GBM sim)        │     │  Intel: Whale, SmartMoney, OnChain, FearGreed   │
-    │  6 DEXs (Sushi, Aero, etc.) │     │  Ext:  News, PRISM, RSS, Social, Polymarket    │
-    └─────────────────────────────┘     │  Multi: Correlation, MTF, Confluence, Alpha     │
-                                        │  Feeds: Options, Macro, Stablecoin, TokenUnlock │
-                                        └───────────────────┬────────────────────────────┘
-                                                            │ signals
-                                                            ▼
-    ┌─────────────────────────────────────────────────────────────────────────────────────┐
-    │                       STRATEGIST / HERMES LLM BRAIN                                  │
-    │  Regime-aware adaptive weighting │ Kelly criterion │ NLP strategy parsing             │
-    │  Optional local LLM (Ollama) replaces rule-based strategy with Hermes AI brain       │
-    └───────────────────────────────────────────────┬─────────────────────────────────────┘
-                                                    │ trade intents
-                                                    ▼
-    ┌─────────────────────────────────────────────────────────────────────────────────────┐
-    │                         RISK PIPELINE (15 layers)                                    │
-    │  Size │ Allowlist │ Drawdown │ RateLimit │ Positions │ Funds │ Allocation │ Depth    │
-    │  VaR (3 methods) │ Stress Test │ Compliance │ Factor Exposure │ Rebalance │ SOR     │
-    │  Agent Policy (per-agent spending limits)                                            │
-    └───────────────────────────────────────────────┬─────────────────────────────────────┘
-                                                    │ approved intents
-                                                    ▼
-    ┌─────────────────────────────────────────────────────────────────────────────────────┐
-    │                         EXECUTION LAYER                                              │
-    │  SmartOrderRouter (5 CEX + 10 DEX) │ TWAP │ Iceberg │ Almgren-Chriss optimal exec   │
-    │  KrakenExecutor │ HyperliquidExecutor │ JupiterExecutor │ UniswapExecutor            │
-    │  ArbScanner + ArbExecutor (cross-venue) │ Hardware Signing Pipeline                  │
-    └───────────────────────────────────────────────┬─────────────────────────────────────┘
-                                                    │
-                    ┌───────────────────────────────┼───────────────────────────────┐
-                    ▼                               ▼                               ▼
-    ┌───────────────────────┐   ┌───────────────────────────────┐   ┌──────────────────────┐
-    │    SAFETY SYSTEMS     │   │     QUANTITATIVE RISK         │   │    INFRASTRUCTURE    │
-    │  KillSwitch           │   │  VaR Engine (Hist/Para/MC)    │   │  Web Dashboard       │
-    │  CircuitBreaker       │   │  Stress Testing (8 scenarios) │   │  Terminal TUI        │
-    │  PositionFlattener    │   │  Factor Model + PnL Attrib    │   │  AgentSupervisor     │
-    │  PositionManager      │   │  Portfolio Optimization       │   │  Agent Gateway       │
-    │  HardwareSigner       │   │  Compliance Suite             │   │  Social Trading      │
-    │  AgentPolicies        │   │  Agent Learning System        │   │  x402 Payments       │
-    │  Reconciliation       │   │  Walk-Forward Backtesting     │   │  Agent Registry      │
-    └───────────────────────┘   └───────────────────────────────┘   └──────────────────────┘
+ ┌──────────────────────┐     ┌──────────────────────────────────────────────────┐
+ │     DATA LAYER       │     │            SIGNAL AGENTS (120+)                  │
+ │                      │     │                                                  │
+ │  Kraken (REST+WS v2) │     │  Core: Momentum, MeanRev, Volatility             │
+ │  Hyperliquid (perps)  │     │  TA:   RSI, MACD, Bollinger, VWAP, Ichimoku     │
+ │  Jupiter (Solana DEX) │────>│  Adv:  OrderBook, Funding, Spread, Regime       │
+ │  BirdEye + Pyth       │     │  ML:   GradientBoosted (stdlib), Kalman Filter  │
+ │  6 DEXs + 5 CEXs      │     │  Intel: Whale, SmartMoney, OnChain, FearGreed   │
+ │  CoinGecko, FRED      │     │  Social: News, RSS, Twitter, Telegram, Discord  │
+ │  Etherscan, Basescan   │     │  Feeds: Options, Macro, Stablecoin, TokenUnlock │
+ │  DeFi Llama, Deribit   │     │  Alpha: Swarm, Fusion, Debate, Consensus        │
+ └──────────────────────┘     │  New:  MEV, Grid, Sniper, Sentiment Derivatives  │
+                              └────────────────────┬─────────────────────────────┘
+                                                   │ 59 signal topics
+                                                   v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                    SIGNAL INTELLIGENCE LAYER                                 │
+ │  Kalman Filter (noise removal) -> Data Fusion (convergence scoring)         │
+ │  Narrative Engine (event correlation) -> Sentiment Derivatives (sentiment TA)│
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                 STRATEGIST (48 weighted inputs, 3 regime profiles)           │
+ │  Regime-aware adaptive weighting | Kelly criterion | NLP strategy parsing    │
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                      ALPHA DISCOVERY + DEBATE                                │
+ │  AlphaHunter (3+ agents agree) -> SentimentFilter -> RiskScreener           │
+ │  Adversarial Debate (BullAgent vs BearAgent) -> ELO Reputation              │
+ │  Swarm Consensus (N-agent weighted voting)                                  │
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  ╔══════════════════════════════════════════════════════════════════════╗     │
+ │  ║              COMMANDER GATE (AI Trading Robot)                     ║     │
+ │  ║  HermesBrain intercepts ALL trade intents                         ║     │
+ │  ║  LLM evaluates every trade: APPROVE / REJECT / MODIFY            ║     │
+ │  ║  NOT A SINGLE TRADE HAPPENS WITHOUT EXPLICIT APPROVAL             ║     │
+ │  ║  Fallback modes: strict | conservative | passthrough              ║     │
+ │  ╚══════════════════════════════════════════════════════════════════════╝     │
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                   SAFETY GAUNTLET (15 pre-trade checks)                     │
+ │  Risk | Policy | Rugpull | Vault | Sandbox | Solver | CircuitBreaker        │
+ │  WashTrading | PositionLimits | Concentration | VaR | Stress | Compliance   │
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                  PRICE VALIDATION GATE (SAFE/WARN/HALT)                     │
+ │  Multi-source price check -> Binary search chunk sizing                     │
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                        EXECUTION LAYER                                      │
+ │  SmartOrderRouter (5 CEX + 10 DEX) | TWAP | Iceberg | Almgren-Chriss       │
+ │  Intent Solver Network (5 competing solvers for best execution)             │
+ │  ERC-4626 Vault (standard fund custody) | Flash Loan Arb (zero-capital)    │
+ └────────────────────────────────────────────┬─────────────────────────────────┘
+                                              v
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                     POST-TRADE (31 consumers)                               │
+ │  PnL | ELO | Memory DAG | Treasury | Marketplace Fees | Agent Payments      │
+ │  Portfolio Insurance | Strategy NFT | Social Trading | Observability        │
+ │  VaR | Compliance | TCA | Dashboard | Telegram | Voice Response             │
+ └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Platform Stats
+
+| Metric | Value |
+|--------|-------|
+| Python modules | 122 |
+| Lines of code | 48,612 |
+| Bus topics | 221 |
+| Signal topics | 69 |
+| Strategist weighted inputs | 48 |
+| Pre-trade safety checks | 15 |
+| Post-trade consumers | 31 |
+| Supported exchanges | 5 CEX + 10 DEX |
+| Supported chains | Ethereum, Base, Solana |
+| AI Commander | Every trade requires LLM approval |
 
 ## Key Features
 
-- **80+ cooperative agents** — momentum, mean reversion, RSI, MACD, Bollinger, VWAP, Ichimoku, order book imbalance, funding rates, whale tracking, smart money wallet shadowing, on-chain analytics, social sentiment, news, Polymarket predictions, ML gradient boosting, alpha swarm, and more
-- **15-layer risk pipeline** — every trade must pass size, drawdown, VaR, stress test, compliance, factor exposure, agent policy, and more before execution
-- **Multi-chain execution** — Kraken (CEX), Hyperliquid (perps), Jupiter (Solana), Uniswap (Base), plus 6 DEX quoters (SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca)
-- **Hermes LLM brain** — optional local LLM (via Ollama) replaces the rule-based Strategist, controlling all 80+ agents as its eyes and ears
-- **Quantitative risk engine** — VaR (historical, parametric, Monte Carlo), stress testing with 8 historical scenarios, factor model with PnL attribution
-- **Portfolio optimization** — Markowitz, risk parity, Black-Litterman, dynamic hedging — all in pure Python (no numpy/scipy)
-- **Smart order routing** — multi-venue quote comparison across 5 CEXs (Kraken, Binance, Coinbase, OKX, Bybit) + 10 DEXs across 3 chains
-- **Cross-venue arbitrage** — ArbScanner detects price discrepancies, ArbExecutor simultaneously buys cheap + sells expensive
-- **ML pipeline** — gradient-boosted decision trees trained online, feature engineering with 15+ indicators — pure stdlib
-- **Social trading** — copy trading, agent leaderboard, strategy marketplace with revenue sharing
-- **Alpha swarm** — multi-agent opportunity detection pipeline (AlphaHunter → SentimentFilter → RiskScreener → SwarmCoordinator)
-- **Agent learning system** — online performance tracking, exploration/exploitation, dynamic signal weighting
-- **Yield aggregation** — DeFi Llama integration for auto-discovering and harvesting top yield pools
-- **Production safety** — kill switch, circuit breaker, position flattener, wash trade detection, balance reconciliation, agent spending policies, hardware wallet signing
-- **Smart money tracking** — shadow 25+ whale wallets across Ethereum + Base chains
-- **Prediction markets** — Polymarket CLOB integration for event-driven trading signals
-- **LP management** — automated Uniswap v3 range rebalancing (UniRange pattern)
-- **x402 payments** — agent-to-agent USDC micropayment gateway
-- **Real-time dashboards** — web UI with WebSocket streaming + terminal TUI
-- **Agent gateway** — HTTP/WebSocket bridge for external AI agents (OpenClaw/Hermes protocols)
-- **ERC-8004 intents** — EIP-712 signed trade intents for trustless on-chain execution
-- **Pyth oracle** — decentralized price feed redundancy for price validation
-- **Cross-session learning** — AgentMemory reads/writes SOUL.md + strategy_notes.md across sessions
-- **Walk-forward backtesting** — 10 strategies with Monte Carlo simulation and out-of-sample validation
-- **Minimal core deps** — `aiohttp`, `python-dotenv` core; `web3`, `eth-account` for blockchain; `psycopg` for Postgres
+### AI Commander (HermesBrain + CommanderGate)
+- Every trade intent from every source is intercepted by the AI trading robot
+- LLM evaluates each trade: APPROVE, REJECT, or MODIFY
+- Supports Ollama (local), OpenAI, Anthropic, Groq, DeepSeek, or any OpenAI-compatible API
+- Fallback modes when LLM is unavailable: strict (block all), conservative (high-conviction only), passthrough
+- The 120+ agents are the eyes and ears — the AI commander is the brain
+
+### Signal Intelligence (Phases 1-3)
+- **Adaptive Kalman Filter** — regime-adaptive noise removal on all signals, posterior covariance as system risk proxy
+- **Data Fusion Pipeline** — cross-source convergence scoring with independence weighting (correlated sources discounted)
+- **Adversarial Debate Engine** — BullAgent vs BearAgent argue before every trade, ties default to NO TRADE
+- **ELO Reputation System** — K=32, bounds 0-1000, agents gain/lose ELO based on trade outcomes
+- **Swarm Consensus** — N-agent weighted voting with quorum and supermajority requirements
+
+### Execution Safety (Phases 2, 11)
+- **Price Validation Gate** — SAFE/WARN/HALT tiers from multi-source price deviation checks
+- **Execution Sandbox** — agents can trade but physically cannot withdraw (TRADE_ONLY permission)
+- **Rugpull Detection** — contract age, liquidity depth, holder concentration, honeypot detection
+- **15-layer risk gauntlet** — every trade passes size, drawdown, VaR, stress, compliance, factor, policy checks
+
+### DeFi Infrastructure (Phases 4-10)
+- **ERC-4626 Vaults** — standard tokenized vault for fund custody, composable with all of DeFi
+- **Agent Marketplace** — competitive signal auctions where agents bid, highest-conviction wins
+- **Flash Loan Arbitrage** — zero-capital arb via Aave V3 with fork simulation before execution
+- **Strategy-as-NFT** — mint, fork, and trade strategies as on-chain NFTs with royalty chains
+- **Uniswap v4 Hooks** — concentrated LP management, TWAP routing, dynamic fee monitoring
+- **Cross-Chain Coordination** — Circle CCTP for USDC bridging, yield optimization across chains
+- **ZK Private Trading** — commit-reveal dark pool with sealed-bid batch matching
+
+### Advanced Trading (Phases 12-20)
+- **Prediction Market Trading** — autonomous Polymarket execution with Kelly-sized bets
+- **Genetic Strategy Evolution** — population of 50 strategies, crossover + mutation, tournament selection
+- **Multi-Model AI Brain** — pluggable adapter for Claude/GPT/Groq/DeepSeek/local models
+- **Event Correlation Narrative Engine** — transforms raw events into market stories for AI reasoning
+- **Whale Mirror Agent** — auto-copy smart money wallets with signal alignment checks
+- **Intent Solver Network** — 5 competing solvers (Uniswap, Aerodrome, SushiSwap, 1inch, cross-DEX)
+- **Liquidation Cascade Shield** — health factor monitoring with auto-deleverage before cascade
+- **Agent Governance DAO** — ELO-weighted voting on parameter changes, strategy activation, fee structures
+
+### Interfaces (Phases 21-22)
+- **Telegram Trading Bot** — /trade, /status, /signals, /risk, /agents, /kill commands
+- **Voice-Activated Trading** — "buy 500 dollars of ETH" via Whisper STT or browser Speech API
+- **Web Dashboard** — real-time WebSocket streaming, P&L cards, agent tree, Chart.js visualizations
+- **Agent Gateway** — HTTP/WebSocket bridge for external AI agents (OpenClaw/Hermes/IronClaw protocols)
+
+### Infrastructure (Phases 23-40)
+- **Agent Factory** — dynamic agent spawning based on market conditions, auto-termination on TTL
+- **Options Strategy Automation** — covered calls, protective puts, straddles, iron condors, vol arb
+- **Social Alpha Scanner v2** — cross-platform virality scoring with coordination (shill) detection
+- **Backtesting Arena** — competitive strategy tournaments ranked by risk-adjusted returns
+- **Agent Observability Dashboard** — health monitoring, anomaly detection, dependency graph
+- **Federated Learning** — agents share model gradients without sharing proprietary data
+- **RWA Bridge** — tokenized real-world assets (T-bills, commodities, equities)
+- **Autonomous Treasury** — multi-asset allocation, yield optimization, runway tracking
+- **MEV Engine** — detect, capture, and redistribute MEV; protect own trades via Flashbots
+- **Agent Memory DAG** — long-term learning with semantic retrieval and memory consolidation
+- **Sentiment Derivatives** — RSI/MACD on sentiment itself, price-sentiment divergence signals
+- **Grid Trading** — arithmetic, geometric, and exponential grid strategies
+- **Token Launch Sniper** — early detection + safe entry with rugpull screening
+- **Correlation Regime Detector v2** — cross-asset correlation matrix, regime transitions
+- **Gas Optimizer** — price forecasting, transaction batching, priority fee optimization
+- **Portfolio Insurance** — automated hedging via perp shorts, regime-adaptive coverage
+- **Agent Communication Protocol** — structured request/response messaging between agents
+- **Swarm Consensus Engine** — multi-agent weighted voting on every trade decision
 
 ## Quick Start
 
@@ -98,7 +170,6 @@ pip install -e ".[dev]"
 
 # Copy environment config
 cp .env.example .env
-# Edit .env with your API keys (optional — mock mode needs none)
 
 # Run in mock mode (no API keys needed)
 python -m swarmtrader.main mock 120
@@ -106,15 +177,12 @@ python -m swarmtrader.main mock 120
 # Run with web dashboard
 python -m swarmtrader.main mock 300 --web --dashboard
 
-# Run with Hermes LLM brain (requires Ollama)
+# Run with AI Commander (requires LLM)
 ollama pull nous-hermes2
 python -m swarmtrader.main mock 300 --web --hermes
 
 # Run with real Kraken prices (paper trading)
 python -m swarmtrader.main paper 600 --pairs ETHUSD BTCUSD --ws --web
-
-# Run demo replay (pre-recorded market scenario)
-python -m swarmtrader.main mock 180 --web --demo
 
 # Run tests
 pytest tests/ -v
@@ -123,368 +191,253 @@ pytest tests/ -v
 ## Docker
 
 ```bash
-# Build and run
 docker compose up --build
-
-# Or run directly
+# Or:
 docker build -t swarmtrader .
 docker run -p 8080:8080 --env-file .env swarmtrader mock 300 --web
 ```
 
 ## Trading Modes
 
-| Mode | Prices | Execution | API Keys |
-|------|--------|-----------|----------|
-| `mock` | Simulated (GBM) | Dry-run with slippage model | None |
-| `paper` | Real (Kraken + Hyperliquid + Jupiter) | Paper trading via Kraken CLI | Optional |
-| `live` | Real (all venues) | Real orders across CEX + DEX | Required (`SWARM_LIVE_CONFIRM=I_ACCEPT_RISK`) |
+| Mode | Prices | Execution | AI Commander | API Keys |
+|------|--------|-----------|-------------|----------|
+| `mock` | Simulated (GBM) | Dry-run with slippage | Optional | None |
+| `paper` | Real (all venues) | Paper trading | Optional | Optional |
+| `live` | Real (all venues) | Real orders | Recommended | Required |
 
-## CLI Options
+When `--hermes` is passed, the AI Commander (CommanderGate) intercepts ALL trade intents. Without it, the rule-based Strategist runs autonomously.
+
+## Commander Mode (AI Trading Robot)
+
+The centerpiece of the platform. When enabled (`--hermes`), the AI trading robot has sole authority over every trade:
 
 ```
-python -m swarmtrader.main [mode] [duration] [options]
-
-Positional:
-  mode                    mock, paper, or live (default: mock)
-  duration                Run duration in seconds (default: 60)
-
-Options:
-  --pairs PAIR [PAIR ...]  Trading pairs (default: ETHUSD)
-  --base-size USD          Base trade size (default: 500)
-  --max-size USD           Max single trade (default: 2000)
-  --max-drawdown USD       Daily drawdown limit (default: 200)
-  --capital USD            Starting capital (default: 10000)
-  --max-alloc PCT          Max allocation per asset (default: 50%)
-  --max-positions N        Max open positions (default: 5)
-  --hard-stop PCT          Hard stop-loss per position (default: 5%)
-  --trail-stop PCT         Trailing stop (default: 3%)
-  --max-hold SECS          Max hold time (default: 3600)
-  --ws                     Use Kraken WebSocket v2 streaming (vs REST polling)
-  --web                    Launch web dashboard on port 8080
-  --web-port PORT          Web dashboard port (default: 8080)
-  --dashboard              Show terminal TUI dashboard
-  --gateway                Enable external agent gateway
-  --demo                   Run demo replay mode with pre-recorded scenario
-  --hermes                 Use local Hermes LLM (Ollama) as brain instead of rule-based Strategist
-  --db PATH                SQLite database path (default: swarm.db)
-  --checkpoint             Enable state checkpointing for crash recovery
-  --checkpoint-path PATH   Checkpoint file path (default: swarm_checkpoint.json)
-  --erc8004                Enable ERC-8004 on-chain identity and reputation
-  --erc8004-network NET    ERC-8004 network: sepolia, mainnet, base (default: sepolia)
-  --gateway-key KEY        Master key for agent gateway (auto-generated if omitted)
-  --no-advanced            Disable advanced agents (OI, liquidation levels)
+120+ agents produce signals
+         |
+    Strategist aggregates (48 weighted inputs)
+         |
+    Alpha discovery + adversarial debate + consensus voting
+         |
+  ┌─────────────────────────────────────┐
+  │  COMMANDER GATE                     │
+  │  AI robot evaluates: APPROVE/REJECT │
+  │  No trade without approval          │
+  └─────────────────────────────────────┘
+         |
+    15-layer safety gauntlet
+         |
+    Price validation gate
+         |
+    Execution (5 CEX + 10 DEX)
 ```
 
-## Backtesting
+Supported LLM providers:
+- **Ollama** (local) — gemma3, nous-hermes2, llama3, mistral, qwen2, deepseek-r1
+- **OpenAI** — gpt-4o, gpt-4-turbo
+- **Anthropic** — claude-opus-4-6, claude-sonnet-4-6
+- **Groq** — llama-3.3-70b (fast, free tier)
+- **DeepSeek** — deepseek-chat
+- **Any OpenAI-compatible** — vLLM, LM Studio, Together, etc.
 
+Configure via `.env`:
 ```bash
-# Walk-forward backtest with Monte Carlo
-python -m swarmtrader.backtest --pair ETHUSD --walk-forward 5
-
-# Generate HTML report from trade database
-python -m swarmtrader.report --db swarm.db --html report.html
+LLM_PROVIDER=ollama          # ollama, openai, anthropic, groq, deepseek, openai-compat
+LLM_MODEL=nous-hermes2       # auto-detected if empty
+OLLAMA_URL=http://localhost:11434
+HERMES_INTERVAL=15            # seconds between LLM calls
+COMMANDER_FALLBACK=conservative  # strict, conservative, passthrough
 ```
 
-The built-in `BacktesterAgent` runs continuously in the background, validating 10 strategies across all traded assets with walk-forward + Monte Carlo simulation. Strategies that pass minimum Sharpe (0.5), win rate (45%), and max drawdown (25%) thresholds get promoted.
+## Signal Flow
+
+Every signal passes through multiple intelligence layers before reaching execution:
+
+```
+Raw Data (8 sources, 54 subscribers)
+  -> 80+ signal agents (59 topics)
+    -> Kalman Filter (noise removal)
+      -> Data Fusion (convergence scoring)
+        -> Strategist (48 weights, 3 regime profiles)
+          -> Alpha Hunter (3+ agents agree)
+            -> Adversarial Debate (bull vs bear)
+              -> Swarm Consensus (N-agent voting)
+                -> COMMANDER GATE (LLM approval)
+                  -> Safety Gauntlet (15 checks)
+                    -> Price Gate (SAFE/WARN/HALT)
+                      -> Execution (best venue)
+                        -> 31 post-trade consumers
+```
+
+## Risk Pipeline (15 Layers)
+
+Every trade intent passes ALL checks before execution:
+
+| # | Check | Description |
+|---|-------|-------------|
+| 1 | `size_check` | Max single trade size |
+| 2 | `allowlist_check` | Only approved asset pairs |
+| 3 | `drawdown_check` | Daily loss limit |
+| 4 | `rate_limit_check` | Trades per hour cap |
+| 5 | `max_positions_check` | Concurrent position limit |
+| 6 | `funds_check` | Sufficient wallet balance |
+| 7 | `allocation_check` | Per-asset allocation cap |
+| 8 | `depth_liquidity_check` | Order book depth |
+| 9 | `var_check` | VaR under threshold |
+| 10 | `stress_check` | Survives 8 stress scenarios |
+| 11 | `compliance_check` | Wash trade + margin checks |
+| 12 | `factor_exposure_check` | Factor model limits |
+| 13 | `sor_venue_check` | Minimum 2 venue quotes |
+| 14 | `agent_policy_check` | Per-agent spending cap |
+| 15 | `rugpull_check` | Contract safety screening |
+
+## Multi-Chain Execution
+
+| Chain | Venue | Type | Execution |
+|-------|-------|------|-----------|
+| — | Kraken | CEX | REST + WS v2 (paper/live) |
+| — | Binance, Coinbase, OKX, Bybit | CEX | SOR routing |
+| Ethereum/Base | Uniswap v3/v4 | DEX | Swaps via Trading API |
+| Multiple | Hyperliquid | Perps DEX | 50x leverage, 180+ symbols |
+| Solana | Jupiter | DEX | Aggregated across Raydium, Orca, etc. |
+| Multiple | SushiSwap, Aerodrome, Curve, PancakeSwap | DEX | Via SOR |
 
 ## Project Structure
 
 ```
-swarmtrader/
-├── core.py              # Bus, MarketSnapshot, Signal, PortfolioTracker
-├── main.py              # Entry point — orchestrates 80+ agents
-├── config.py            # Centralized configuration management
-├── logging_config.py    # Structured JSON logging with correlation IDs
-├── database.py          # Postgres (Neon) + SQLite database abstraction
+swarmtrader/                          # 122 modules, 48,612 lines
+├── core.py                           # Bus, Signal, TradeIntent, PortfolioTracker
+├── main.py                           # Entry point — orchestrates 120+ agents
+├── config.py                         # Configuration management
+├── database.py                       # Postgres (Neon) + SQLite abstraction
 │
-├── ── DATA SCOUTS ──────────────────────────────────────
-├── agents.py            # MockScout, Momentum, MeanRev, Volatility
-├── kraken.py            # KrakenScout, KrakenWSScout, KrakenExecutor
-├── kraken_api.py        # Kraken REST API v2 native client
-├── kraken_ws.py         # Kraken WebSocket v2 (book, trades, executions)
-├── hyperliquid.py       # Hyperliquid perps: data + execution
-├── jupiter.py           # Jupiter DEX (Solana aggregator): prices + execution
-├── birdeye.py           # BirdEye Solana token analytics
-├── pyth_oracle.py       # Pyth Network decentralized price feeds
-├── demo.py              # Demo replay scouts (pre-recorded scenarios)
+├── ── DATA (8 sources) ─────────────────────────────────
+├── agents.py, kraken.py, kraken_api.py, kraken_ws.py
+├── hyperliquid.py, jupiter.py, birdeye.py, pyth_oracle.py
 │
-├── ── SIGNAL AGENTS ────────────────────────────────────
-├── agents_advanced.py   # OrderBook, FundingRate, Spread, Regime
-├── strategies.py        # RSI, MACD, Bollinger, VWAP, Ichimoku, LiqCascade, ATRStop
-├── ml_signal.py         # Gradient-boosted decision trees (pure stdlib)
-├── multitf.py           # Multi-timeframe momentum alignment
-├── correlation.py       # Cross-asset correlation + lead-lag analysis
-├── confluence.py        # Multi-group signal agreement scoring
-├── alpha_swarm.py       # AlphaHunter → SentimentFilter → RiskScreener pipeline
+├── ── SIGNALS (80+ agents) ─────────────────────────────
+├── strategies.py, agents_advanced.py, ml_signal.py
+├── multitf.py, correlation.py, confluence.py
+├── whale.py, smart_money.py, onchain.py, feargreed.py
+├── social.py, social_agents.py, news.py, polymarket.py
+├── liquidation.py, open_interest.py, arbitrage.py
+├── feeds.py, signals.py
 │
-├── ── MARKET INTELLIGENCE ──────────────────────────────
-├── whale.py             # Large transaction tracking
-├── smart_money.py       # 25+ whale wallet shadowing (Etherscan/Basescan)
-├── onchain.py           # Etherscan on-chain activity
-├── feargreed.py         # Alternative.me Fear & Greed Index
-├── social.py            # Social media sentiment aggregation
-├── social_agents.py     # X/Twitter, Discord, Telegram real-time monitoring
-├── liquidation.py       # Futures liquidation level detection
-├── open_interest.py     # Futures open interest tracking
-├── arbitrage.py         # Cross-exchange price difference monitoring
-├── news.py              # CryptoPanic news sentiment
-├── signals.py           # PRISM/Strykr AI signal provider
-├── polymarket.py        # Polymarket prediction market CLOB signals
+├── ── INTELLIGENCE (Phases 1-3) ────────────────────────
+├── kalman.py                         # Adaptive Kalman Filter
+├── fusion.py                         # Data Fusion Pipeline
+├── debate.py                         # Adversarial Debate + ELO
+├── alpha_swarm.py                    # Multi-agent alpha discovery
+├── swarm_consensus.py                # N-agent weighted voting
 │
-├── ── EXTENDED DATA FEEDS ──────────────────────────────
-├── feeds.py             # 7 agents: ExchangeFlow, Stablecoin, Macro,
-│                        #   DeribitOptions, TokenUnlock, GitHubDev, RSSNews
+├── ── STRATEGY + COMMANDER ─────────────────────────────
+├── strategy.py                       # Strategist (48 weights, 3 regimes)
+├── hermes_brain.py                   # HermesBrain + CommanderGate
+├── nlp_strategy.py                   # Natural language strategy parsing
 │
-├── ── STRATEGY + COORDINATION ──────────────────────────
-├── strategy.py          # Strategist (adaptive weighting) + RiskAgent + Coordinator
-├── hermes_brain.py      # Hermes LLM brain (local Ollama inference)
-├── nlp_strategy.py      # Natural language strategy parsing + presets
-│
-├── ── RISK MANAGEMENT ──────────────────────────────────
-├── risk.py              # RateLimiter, DrawdownTracker, Concentration, Exposure
-├── var.py               # VaR engine (historical, parametric, Monte Carlo)
-├── stress_test.py       # 8 historical stress scenarios
-├── factor_model.py      # Factor model + PnL attribution
-├── compliance.py        # WashTrading, MarginMonitor, DataQuality
-├── agent_policies.py    # Per-agent spending limits + sandboxing
-│
-├── ── PORTFOLIO + POSITIONS ────────────────────────────
-├── portfolio_opt.py     # Markowitz, RiskParity, BlackLitterman, DynamicHedger
-├── positions.py         # PositionManager with trailing/hard stops
-├── wallet.py            # WalletManager with allocation tracking
-├── capital_allocator.py # Agent leaderboard + dynamic capital allocation
+├── ── RISK (15 layers) ─────────────────────────────────
+├── risk.py, var.py, stress_test.py, factor_model.py
+├── compliance.py, agent_policies.py, safety.py
+├── rugpull_detector.py, price_gate.py
 │
 ├── ── EXECUTION ────────────────────────────────────────
-├── execution.py         # Simulator, Executor, Auditor (SQLite/Postgres)
-├── sor.py               # Smart order router (5 CEXs + 10 DEXs)
-├── microstructure.py    # Kyle's lambda, Almgren-Chriss, Iceberg, TCA
-├── twap.py              # TWAP execution (time-weighted slicing)
-├── uniswap.py           # Uniswap Trading API executor (DEX on Base)
-├── arb_executor.py      # ArbScanner + ArbExecutor (cross-venue simultaneous)
-├── dex_quotes.py        # 1inch + Jupiter quote aggregation
-├── dex_multi.py         # SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca
-├── exchanges.py         # Binance, Coinbase, OKX, Bybit unified API
+├── execution.py, sor.py, microstructure.py, twap.py
+├── uniswap.py, arb_executor.py, dex_quotes.py, dex_multi.py
+├── exchanges.py, intent_solver.py, flashloan.py
 │
-├── ── SAFETY SYSTEMS ───────────────────────────────────
-├── safety.py            # KillSwitch, CircuitBreaker, PositionFlattener
-├── reconciliation.py    # Balance reconciliation vs exchange
-├── hardware_signer.py   # Hot wallet / Ledger USB / Secure Enclave signing
+├── ── ON-CHAIN (Phases 4-10) ──────────────────────────
+├── vault.py                          # ERC-4626 fund custody
+├── marketplace.py                    # Competitive agent auctions
+├── strategy_nft.py                   # Strategy-as-NFT with royalties
+├── v4_hooks.py                       # Uniswap v4 hook integration
+├── cross_chain.py                    # Circle CCTP + multi-chain yield
+├── zk_trading.py                     # Commit-reveal dark pool
+├── erc8004.py, x402_payments.py, lp_manager.py
 │
-├── ── BLOCKCHAIN + ON-CHAIN ────────────────────────────
-├── erc8004.py           # ERC-8004 intent signing (EIP-712) + identity + reputation
-├── x402_payments.py     # Agent-to-agent USDC micropayment gateway
-├── lp_manager.py        # Uniswap v3 LP range rebalancing (UniRange pattern)
-├── yield_aggregator.py  # DeFi Llama yield discovery + auto-harvest
-├── agent_registry.py    # Unstoppable Domains agent identity registry
-├── strategy_privacy.py  # Encrypted strategy storage
+├── ── ADVANCED TRADING (Phases 12-20) ─────────────────
+├── prediction_trader.py              # Polymarket autonomous trading
+├── strategy_evolution.py             # Genetic algorithm evolution
+├── ai_brain.py                       # Multi-model LLM adapter
+├── narrative.py                      # Event correlation engine
+├── whale_mirror.py                   # Smart money copy trading
+├── liquidation_shield.py             # Cascade protection
+├── governance.py                     # Agent governance DAO
+├── agent_payments.py                 # Micropayment protocol
 │
-├── ── SOCIAL + COMMUNITY ───────────────────────────────
-├── social_trading.py    # Copy trading, leaderboard, strategy marketplace
+├── ── INTERFACES (Phases 21-22) ───────────────────────
+├── telegram_bot.py                   # Telegram trading commands
+├── voice_trading.py                  # Voice-activated trading
+├── web.py, dashboard.py              # Web dashboard + terminal TUI
+├── gateway.py                        # External agent bridge
 │
-├── ── LEARNING + BACKTESTING ───────────────────────────
-├── agent_learning.py    # Online performance tracking, exploration/exploitation
-├── memory.py            # AgentMemory — cross-session learning (SOUL.md)
-├── backtester.py        # 10-strategy backtesting engine (walk-forward + Monte Carlo)
-├── backtest.py          # Historical replay engine
-├── walkforward.py       # Walk-forward + Monte Carlo backtesting framework
-├── report.py            # JSON/HTML/PDF report generation
+├── ── INFRASTRUCTURE (Phases 23-40) ───────────────────
+├── agent_factory.py                  # Dynamic agent spawning
+├── options_engine.py                 # Options strategy automation
+├── social_alpha_v2.py                # Cross-platform virality scanner
+├── backtesting_arena.py              # Competitive tournaments
+├── observability.py                  # Agent health monitoring
+├── federated.py                      # Federated learning
+├── rwa_bridge.py                     # Real-world asset integration
+├── treasury.py                       # Autonomous treasury management
+├── mev_engine.py                     # MEV detection + protection
+├── agent_memory_v2.py                # Memory DAG with semantic retrieval
+├── sentiment_derivatives.py          # Sentiment TA indicators
+├── grid_trading.py                   # Grid + DCA strategies
+├── token_sniper.py                   # Early token detection
+├── regime_v2.py                      # Cross-asset correlation regimes
+├── gas_optimizer.py                  # Gas forecasting + batching
+├── portfolio_insurance.py            # Automated hedging
+├── agent_protocol.py                 # Structured inter-agent messaging
 │
-├── ── INFRASTRUCTURE ───────────────────────────────────
-├── automation.py        # AgentSupervisor, Scheduler, heartbeats
-├── dashboard.py         # Terminal TUI dashboard
-├── web.py               # Web dashboard (aiohttp + WebSocket + social trading)
-├── gateway.py           # Agent gateway (OpenClaw/Hermes protocols)
-├── checkpoint.py        # State checkpointing for crash recovery
-├── rate_limit.py        # Shared API rate limiter
+├── ── PORTFOLIO + LEARNING ────────────────────────────
+├── portfolio_opt.py, positions.py, wallet.py, capital_allocator.py
+├── agent_learning.py, memory.py, agent_memory_v2.py
+├── backtester.py, backtest.py, walkforward.py
+│
+├── ── SOCIAL ──────────────────────────────────────────
+├── social_trading.py                 # Copy trading + revenue sharing
 │
 └── static/
-    └── index.html       # Web dashboard frontend (Chart.js + Tailwind)
+    └── index.html                    # Web dashboard (Tailwind + Chart.js)
 ```
-
-## Agent Categories
-
-| Category | Count | Agents |
-|----------|-------|--------|
-| Data Scouts | 7 | MockScout, KrakenScout, KrakenWSScout, HyperliquidAgent, JupiterPriceScout, BirdEyeAgent, PythOracle |
-| Core Analysts | 3 | Momentum, MeanReversion, Volatility |
-| Technical Analysis | 7 | RSI, MACD, Bollinger, VWAP, Ichimoku, LiquidationCascade, ATRTrailingStop |
-| Advanced Market | 4 | OrderBook, FundingRate, Spread, Regime |
-| Market Intelligence | 9 | Whale, SmartMoney, OnChain, FearGreed, Social, Liquidation, Arbitrage, OpenInterest, Polymarket |
-| External Signals | 2 | News (CryptoPanic), PRISM AI |
-| Extended Feeds | 7 | ExchangeFlow, Stablecoin, MacroCalendar, DeribitOptions, TokenUnlock, GitHubDev, RSSNews |
-| Cross-Asset | 3 | MultiTimeframe, Correlation, Confluence |
-| Alpha Swarm | 4 | AlphaHunter, SentimentFilter, RiskScreener, SwarmCoordinator |
-| Machine Learning | 1 | GradientBoosted (online training) |
-| Social Media | 4 | XMonitor (Twitter), Discord, Telegram, SocialAggregator |
-| Portfolio | 2 | PortfolioOpt, DynamicHedger |
-| Risk Agents | 15 | Size, Drawdown, VaR, Stress, Compliance, Factor, Rebalance, SOR, AgentPolicy, etc. |
-| Execution | 8 | Simulator, KrakenExecutor, HyperliquidExecutor, JupiterExecutor, UniswapExecutor, SOR, TWAP, Iceberg |
-| Arbitrage | 3 | ArbScanner, ArbExecutor, MultiDEXScanner |
-| Yield/LP | 2 | YieldAggregator, LPRebalanceManager |
-| Safety | 5 | KillSwitch, CircuitBreaker, PositionFlattener, HardwareSigner, AgentPolicies |
-| Learning | 2 | LearningCoordinator, BacktesterAgent |
-| Infrastructure | 7 | Supervisor, Reconciler, DataQuality, TCA, AgentRegistry, x402Payments, Checkpoint |
-
-## Multi-Chain Execution
-
-| Chain | Venue | Type | Data | Execution | Key Required |
-|-------|-------|------|------|-----------|-------------|
-| — | Kraken | CEX | REST + WS v2 | Paper / Live | `KRAKEN_API_KEY` |
-| — | Binance | CEX | Quotes | SOR routing | Optional |
-| — | Coinbase | CEX | Quotes | SOR routing | Optional |
-| — | OKX | CEX | Quotes | SOR routing | Optional |
-| — | Bybit | CEX | Quotes | SOR routing | Optional |
-| Ethereum / Base | Uniswap | DEX | Quotes | Swaps | `UNISWAP_API_KEY` + `PRIVATE_KEY` |
-| Multiple | Hyperliquid | Perps DEX | Full L2 + funding | Orders | `HYPERLIQUID_WALLET_KEY` |
-| Solana | Jupiter | DEX | Aggregated quotes | Swaps | `SOLANA_PRIVATE_KEY` |
-| Multiple | SushiSwap | DEX | Quotes | Via SOR | — |
-| Base | Aerodrome | DEX | Quotes | Via SOR | — |
-| Multiple | Curve | DEX | Quotes | Via SOR | — |
-| BSC | PancakeSwap | DEX | Quotes | Via SOR | — |
-| Solana | Raydium | DEX | Quotes | Via SOR | — |
-| Solana | Orca | DEX | Quotes | Via SOR | — |
-
-## Extended Data Feeds
-
-7 additional market intelligence agents run automatically alongside the core swarm:
-
-| Agent | Intelligence | API Key | Interval |
-|-------|-------------|---------|----------|
-| ExchangeFlow | Exchange reserve inflow/outflow via CoinGecko | `COINGECKO_API_KEY` (optional) | 5 min |
-| Stablecoin | USDT/USDC market cap + depeg detection | `COINGECKO_API_KEY` (optional) | 10 min |
-| MacroCalendar | Economic events (FOMC, CPI, NFP) | `FRED_API_KEY` (optional) | 30 min |
-| DeribitOptions | Options IV, put/call ratio, max pain (BTC/ETH) | None (public) | 5 min |
-| TokenUnlock | Token vesting unlock schedule via DeFi Llama | None | 60 min |
-| GitHubDev | Protocol commit velocity + releases | `GITHUB_TOKEN` (optional) | 30 min |
-| RSSNews | Multi-source RSS (CoinDesk, CoinTelegraph, Decrypt) | None | 5 min |
-
-## Hermes LLM Brain
-
-When `--hermes` is passed, a local LLM (via Ollama) replaces the rule-based Strategist:
-
-```bash
-# Pull the model first
-ollama pull nous-hermes2
-
-# Run with Hermes brain
-python -m swarmtrader.main mock 300 --web --hermes
-```
-
-The Hermes brain receives a structured context window containing all 80+ agent signals, portfolio state, risk metrics, and market regime — then generates trade decisions in a structured JSON format. The rule-based Strategist runs as a backup alongside Hermes.
-
-Configure via `.env`:
-- `OLLAMA_URL` — Ollama API endpoint (default: `http://localhost:11434`)
-- `OLLAMA_MODEL` — Model name (default: `nous-hermes2`)
-- `HERMES_INTERVAL` — Seconds between LLM calls (default: 15)
-- `HERMES_MAX_TOKENS` — Max response tokens (default: 1024)
-
-## Risk Pipeline (15 Layers)
-
-Every trade intent must pass ALL risk checks before execution:
-
-| # | Check | Description |
-|---|-------|-------------|
-| 1 | `size_check` | Rejects orders exceeding max single trade size |
-| 2 | `allowlist_check` | Only trade pre-approved asset pairs |
-| 3 | `drawdown_check` | Halt when daily loss exceeds configurable limit |
-| 4 | `rate_limit_check` | Max 20 trades/hour (configurable) |
-| 5 | `max_positions_check` | Cap concurrent open positions |
-| 6 | `funds_check` | Verify sufficient funds in wallet |
-| 7 | `allocation_check` | Per-asset allocation cap enforcement |
-| 8 | `depth_liquidity_check` | Order book depth must support trade size |
-| 9 | `var_check` | Portfolio VaR (historical, parametric, Monte Carlo) must stay under threshold |
-| 10 | `stress_check` | Trade must survive 8 historical stress scenarios |
-| 11 | `compliance_check` | Wash trade detection + margin monitoring |
-| 12 | `factor_exposure_check` | Factor model exposure limits |
-| 13 | `rebalance_check` | Portfolio drift trigger check |
-| 14 | `sor_venue_check` | Minimum 2 venues must provide quotes |
-| 15 | `agent_policy_check` | Per-agent daily spending cap enforcement |
-
-## Advanced Features
-
-- **Cross-venue arbitrage** — `ArbScanner` polls all CEXs + DEXs every 10s for price discrepancies >15bps. `ArbExecutor` simultaneously buys on cheap venue + sells on expensive venue.
-- **Alpha swarm** — Multi-agent opportunity detection: `AlphaHunter` scans for breakout/dip/accumulation patterns → `SentimentFilter` validates with social/news data → `RiskScreener` applies risk rules → `SwarmCoordinator` executes with minimum conviction threshold.
-- **Smart money tracking** — Shadows 25+ whale wallets via Etherscan + Basescan APIs. Detects accumulation/distribution patterns with configurable copy thresholds.
-- **Polymarket signals** — Reads prediction market contracts for event-driven signals (BTC price targets, regulatory events, ETF flows).
-- **Yield aggregation** — Scans DeFi Llama for top yield pools across Ethereum, Base, and Arbitrum. Auto-compounds when harvest threshold reached.
-- **LP management** — Monitors Uniswap v3 concentrated liquidity positions. Auto-rebalances when price moves beyond configured range (500bps default).
-- **Agent learning** — `LearningCoordinator` tracks each agent's signal accuracy over time. Uses exploration/exploitation to weight reliable agents higher.
-- **Hardware signing** — Three modes: hot wallet (default), Ledger USB, or secure enclave. Configurable USD threshold for hardware approval.
-- **x402 payments** — Agent-to-agent USDC micropayment gateway for paid signal services.
-- **Social trading** — Users can publish strategies, follow top performers, and auto-copy trades with configurable allocation and revenue sharing.
-- **Crash recovery** — `--checkpoint` saves state periodically to JSON. On restart, resumes from last checkpoint automatically.
-- **Cross-session learning** — `AgentMemory` reads `SOUL.md` (immutable identity/principles) and writes to `strategy_notes.md` after each session.
-- **Agent registry** — On-chain agent identity via Unstoppable Domains naming on Base chain.
-
-## Environment Configuration
-
-All environment variables are documented in `.env.example`. Key categories:
-
-| Category | Variables | Required |
-|----------|-----------|----------|
-| Kraken exchange | `KRAKEN_API_KEY`, `KRAKEN_PRIVATE_KEY`, `KRAKEN_TIER` | Paper/live only |
-| Database | `DATABASE_URL`, `SWARM_DB_PATH` | No (SQLite fallback) |
-| Hyperliquid | `HYPERLIQUID_WALLET_KEY`, `HYPERLIQUID_VAULT_ADDRESS` | No (data-only without) |
-| Jupiter / Solana | `SOLANA_PRIVATE_KEY`, `SOLANA_WALLET_ADDRESS`, `SOLANA_RPC_URL` | No (prices-only without) |
-| BirdEye | `BIRDEYE_API_KEY` | No (disabled without) |
-| Blockchain | `PRIVATE_KEY`, `UNISWAP_API_KEY`, `UNISWAP_CHAIN_ID` | ERC-8004/DEX only |
-| Hermes LLM | `OLLAMA_URL`, `OLLAMA_MODEL`, `HERMES_INTERVAL` | No (rule-based default) |
-| Social media | `X_BEARER_TOKEN`, `DISCORD_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN` | No |
-| Risk tuning | `SWARM_RISK_MAX_DAILY_LOSS`, `SWARM_RISK_MAX_TRADES`, etc. | No (sensible defaults) |
-| Circuit breaker | `SWARM_CB_MAX_DRAWDOWN`, `SWARM_CB_COOLDOWN` | No |
-| Execution | `SWARM_MODE`, `SWARM_EXEC_MAX_RETRIES` | No |
-| Extended feeds | `GITHUB_TOKEN`, `FRED_API_KEY`, `ETHERSCAN_API_KEY`, `COINGECKO_API_KEY` | No (graceful degradation) |
-| Hardware signer | `HARDWARE_SIGNER_MODE`, `HARDWARE_APPROVE_USD` | No (hot wallet default) |
-| Agent policies | `AGENT_POLICY_STRICT`, `AGENT_POLICY_DEFAULT_DAILY_CAP` | No |
-| Agent registry | `UD_API_KEY`, `AGENT_REGISTRY_CHAIN` | No |
-| Yield/LP | `YIELD_MIN_APY`, `LP_RANGE_BPS` | No |
-
-See [`.env.example`](.env.example) for the full list with defaults and descriptions.
-
-## Supported Assets
-
-The system supports multi-asset trading with pre-configured Kraken mappings:
-
-| Asset | Spot Pair | Futures Symbol |
-|-------|-----------|----------------|
-| ETH | ETHUSD | PF_ETHUSD |
-| BTC | XBTUSD | PF_XBTUSD |
-| SOL | SOLUSD | PF_SOLUSD |
-| XRP | XRPUSD | PF_XRPUSD |
-| ADA | ADAUSD | PF_ADAUSD |
-| DOT | DOTUSD | PF_DOTUSD |
-| LINK | LINKUSD | PF_LINKUSD |
-| AVAX | AVAXUSD | PF_AVAXUSD |
-
-Jupiter/Solana tokens: SOL, JUP, BONK, WIF, PYTH, JTO, RAY
 
 ## Technology
 
 - **Language**: Python 3.11+ (async/await throughout)
-- **Architecture**: Event-driven pub/sub via async `Bus`
-- **Runtime deps**: `aiohttp`, `python-dotenv`, `web3`, `eth-account`, `psycopg`, `psycopg-pool`
-- **ML/Math**: All implemented from scratch — no numpy, scipy, sklearn, or ta-lib
-- **CEX**: Kraken (REST v2 + WebSocket v2 + CLI), Binance, Coinbase, OKX, Bybit
-- **DEX**: Uniswap (Base), Jupiter (Solana), Hyperliquid, SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca
-- **Oracle**: Pyth Network (decentralized price feeds)
-- **Blockchain**: ERC-8004 intents on Ethereum/Base (Sepolia testnet)
-- **Storage**: Postgres (Neon) primary, SQLite fallback for offline/backtest
-- **Frontend**: Tailwind CSS + Chart.js + vanilla JS
-- **LLM**: Ollama (optional, for Hermes brain)
-- **Deployed**: Railway (backend) + Neon Postgres (database)
+- **Architecture**: Event-driven pub/sub via async `Bus` (221 topics)
+- **ML/Math**: All from scratch — no numpy, scipy, sklearn, or ta-lib
+- **LLM**: Ollama, OpenAI, Anthropic, Groq, DeepSeek (all optional)
+- **CEX**: Kraken, Binance, Coinbase, OKX, Bybit
+- **DEX**: Uniswap v3/v4, Jupiter, Hyperliquid, SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca
+- **Blockchain**: ERC-4626, ERC-8004, ERC-7857, x402, Circle CCTP
+- **Storage**: Postgres (Neon) primary, SQLite fallback
+- **Deployment**: Docker, Railway, Vercel (Neon)
+- **Dependencies**: Minimal — `aiohttp`, `python-dotenv`, `web3`, `eth-account`, `psycopg`
 
 ## Documentation
 
 | File | Contents |
 |------|----------|
 | [`README.md`](README.md) | This file — setup, architecture, features |
-| [`AGENTS.md`](AGENTS.md) | Complete agent reference with signals and categories |
+| [`AGENTS.md`](AGENTS.md) | Complete agent reference (120+ agents) |
 | [`SOUL.md`](SOUL.md) | Agent identity, principles, and risk discipline |
 | [`ROADMAP.md`](ROADMAP.md) | 20-phase product roadmap with revenue projections |
-| [`COMPETITIVE_INTEL.md`](COMPETITIVE_INTEL.md) | Competitive analysis of 450+ ETHGlobal projects |
-| [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) | Demo video presentation script |
+| [`COMPETITIVE_INTEL.md`](COMPETITIVE_INTEL.md) | 450+ ETHGlobal projects analyzed, 40-phase integration plan |
 | [`.env.example`](.env.example) | All environment variables with descriptions |
-| [`strategy_notes.md`](strategy_notes.md) | Auto-generated cross-session learning notes |
+
+## Competitive Intelligence
+
+This platform absorbed the best patterns from 450+ agentic trading projects across the ETHGlobal showcase (18,800 total projects, 10 hackathon events, 2021-2026). Key sources include:
+
+- **Alpha Dawg** — adversarial debate + ELO reputation + memory DAG
+- **KalmanGuard** — adaptive signal filtering via Kalman filter
+- **TWAP CHOP** — price validation gate with binary search chunking
+- **Gorillionaire** — ERC-4626 vaults + rugpull detection
+- **Nimble** — competitive intent solver auctions
+- **GhostFi** — strategy-as-NFT + event correlation narratives
+- **Colony** — cross-chain agent swarm coordination
+- **Meme Sentinels** — sandboxed execution + 6-agent architecture
+
+Full analysis in [`COMPETITIVE_INTEL.md`](COMPETITIVE_INTEL.md).
 
 ## License
 
