@@ -162,12 +162,14 @@ class KrakenWSScout:
 # Trade Executor — paper or live via Kraken CLI
 # ---------------------------------------------------------------------------
 class KrakenExecutor:
-    """Executes trades via Kraken CLI (paper or live mode)."""
+    """Executes trades via Kraken CLI (paper or live mode).
+    Tracks positions to avoid selling assets we don't hold."""
 
     def __init__(self, bus: Bus, kill_switch: Path, paper: bool = True):
         self.bus = bus
         self.kill_switch = kill_switch
         self.paper = paper
+        self.positions: dict[str, float] = {}  # asset -> quantity held
         bus.subscribe("exec.simulated", self._on_sim)
 
     async def _on_sim(self, payload):
@@ -182,8 +184,25 @@ class KrakenExecutor:
             await self._report(intent, "expired", None, None, None, "ttl")
             return
 
+        # Check if we can sell (need holdings)
+        going_long = intent.asset_out in ("ETH", "BTC", "SOL", "XRP", "ADA", "DOT", "LINK", "AVAX")
+        if not going_long:
+            held = self.positions.get(intent.asset_in, 0.0)
+            if held < 0.001:
+                # Can't sell what we don't have — skip
+                await self._report(intent, "rejected", None, None, None, "no_position")
+                return
+
         try:
             result = await self._submit(intent, eff_price)
+            # Track position
+            if going_long:
+                volume = intent.amount_in / eff_price
+                self.positions[intent.asset_out] = self.positions.get(intent.asset_out, 0.0) + volume
+            else:
+                volume = intent.amount_in
+                self.positions[intent.asset_in] = max(0, self.positions.get(intent.asset_in, 0.0) - volume)
+
             await self._report(
                 intent, "filled",
                 result.get("txid", result.get("order_id", "paper")),
@@ -197,7 +216,7 @@ class KrakenExecutor:
 
     async def _submit(self, intent: TradeIntent, eff_price: float) -> dict:
         """Submit order via Kraken CLI."""
-        going_long = intent.asset_out in ("ETH", "BTC", "SOL")
+        going_long = intent.asset_out in ("ETH", "BTC", "SOL", "XRP", "ADA", "DOT", "LINK", "AVAX")
         pair = self._to_kraken_pair(intent.asset_in, intent.asset_out)
 
         if going_long:

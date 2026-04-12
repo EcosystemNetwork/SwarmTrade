@@ -6,6 +6,7 @@ from .kraken import KrakenScout, KrakenWSScout, KrakenExecutor
 from .signals import PRISMSignalAgent
 from .agents_advanced import OrderBookAgent, FundingRateAgent, SpreadAgent, RegimeAgent
 from .safety import CircuitBreaker, PositionFlattener
+from .risk import RateLimiter, DailyDrawdownTracker, rate_limit_check
 from .dashboard import Dashboard
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "PRISMSignalAgent",
     "OrderBookAgent", "FundingRateAgent", "SpreadAgent", "RegimeAgent",
     "CircuitBreaker", "PositionFlattener",
+    "RateLimiter", "DailyDrawdownTracker", "rate_limit_check",
     "Dashboard",
 ]

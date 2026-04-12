@@ -37,11 +37,14 @@ from . import (
     Simulator, Executor, KrakenExecutor, Auditor,
     # Safety
     CircuitBreaker, PositionFlattener,
+    # Rate limiting
+    RateLimiter, rate_limit_check,
     # External signals
     PRISMSignalAgent,
     # Dashboard
     Dashboard,
 )
+from .web import WebDashboard
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -105,6 +108,10 @@ def parse_args() -> argparse.Namespace:
                    help="Show live terminal dashboard")
     p.add_argument("--no-advanced", action="store_true",
                    help="Disable advanced agents (orderbook, funding, spread)")
+    p.add_argument("--web", action="store_true",
+                   help="Launch web dashboard on http://localhost:8080")
+    p.add_argument("--web-port", type=int, default=8080,
+                   help="Web dashboard port (default: 8080)")
     return p.parse_args()
 
 
@@ -181,10 +188,12 @@ async def run(args: argparse.Namespace):
     Strategist(bus, base_size=args.base_size)
 
     # ── Risk Agents ─────────────────────────────────────────────
+    rate_limiter = RateLimiter(bus, max_trades=20, window_s=3600.0)
     risks = [
         RiskAgent(bus, "size", size_check(max_size=args.max_size)),
         RiskAgent(bus, "allowlist", allowlist_check(tokens)),
         RiskAgent(bus, "drawdown", drawdown_check(state, max_dd=args.max_drawdown)),
+        RiskAgent(bus, "rate_limit", rate_limit_check(rate_limiter)),
     ]
     Coordinator(bus, n_risk_agents=len(risks))
 
@@ -208,12 +217,21 @@ async def run(args: argparse.Namespace):
 
     Auditor(bus, db_path=Path(args.db), state=state)
 
-    # ── Dashboard ───────────────────────────────────────────────
+    # ── Terminal Dashboard ──────────────────────────────────────
     dash = None
     if args.dashboard:
         dash = Dashboard(bus, state, refresh=1.0)
         stoppables.append(dash)
         tasks_to_cancel.append(asyncio.create_task(dash.run()))
+
+    # ── Web Dashboard ──────────────────────────────────────────
+    if args.web:
+        web_dash = WebDashboard(
+            bus, state, db_path=Path(args.db),
+            kill_switch=kill_switch, port=args.web_port,
+        )
+        await web_dash.start()
+        log.info("Web dashboard: http://localhost:%d", args.web_port)
 
     # ── Run ──────────────────────────────────────────────────────
     try:

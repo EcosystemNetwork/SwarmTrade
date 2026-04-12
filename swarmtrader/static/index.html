@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SWARMTRADER // Command Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        void: "#0a0e17",
+        surface: "#0f131c",
+        "s-low": "#181b25",
+        "s-mid": "#1c1f29",
+        "s-high": "#262a34",
+        "s-top": "#31353f",
+        neon: "#00ff88",
+        electric: "#00d4ff",
+        amber: "#ffaa00",
+        signal: "#ff3366",
+        muted: "#6b7280",
+      },
+      fontFamily: {
+        mono: ["JetBrains Mono", "monospace"],
+        headline: ["Space Grotesk", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+      },
+    },
+  },
+}
+</script>
+<style>
+  body { background: #0a0e17; color: #dfe2ef; font-family: 'Inter', sans-serif; }
+  .scan-lines {
+    background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.15) 50%),
+                linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.01), rgba(0,0,255,0.03));
+    background-size: 100% 2px, 3px 100%;
+    pointer-events: none;
+  }
+  .glow-green { box-shadow: inset 0 0 8px rgba(0,255,136,0.12), 0 0 4px rgba(0,255,136,0.08); }
+  .glow-blue { box-shadow: inset 0 0 8px rgba(0,212,255,0.12), 0 0 4px rgba(0,212,255,0.08); }
+  .glow-red { box-shadow: inset 0 0 8px rgba(255,51,102,0.2), 0 0 6px rgba(255,51,102,0.15); }
+  @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+  .pulse { animation: pulse-dot 1.5s ease-in-out infinite; }
+  @keyframes ticker { from { transform: translateX(100%); } to { transform: translateX(-200%); } }
+  .ticker-scroll { animation: ticker 90s linear infinite; }
+  .tab-active { color: #00ff88; border-bottom: 2px solid #00ff88; background: rgba(0,255,136,0.05); }
+  .tab-inactive { color: #6b7280; }
+  .tab-inactive:hover { color: #9ca3af; background: rgba(255,255,255,0.03); }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0f131c; }
+  ::-webkit-scrollbar-thumb { background: #31353f; }
+  .signal-bar { position: relative; height: 6px; background: #1c1f29; }
+  .signal-fill-pos { position: absolute; top:0; bottom:0; left:50%; background: #00ff88; }
+  .signal-fill-neg { position: absolute; top:0; bottom:0; right:50%; background: #ff3366; }
+  .signal-center { position: absolute; top:0; bottom:0; left:50%; width:1px; background:#4b5563; }
+</style>
+</head>
+<body class="overflow-hidden select-none">
+<div class="fixed inset-0 scan-lines z-[100] opacity-20"></div>
+
+<!-- ═══ TOP NAV ═══ -->
+<header id="topnav" class="fixed top-0 w-full z-50 flex items-center px-4 justify-between bg-[#050810]/90 backdrop-blur-md h-14 border-b border-neon/20">
+  <div class="flex items-center gap-6">
+    <div class="flex items-center gap-2">
+      <span class="material-symbols-outlined text-neon text-2xl" style="font-variation-settings:'FILL' 1">hub</span>
+      <span class="font-mono font-black text-neon text-lg tracking-tight">SWARMTRADER</span>
+    </div>
+    <div class="flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest">
+      <span class="px-2 py-1 border border-electric/40 text-electric cursor-default" id="mode-badge">MOCK</span>
+    </div>
+  </div>
+  <div class="flex items-center gap-6">
+    <div class="flex items-center gap-2 font-mono text-xs">
+      <div class="w-2 h-2 rounded-full bg-neon pulse" id="conn-dot"></div>
+      <span class="text-muted" id="conn-text">CONNECTING</span>
+      <span class="text-muted/50 ml-1" id="latency"></span>
+    </div>
+    <div class="font-mono text-right">
+      <div class="text-[9px] text-muted uppercase">Daily PnL</div>
+      <div class="text-sm font-bold" id="daily-pnl">$0.0000</div>
+    </div>
+    <div class="font-mono text-right">
+      <div class="text-[9px] text-muted uppercase">UTC</div>
+      <div class="text-sm text-electric" id="utc-clock">--:--:--</div>
+    </div>
+    <button id="kill-btn"
+      class="px-4 py-1.5 font-mono font-bold text-xs border uppercase transition-all duration-75
+             bg-red-900/30 text-red-400 border-red-500/40 hover:bg-red-800/50 hover:border-red-400"
+      onclick="toggleKillSwitch()">
+      KILL SWITCH
+    </button>
+  </div>
+</header>
+
+<!-- ═══ MAIN LAYOUT ═══ -->
+<div class="flex pt-14 h-screen pb-8">
+
+  <!-- LEFT SIDEBAR: Agent Swarm -->
+  <aside class="w-[260px] bg-surface border-r border-neon/10 flex flex-col shrink-0 overflow-hidden">
+    <div class="px-4 py-3 border-b border-white/5">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">hub</span>
+        <span class="font-mono text-xs font-bold text-neon uppercase tracking-wider">Agent Swarm</span>
+      </div>
+    </div>
+    <div id="agent-tree" class="flex-1 overflow-y-auto p-3 font-mono text-[11px] space-y-1">
+      <!-- Populated by JS -->
+    </div>
+    <div class="px-3 py-2 border-t border-white/5">
+      <div class="flex justify-between text-[9px] text-muted font-mono">
+        <span>Agents: <span id="agent-count">0</span></span>
+        <span>Active: <span id="agent-active-count" class="text-neon">0</span></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CENTER: Charts + Trades -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- Price Area -->
+    <div class="flex-[6] border-b border-white/5 p-4 bg-s-low relative flex flex-col">
+      <div class="flex justify-between items-start mb-3">
+        <div class="font-mono">
+          <div class="flex items-center gap-2 text-muted text-[10px] uppercase">
+            <span class="material-symbols-outlined text-xs">trending_up</span>
+            <span id="pair-label">ETH / USD</span>
+          </div>
+          <div class="text-3xl font-black font-headline mt-1" id="main-price">--</div>
+          <div class="text-neon text-xs font-mono" id="price-delta"></div>
+        </div>
+        <div class="flex gap-4 text-[10px] font-mono text-muted">
+          <div>Trades: <span class="text-white" id="stat-trades">0</span></div>
+          <div>Win Rate: <span class="text-neon" id="stat-winrate">--</span></div>
+          <div>Gas: <span class="text-electric" id="stat-gas">--</span></div>
+        </div>
+      </div>
+      <!-- Price Canvas -->
+      <div class="flex-1 relative min-h-0">
+        <canvas id="price-chart" class="w-full h-full"></canvas>
+      </div>
+    </div>
+
+    <!-- Trade Activity -->
+    <div class="flex-[4] flex flex-col bg-s-low overflow-hidden">
+      <div class="flex border-b border-white/5 bg-surface/50 shrink-0">
+        <button class="tab-btn tab-active px-4 py-2 font-mono text-[10px] uppercase" data-tab="intents">
+          Active Intents <span class="text-muted" id="intent-count">[0]</span>
+        </button>
+        <button class="tab-btn tab-inactive px-4 py-2 font-mono text-[10px] uppercase" data-tab="execlog">
+          Execution Log <span class="text-muted" id="exec-count">[0]</span>
+        </button>
+      </div>
+      <!-- Intents Tab -->
+      <div id="tab-intents" class="flex-1 overflow-y-auto font-mono">
+        <table class="w-full text-left text-[11px]">
+          <thead class="sticky top-0 bg-s-low text-muted uppercase border-b border-white/5 z-10">
+            <tr>
+              <th class="p-2.5 font-medium">ID</th>
+              <th class="p-2.5 font-medium">Dir</th>
+              <th class="p-2.5 font-medium">Route</th>
+              <th class="p-2.5 font-medium">Amount</th>
+              <th class="p-2.5 font-medium">TTL</th>
+              <th class="p-2.5 font-medium">Risk</th>
+              <th class="p-2.5 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody id="intents-body" class="divide-y divide-white/5"></tbody>
+        </table>
+        <div id="intents-empty" class="text-center text-muted text-xs py-8">Waiting for trade intents...</div>
+      </div>
+      <!-- Exec Log Tab -->
+      <div id="tab-execlog" class="flex-1 overflow-y-auto font-mono hidden">
+        <table class="w-full text-left text-[11px]">
+          <thead class="sticky top-0 bg-s-low text-muted uppercase border-b border-white/5 z-10">
+            <tr>
+              <th class="p-2.5 font-medium">Time</th>
+              <th class="p-2.5 font-medium">ID</th>
+              <th class="p-2.5 font-medium">Status</th>
+              <th class="p-2.5 font-medium">Tx Hash</th>
+              <th class="p-2.5 font-medium">Fill Price</th>
+              <th class="p-2.5 font-medium">Slippage</th>
+              <th class="p-2.5 font-medium">PnL</th>
+            </tr>
+          </thead>
+          <tbody id="execlog-body" class="divide-y divide-white/5"></tbody>
+        </table>
+        <div id="execlog-empty" class="text-center text-muted text-xs py-8">No executions yet...</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT SIDEBAR: Signals + Risk -->
+  <aside class="w-[300px] bg-surface border-l border-electric/10 flex flex-col shrink-0 overflow-hidden">
+    <!-- Signal Analysis -->
+    <div class="flex-1 border-b border-white/5 p-4 overflow-y-auto">
+      <div class="flex items-center justify-between mb-4">
+        <span class="font-mono text-[10px] font-bold text-electric uppercase tracking-widest">Signal Analysis</span>
+        <span class="material-symbols-outlined text-electric text-sm">sensors</span>
+      </div>
+      <div id="signals-panel" class="space-y-4">
+        <!-- Populated by JS -->
+      </div>
+      <!-- Weighted Score -->
+      <div class="mt-4 pt-4 border-t border-white/5">
+        <div class="flex justify-between text-[10px] font-mono text-muted uppercase mb-2">
+          <span>Weighted Score</span>
+          <span class="text-xs font-bold" id="weighted-score">0.00</span>
+        </div>
+        <div class="signal-bar">
+          <div class="signal-center"></div>
+          <div id="score-fill" class="signal-fill-pos" style="width:0"></div>
+        </div>
+        <div class="flex justify-between text-[8px] text-muted/50 mt-1 font-mono">
+          <span>-1.0 SHORT</span>
+          <span class="text-amber">|0.20|</span>
+          <span>LONG +1.0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Risk Verdicts -->
+    <div class="flex-1 p-4 overflow-y-auto">
+      <div class="flex items-center justify-between mb-4">
+        <span class="font-mono text-[10px] font-bold text-muted uppercase tracking-widest">Risk Consensus</span>
+        <span class="material-symbols-outlined text-muted text-sm">verified_user</span>
+      </div>
+      <div id="risk-panel" class="space-y-2">
+        <div class="text-center text-muted text-[10px] py-4">Waiting for intents...</div>
+      </div>
+      <div id="quorum-bar" class="mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase hidden"></div>
+    </div>
+  </aside>
+</div>
+
+<!-- ═══ BOTTOM BAR ═══ -->
+<footer class="fixed bottom-0 w-full h-8 z-50 flex items-center px-3 gap-6 overflow-hidden bg-[#050810] border-t border-electric/20 font-mono text-[9px] uppercase">
+  <div class="flex items-center gap-2 text-neon shrink-0">
+    <div class="w-1.5 h-1.5 rounded-full bg-neon pulse"></div>
+    <span class="font-bold" id="sys-status">SYS_INIT</span>
+  </div>
+  <div class="flex-1 overflow-hidden whitespace-nowrap">
+    <div class="ticker-scroll flex gap-10 text-muted" id="ticker-content">
+      <span>Initializing SwarmTrader...</span>
+    </div>
+  </div>
+  <div class="flex items-center gap-4 text-muted shrink-0">
+    <span>Uptime: <span id="uptime" class="text-electric">00:00</span></span>
+    <span id="db-status">DB: --</span>
+  </div>
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// SwarmTrader Dashboard — WebSocket Client
+// ═══════════════════════════════════════════════════════════════════
+
+const S = {
+  prices: {}, signals: {}, agents: {}, intents: [], reports: [],
+  verdicts: {}, dailyPnl: 0, tradeCount: 0, wins: 0, losses: 0,
+  uptime: 0, killSwitch: false, priceHistory: [], startPrice: null,
+};
+
+let ws = null;
+let reconnectTimer = null;
+
+// ── WebSocket ─────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById("conn-dot").classList.remove("bg-amber");
+    document.getElementById("conn-dot").classList.add("bg-neon");
+    document.getElementById("conn-text").textContent = "CONNECTED";
+    document.getElementById("sys-status").textContent = "SYS_READY";
+  };
+
+  ws.onclose = () => {
+    document.getElementById("conn-dot").classList.remove("bg-neon");
+    document.getElementById("conn-dot").classList.add("bg-amber");
+    document.getElementById("conn-text").textContent = "RECONNECTING";
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case "snapshot":
+      handleSnapshot(msg.data);
+      break;
+    case "market":
+      handleMarket(msg.data);
+      break;
+    case "signal":
+      handleSignal(msg.data);
+      break;
+    case "intent":
+      handleIntent(msg.data);
+      break;
+    case "verdict":
+      handleVerdict(msg.data);
+      break;
+    case "report":
+      handleReport(msg.data);
+      break;
+    case "kill_switch":
+      S.killSwitch = msg.data.enabled;
+      updateKillSwitch();
+      break;
+  }
+}
+
+// ── Handlers ──────────────────────────────────────────────────
+function handleSnapshot(d) {
+  S.prices = d.prices || {};
+  S.signals = d.signals || {};
+  S.agents = d.agents || {};
+  S.intents = d.intents || [];
+  S.reports = d.reports || [];
+  S.verdicts = d.verdicts || {};
+  S.dailyPnl = d.state?.daily_pnl || 0;
+  S.tradeCount = d.state?.trade_count || 0;
+  S.wins = d.state?.wins || 0;
+  S.losses = d.state?.losses || 0;
+  S.uptime = d.state?.uptime || 0;
+  S.killSwitch = d.state?.kill_switch || false;
+
+  renderAgents();
+  renderSignals();
+  renderIntents();
+  renderReports();
+  updateStats();
+  updateKillSwitch();
+
+  for (const [sym, price] of Object.entries(S.prices)) {
+    if (!S.startPrice) S.startPrice = price;
+    S.priceHistory.push({ t: Date.now(), p: price });
+  }
+}
+
+function handleMarket(d) {
+  Object.assign(S.prices, d.prices);
+  const sym = Object.keys(d.prices)[0];
+  const price = d.prices[sym];
+  if (!S.startPrice) S.startPrice = price;
+  S.priceHistory.push({ t: Date.now(), p: price });
+  if (S.priceHistory.length > 600) S.priceHistory = S.priceHistory.slice(-600);
+
+  document.getElementById("main-price").textContent = `$${price.toFixed(2)}`;
+  const delta = ((price / S.startPrice - 1) * 100);
+  const deltaEl = document.getElementById("price-delta");
+  deltaEl.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`;
+  deltaEl.className = `text-xs font-mono ${delta >= 0 ? "text-neon" : "text-signal"}`;
+
+  document.getElementById("stat-gas").textContent = `${d.gas_gwei?.toFixed(0) || "--"} gwei`;
+  document.getElementById("pair-label").textContent = `${sym} / USD`;
+
+  // Mark DataScout active
+  if (S.agents["DataScout"]) {
+    S.agents["DataScout"].status = "active";
+    S.agents["DataScout"].last_tick = Date.now() / 1000;
+    S.agents["DataScout"].ticks = (S.agents["DataScout"].ticks || 0) + 1;
+  }
+  renderAgents();
+  drawChart();
+}
+
+function handleSignal(d) {
+  S.signals[d.agent_id] = d;
+  renderSignals();
+}
+
+function handleIntent(d) {
+  S.intents.push(d);
+  if (S.intents.length > 100) S.intents = S.intents.slice(-100);
+  S.verdicts[d.id] = [];
+  renderIntents();
+  document.getElementById("intent-count").textContent = `[${S.intents.length}]`;
+}
+
+function handleVerdict(d) {
+  if (!S.verdicts[d.intent_id]) S.verdicts[d.intent_id] = [];
+  S.verdicts[d.intent_id].push(d);
+  renderIntents();
+  renderRiskPanel(d.intent_id);
+}
+
+function handleReport(d) {
+  S.reports.push(d);
+  if (S.reports.length > 200) S.reports = S.reports.slice(-200);
+  S.tradeCount++;
+  if (d.status === "filled" && d.pnl > 0) S.wins++;
+  else if (d.status === "filled") S.losses++;
+  S.dailyPnl += d.pnl || 0;
+
+  // Mark intent as resolved
+  const idx = S.intents.findIndex(i => i.id === d.intent_id);
+  if (idx >= 0) S.intents[idx]._status = d.status;
+
+  renderReports();
+  renderIntents();
+  updateStats();
+  document.getElementById("exec-count").textContent = `[${S.reports.length}]`;
+}
+
+// ── Rendering ─────────────────────────────────────────────────
+
+function renderAgents() {
+  const el = document.getElementById("agent-tree");
+  const roleIcons = {
+    scout: "search", analyst: "analytics", strategy: "psychology",
+    risk: "security", coordinator: "hub", execution: "bolt", audit: "storage",
+  };
+  const roleColors = {
+    scout: "text-electric", analyst: "text-neon", strategy: "text-white",
+    risk: "text-amber", coordinator: "text-neon", execution: "text-electric", audit: "text-muted",
+  };
+
+  const agents = Object.values(S.agents);
+  let html = "";
+  let activeCount = 0;
+
+  for (const a of agents) {
+    const icon = roleIcons[a.role] || "circle";
+    const color = roleColors[a.role] || "text-muted";
+    const isActive = a.status === "active";
+    if (isActive) activeCount++;
+    const age = a.last_tick ? `${Math.max(0, ((Date.now()/1000) - a.last_tick)).toFixed(0)}s` : "--";
+
+    html += `
+      <div class="flex items-center gap-2 px-2 py-1.5 hover:bg-white/3 group cursor-default
+                  ${isActive ? "bg-neon/5 border-l-2 border-neon" : "border-l-2 border-transparent"}">
+        <div class="w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-neon pulse" : "bg-muted/40"}"></div>
+        <span class="material-symbols-outlined text-xs ${color}">${icon}</span>
+        <span class="${isActive ? color : "text-muted/60"} flex-1 truncate">${a.name}</span>
+        <span class="text-[9px] text-muted/40">${age}</span>
+      </div>`;
+  }
+
+  el.innerHTML = html;
+  document.getElementById("agent-count").textContent = agents.length;
+  document.getElementById("agent-active-count").textContent = activeCount;
+}
+
+function renderSignals() {
+  const panel = document.getElementById("signals-panel");
+  const names = { momentum: "Momentum", mean_rev: "Mean Rev", vol: "Volatility", prism: "PRISM AI" };
+  const colors = { momentum: "neon", mean_rev: "electric", vol: "amber", prism: "purple-400" };
+
+  let html = "";
+  let weightedScore = 0;
+  const weights = { momentum: 0.5, mean_rev: 0.3, prism: 0.2 };
+  let totalW = 0;
+
+  for (const [key, label] of Object.entries(names)) {
+    const sig = S.signals[key];
+    const color = colors[key];
+    if (!sig) {
+      html += `
+        <div class="space-y-1.5 opacity-40">
+          <div class="flex justify-between text-[10px] font-mono uppercase text-muted">
+            <span>${label}</span><span>--</span>
+          </div>
+          <div class="signal-bar"><div class="signal-center"></div></div>
+        </div>`;
+      continue;
+    }
+
+    const str = sig.strength;
+    const conf = sig.confidence;
+    const dir = sig.direction.toUpperCase();
+    const dirColor = dir === "LONG" ? "text-neon" : dir === "SHORT" ? "text-signal" : "text-muted";
+
+    // Weighted score calc
+    if (weights[key]) {
+      weightedScore += weights[key] * str * conf;
+      totalW += weights[key];
+    }
+
+    const barWidth = Math.abs(str) * 50;
+    const fillClass = str >= 0 ? "signal-fill-pos" : "signal-fill-neg";
+    const fillStyle = str >= 0 ? `width:${barWidth}%` : `width:${barWidth}%`;
+
+    html += `
+      <div class="space-y-1.5">
+        <div class="flex justify-between text-[10px] font-mono uppercase text-muted">
+          <span class="text-${color}">${label}</span>
+          <span class="${dirColor}">${dir} ${str >= 0 ? "+" : ""}${str.toFixed(3)}</span>
+        </div>
+        <div class="signal-bar">
+          <div class="signal-center"></div>
+          <div class="${fillClass}" style="${fillStyle}"></div>
+        </div>
+        <div class="flex justify-between text-[8px] text-muted/50">
+          <span>STR: ${str >= 0 ? "+" : ""}${str.toFixed(4)}</span>
+          <span>CONF: ${(conf * 100).toFixed(1)}%</span>
+        </div>
+      </div>`;
+  }
+
+  panel.innerHTML = html;
+
+  // Update weighted score
+  if (totalW > 0) weightedScore /= totalW;
+  const scoreEl = document.getElementById("weighted-score");
+  scoreEl.textContent = (weightedScore >= 0 ? "+" : "") + weightedScore.toFixed(4);
+  scoreEl.className = `text-xs font-bold ${weightedScore > 0.2 ? "text-neon" : weightedScore < -0.2 ? "text-signal" : "text-muted"}`;
+
+  const fillEl = document.getElementById("score-fill");
+  const absW = Math.min(50, Math.abs(weightedScore) * 50);
+  if (weightedScore >= 0) {
+    fillEl.className = "signal-fill-pos";
+    fillEl.style.cssText = `width:${absW}%;left:50%`;
+  } else {
+    fillEl.className = "signal-fill-neg";
+    fillEl.style.cssText = `width:${absW}%;right:50%;left:auto`;
+  }
+}
+
+function renderIntents() {
+  const body = document.getElementById("intents-body");
+  const empty = document.getElementById("intents-empty");
+
+  if (S.intents.length === 0) {
+    body.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+
+  // Show newest first
+  const items = [...S.intents].reverse().slice(0, 30);
+  let html = "";
+
+  for (const intent of items) {
+    const vlist = S.verdicts[intent.id] || [];
+    const approved = vlist.filter(v => v.approve).length;
+    const rejected = vlist.filter(v => !v.approve).length;
+    const total = vlist.length;
+    const resolved = intent._status;
+
+    const ttlLeft = Math.max(0, intent.ttl - Date.now() / 1000);
+    const ttlStr = resolved ? "--" : `${ttlLeft.toFixed(0)}s`;
+    const ttlColor = ttlLeft < 3 && !resolved ? "text-signal" : "text-amber";
+
+    let statusBadge;
+    if (resolved === "filled") {
+      statusBadge = `<span class="px-1.5 py-0.5 bg-neon/15 text-neon text-[9px] border border-neon/20">FILLED</span>`;
+    } else if (resolved === "rejected" || rejected > 0) {
+      statusBadge = `<span class="px-1.5 py-0.5 bg-signal/15 text-signal text-[9px] border border-signal/20">REJECTED</span>`;
+    } else if (resolved === "expired") {
+      statusBadge = `<span class="px-1.5 py-0.5 bg-amber/15 text-amber text-[9px] border border-amber/20">EXPIRED</span>`;
+    } else if (total >= 3 && rejected === 0) {
+      statusBadge = `<span class="px-1.5 py-0.5 bg-neon/15 text-neon text-[9px] border border-neon/20">APPROVED</span>`;
+    } else {
+      statusBadge = `<span class="px-1.5 py-0.5 bg-electric/15 text-electric text-[9px] border border-electric/20">PENDING</span>`;
+    }
+
+    const riskStr = total > 0 ? `${approved}/${total}` : "--";
+    const riskColor = rejected > 0 ? "text-signal" : approved >= 3 ? "text-neon" : "text-amber";
+
+    const dirColor = intent.direction === "LONG" ? "text-neon" : "text-signal";
+
+    html += `
+      <tr class="hover:bg-neon/3 cursor-default" onclick="renderRiskPanel('${intent.id}')">
+        <td class="p-2.5 text-electric">${intent.id}</td>
+        <td class="p-2.5 ${dirColor} font-bold">${intent.direction}</td>
+        <td class="p-2.5">${intent.asset_in} <span class="text-muted">→</span> ${intent.asset_out}</td>
+        <td class="p-2.5">$${intent.amount_in.toFixed(2)}</td>
+        <td class="p-2.5 ${ttlColor}">${ttlStr}</td>
+        <td class="p-2.5 ${riskColor}">${riskStr}</td>
+        <td class="p-2.5">${statusBadge}</td>
+      </tr>`;
+  }
+  body.innerHTML = html;
+}
+
+function renderReports() {
+  const body = document.getElementById("execlog-body");
+  const empty = document.getElementById("execlog-empty");
+
+  if (S.reports.length === 0) {
+    body.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+
+  const items = [...S.reports].reverse().slice(0, 50);
+  let html = "";
+
+  for (const r of items) {
+    const statusColor = r.status === "filled" ? "text-neon" : r.status === "rejected" ? "text-signal" : "text-amber";
+    const pnlColor = (r.pnl || 0) > 0 ? "text-neon" : (r.pnl || 0) < 0 ? "text-signal" : "text-muted";
+    const tx = r.tx_hash ? (r.tx_hash.length > 16 ? r.tx_hash.slice(0, 14) + "..." : r.tx_hash) : "--";
+    const price = r.fill_price ? `$${r.fill_price.toFixed(2)}` : "--";
+    const slip = r.slippage != null ? `${(r.slippage * 100).toFixed(2)}%` : "--";
+    const pnl = r.pnl != null ? `${r.pnl >= 0 ? "+" : ""}${r.pnl.toFixed(4)}` : "--";
+    const timeStr = new Date().toLocaleTimeString("en-US", { hour12: false });
+
+    html += `
+      <tr class="hover:bg-white/3">
+        <td class="p-2.5 text-muted">${timeStr}</td>
+        <td class="p-2.5 text-electric">${r.intent_id}</td>
+        <td class="p-2.5 ${statusColor} font-bold uppercase">${r.status}</td>
+        <td class="p-2.5 text-muted/60">${tx}</td>
+        <td class="p-2.5">${price}</td>
+        <td class="p-2.5 text-muted">${slip}</td>
+        <td class="p-2.5 ${pnlColor} font-bold">${pnl}</td>
+      </tr>`;
+  }
+  body.innerHTML = html;
+}
+
+function renderRiskPanel(intentId) {
+  const panel = document.getElementById("risk-panel");
+  const bar = document.getElementById("quorum-bar");
+  const vlist = S.verdicts[intentId];
+
+  if (!vlist || vlist.length === 0) {
+    panel.innerHTML = `<div class="text-center text-muted text-[10px] py-4">Waiting for verdicts...</div>`;
+    bar.classList.add("hidden");
+    return;
+  }
+
+  const nameMap = { size: "Size Check", allowlist: "Allowlist", drawdown: "Drawdown" };
+  let html = "";
+  let approved = 0;
+
+  for (const v of vlist) {
+    const label = nameMap[v.agent_id] || v.agent_id;
+    const icon = v.approve ? "check_circle" : "cancel";
+    const color = v.approve ? "text-neon" : "text-signal";
+    const borderColor = v.approve ? "border-neon" : "border-signal";
+    if (v.approve) approved++;
+
+    html += `
+      <div class="p-2.5 bg-s-low border-l-2 ${borderColor} flex items-center justify-between">
+        <div>
+          <div class="text-[9px] text-muted uppercase">${v.agent_id}</div>
+          <div class="text-[11px] font-bold">${label}</div>
+          <div class="text-[9px] text-muted/60 mt-0.5">${v.reason}</div>
+        </div>
+        <div class="flex items-center ${color} text-[10px] font-bold">
+          <span class="material-symbols-outlined text-sm mr-1" style="font-variation-settings:'FILL' 1">${icon}</span>
+          ${v.approve ? "APPROVED" : "REJECTED"}
+        </div>
+      </div>`;
+  }
+  panel.innerHTML = html;
+
+  // Quorum bar
+  const rejected = vlist.length - approved;
+  bar.classList.remove("hidden");
+  if (rejected > 0) {
+    bar.className = "mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase bg-signal/10 border border-signal/30 text-signal glow-red";
+    bar.textContent = `VETO — ${rejected} AGENT(S) REJECTED — EXECUTION BLOCKED`;
+  } else if (approved >= 3) {
+    bar.className = "mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase bg-neon/10 border border-neon/30 text-neon glow-green";
+    bar.textContent = `${approved}/${vlist.length} APPROVED — CONSENSUS REACHED`;
+  } else {
+    bar.className = "mt-3 p-2.5 text-center font-mono text-[10px] font-bold uppercase bg-amber/10 border border-amber/30 text-amber";
+    bar.textContent = `${approved}/${vlist.length} — AWAITING QUORUM`;
+  }
+}
+
+function updateStats() {
+  const pnlEl = document.getElementById("daily-pnl");
+  pnlEl.textContent = `${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}`;
+  pnlEl.className = `text-sm font-bold ${S.dailyPnl >= 0 ? "text-neon" : "text-signal"}`;
+
+  document.getElementById("stat-trades").textContent = S.tradeCount;
+  const wr = S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--";
+  document.getElementById("stat-winrate").textContent = `${wr}%`;
+}
+
+function updateKillSwitch() {
+  const btn = document.getElementById("kill-btn");
+  if (S.killSwitch) {
+    btn.className = "px-4 py-1.5 font-mono font-bold text-xs border uppercase transition-all duration-75 bg-red-600 text-white border-red-400 glow-red animate-pulse";
+    btn.textContent = "KILL ACTIVE";
+  } else {
+    btn.className = "px-4 py-1.5 font-mono font-bold text-xs border uppercase transition-all duration-75 bg-red-900/30 text-red-400 border-red-500/40 hover:bg-red-800/50";
+    btn.textContent = "KILL SWITCH";
+  }
+}
+
+function toggleKillSwitch() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const newState = !S.killSwitch;
+    if (newState && !confirm("ACTIVATE KILL SWITCH?\n\nThis will halt ALL trade execution immediately.")) return;
+    ws.send(JSON.stringify({ action: "kill_switch", enabled: newState }));
+  }
+}
+
+// ── Chart ─────────────────────────────────────────────────────
+function drawChart() {
+  const canvas = document.getElementById("price-chart");
+  const ctx = canvas.getContext("2d");
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  const w = rect.width, h = rect.height;
+  const data = S.priceHistory;
+  if (data.length < 2) return;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = "rgba(255,255,255,0.03)";
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 8; i++) {
+    const y = (h / 8) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  for (let i = 0; i < 12; i++) {
+    const x = (w / 12) * i;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+
+  const prices = data.map(d => d.p);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+  const pad = 20;
+
+  // Price labels
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.font = "9px JetBrains Mono";
+  ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) {
+    const price = minP + (range * i / 4);
+    const y = h - pad - ((price - minP) / range) * (h - pad * 2);
+    ctx.fillText(`$${price.toFixed(2)}`, w - 4, y + 3);
+  }
+
+  // Build candlesticks (group every 5 ticks)
+  const candleSize = 5;
+  const candles = [];
+  for (let i = 0; i < prices.length; i += candleSize) {
+    const slice = prices.slice(i, i + candleSize);
+    if (slice.length === 0) continue;
+    candles.push({
+      o: slice[0], c: slice[slice.length - 1],
+      h: Math.max(...slice), l: Math.min(...slice),
+    });
+  }
+
+  if (candles.length === 0) return;
+
+  const cw = Math.max(2, (w - 40) / candles.length - 1);
+
+  candles.forEach((c, i) => {
+    const x = 10 + i * ((w - 40) / candles.length) + cw / 2;
+    const bullish = c.c >= c.o;
+    const color = bullish ? "#00ff88" : "#ff3366";
+    const colorDim = bullish ? "rgba(0,255,136,0.3)" : "rgba(255,51,102,0.3)";
+
+    // Wick
+    const wickTop = h - pad - ((c.h - minP) / range) * (h - pad * 2);
+    const wickBot = h - pad - ((c.l - minP) / range) * (h - pad * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, wickTop);
+    ctx.lineTo(x, wickBot);
+    ctx.stroke();
+
+    // Body
+    const bodyTop = h - pad - ((Math.max(c.o, c.c) - minP) / range) * (h - pad * 2);
+    const bodyBot = h - pad - ((Math.min(c.o, c.c) - minP) / range) * (h - pad * 2);
+    const bodyH = Math.max(1, bodyBot - bodyTop);
+    ctx.fillStyle = colorDim;
+    ctx.fillRect(x - cw / 2, bodyTop, cw, bodyH);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(x - cw / 2, bodyTop, cw, bodyH);
+  });
+
+  // Current price line
+  const lastPrice = prices[prices.length - 1];
+  const priceY = h - pad - ((lastPrice - minP) / range) * (h - pad * 2);
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(0,255,136,0.4)";
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(0, priceY);
+  ctx.lineTo(w, priceY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Current price label
+  ctx.fillStyle = "#00ff88";
+  ctx.font = "bold 10px JetBrains Mono";
+  ctx.textAlign = "left";
+  ctx.fillRect(2, priceY - 8, 70, 16);
+  ctx.fillStyle = "#0a0e17";
+  ctx.fillText(`$${lastPrice.toFixed(2)}`, 6, priceY + 3);
+}
+
+// ── Tabs ──────────────────────────────────────────────────────
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => {
+      b.classList.remove("tab-active");
+      b.classList.add("tab-inactive");
+    });
+    btn.classList.remove("tab-inactive");
+    btn.classList.add("tab-active");
+
+    const tab = btn.dataset.tab;
+    document.getElementById("tab-intents").classList.toggle("hidden", tab !== "intents");
+    document.getElementById("tab-execlog").classList.toggle("hidden", tab !== "execlog");
+  });
+});
+
+// ── Clock & Ticker ────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById("utc-clock").textContent = now.toISOString().slice(11, 19);
+}
+
+function updateTicker() {
+  const el = document.getElementById("ticker-content");
+  const parts = [];
+  for (const [sym, price] of Object.entries(S.prices)) {
+    parts.push(`<span><span class="text-electric">${sym}:</span> $${price.toFixed(2)}</span>`);
+  }
+  parts.push(`<span>Trades: ${S.tradeCount} | Filled: ${S.wins + S.losses} | Win Rate: ${S.wins + S.losses > 0 ? ((S.wins / (S.wins + S.losses)) * 100).toFixed(0) : "--"}%</span>`);
+  parts.push(`<span>PnL: ${S.dailyPnl >= 0 ? "+" : ""}$${S.dailyPnl.toFixed(4)}</span>`);
+  if (S.killSwitch) parts.push(`<span class="text-signal font-bold">KILL SWITCH ACTIVE</span>`);
+  el.innerHTML = parts.join("");
+}
+
+function updateUptime() {
+  const s = Math.floor((Date.now() / 1000) - (S.startTime || Date.now() / 1000));
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  document.getElementById("uptime").textContent =
+    `${String(h).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+S.startTime = Date.now() / 1000;
+
+// ── Init ──────────────────────────────────────────────────────
+connect();
+setInterval(updateClock, 1000);
+setInterval(updateTicker, 3000);
+setInterval(updateUptime, 1000);
+setInterval(() => { renderIntents(); }, 1000); // Update TTL countdowns
+
+// Resize chart
+window.addEventListener("resize", () => {
+  if (S.priceHistory.length > 1) drawChart();
+});
+</script>
+</body>
+</html>

@@ -10,3 +10,4 @@ KILL
 .venv/
 .mypy_cache/
 .pytest_cache/
+.gitnexus
