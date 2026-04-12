@@ -1,6 +1,6 @@
 # SWARM TRADE
 
-**Autonomous AI trading platform** — 122 modules, 120+ cooperative agents, an AI commander that approves every trade, and intelligence absorbed from 450+ ETHGlobal showcase projects.
+**Autonomous AI trading platform** — 122 modules, 120+ cooperative agents, an AI commander that approves every trade.
 
 ```
                     ┌──────────────────────────────────────────────────────────┐
