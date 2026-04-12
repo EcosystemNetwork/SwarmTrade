@@ -11,3 +11,5 @@ KILL
 .mypy_cache/
 .pytest_cache/
 .gitnexus
+*.log
+report_preview.html

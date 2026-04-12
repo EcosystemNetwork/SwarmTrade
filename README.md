@@ -1,123 +1,127 @@
 # SwarmTrader
 
-**Multi-Agent Autonomous Trading Platform** — A swarm of specialized AI agents that collaborate to analyze markets, generate signals, manage risk, and execute trades autonomously via Kraken CLI.
+**Multi-Agent Autonomous Trading Platform** -- A swarm of 9 specialized AI agents that collaborate in real-time to analyze markets, generate signals, manage risk, and execute trades autonomously via Kraken CLI.
 
-Built for the [AI Trading Agents Hackathon](https://lablab.ai) (March 30 – April 12, 2026).
+Built for the [AI Trading Agents Hackathon](https://lablab.ai) (March 30 - April 12, 2026).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        DATA LAYER                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │ KrakenScout  │  │  OrderBook   │  │   Funding    │          │
-│  │ (REST/WS)    │  │   Agent      │  │  Rate Agent  │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-│         │                 │                 │                   │
-│  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐          │
-│  │ SpreadAgent  │  │  PRISM/Strykr│  │ Multi-Asset  │          │
-│  │ (liquidity)  │  │  AI Signals  │  │ (ETH/BTC/SOL)│          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-└─────────┼─────────────────┼─────────────────┼───────────────────┘
-          │    market.snapshot / signal.*      │
-          ▼                 ▼                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      ANALYSIS LAYER                             │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐  │
-│  │ Momentum   │ │ Mean Rev   │ │ Volatility │ │  Regime    │  │
-│  │ (20-window)│ │ (50-window)│ │ (30-window)│ │ (ADX+Hurst)│  │
-│  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘  │
-└────────┼──────────────┼──────────────┼──────────────┼──────────┘
-         │   signal.momentum/mean_rev/vol/regime      │
-         ▼              ▼              ▼              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     STRATEGY LAYER                              │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    STRATEGIST                             │  │
-│  │  • Regime-aware adaptive weight adjustment                │  │
-│  │  • Kelly criterion position sizing                        │  │
-│  │  • Volatility & spread damping                            │  │
-│  │  • PnL-based attribution learning                         │  │
-│  └──────────────────────┬───────────────────────────────────┘  │
-│                         │ intent.new                           │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
-│  │ Size     │ │ Allowlist│ │ Drawdown │  ← Risk Agents         │
-│  │ Check    │ │ Check    │ │ Check    │                        │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘                       │
-│       └─────── Coordinator (quorum) ──────┘                    │
-│                     │ exec.go (all must approve)               │
-└─────────────────────┼──────────────────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    EXECUTION LAYER                              │
-│  ┌────────────┐  ┌────────────────┐  ┌──────────────────────┐ │
-│  │ Simulator  │→ │ KrakenExecutor │→ │ Auditor (SQLite)     │ │
-│  │ (slippage) │  │ (paper/live)   │  │ + PnL tracking       │ │
-│  └────────────┘  └────────────────┘  └──────────────────────┘ │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │              CIRCUIT BREAKER SYSTEM                       │ │
-│  │  • Consecutive loss detection    • Max drawdown halt      │ │
-│  │  • Volatility spike pause        • Dead man's switch      │ │
-│  │  • Position flattener            • Kill switch file       │ │
-│  └──────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+                          SWARMTRADER AGENT PIPELINE
+ ================================================================
+
+ DATA LAYER                    ANALYSIS LAYER
+ +----------------+            +-------------------+
+ | KrakenScout    |  prices    | Momentum (20w)    |  signal.*
+ | (REST / WS)    |----------->| MeanReversion(50w)|----------+
+ +----------------+            | Volatility (30w)  |          |
+ | OrderBookAgent |            | RegimeAgent       |          |
+ | FundingRate    |            | (ADX + Hurst)     |          |
+ | SpreadAgent    |            +-------------------+          |
+ | PRISM AI       |                                           |
+ +----------------+                                           v
+                              STRATEGY LAYER
+                              +------------------------------------+
+                              | STRATEGIST                         |
+                              | - Regime-aware adaptive weights    |
+                              | - Kelly criterion position sizing  |
+                              | - PnL attribution learning         |
+                              +------------------+-----------------+
+                                                 | intent.new
+                              +------------------v-----------------+
+                              | RISK QUORUM (all must approve)     |
+                              | [Size] [Allowlist] [Drawdown] [Rate]|
+                              +------------------+-----------------+
+                                                 | exec.go
+                              EXECUTION LAYER    v
+                              +------------------------------------+
+                              | Simulator -> KrakenExecutor        |
+                              | (slippage)   (paper / live)        |
+                              +------------------------------------+
+                              | CircuitBreaker | PositionFlattener |
+                              | Kill Switch    | Dead Man's Switch |
+                              | Auditor (SQLite append-only)       |
+                              +------------------------------------+
 ```
 
-## Features
+## Key Features
 
 ### 9 Specialized Agents
+
 | Agent | Type | Signal |
 |-------|------|--------|
 | **KrakenScout** | Data | Real-time prices via REST or WebSocket |
-| **MomentumAnalyst** | Signal | 20-period return-based trend detection |
-| **MeanReversionAnalyst** | Signal | 50-period z-score mean reversion |
-| **VolatilityAnalyst** | Signal | 30-period vol as confidence damper |
-| **OrderBookAgent** | Signal | L2 bid/ask imbalance (top-of-book weighted) |
-| **FundingRateAgent** | Signal | Futures funding rate contrarian signals |
-| **SpreadAgent** | Signal | Bid-ask spread liquidity monitoring |
-| **RegimeAgent** | Signal | ADX + Hurst exponent regime classification |
-| **PRISMSignalAgent** | Signal | External AI signals (momentum, breakouts, volume) |
+| **OrderBookAgent** | Data | L2 bid/ask imbalance (top-of-book weighted) |
+| **FundingRateAgent** | Data | Futures funding rate contrarian signals |
+| **SpreadAgent** | Data | Bid-ask spread liquidity monitoring |
+| **MomentumAnalyst** | Analysis | 20-period return-based trend detection |
+| **MeanReversionAnalyst** | Analysis | 50-period z-score mean reversion |
+| **VolatilityAnalyst** | Analysis | 30-period vol as confidence damper |
+| **RegimeAgent** | Analysis | ADX + Hurst exponent regime classification |
+| **PRISMSignalAgent** | External | AI signals (sentiment, volume spikes, breakouts) |
 
 ### Intelligent Strategy
-- **Regime-aware weighting**: Automatically shifts strategy between trending/mean-reverting/volatile profiles
-- **Kelly criterion sizing**: Mathematically optimal position sizing based on win rate and payoff ratio
-- **Adaptive learning**: Weights evolve toward agents whose signals predict profitable trades
-- **Multi-signal fusion**: Combines 6+ signal sources with normalized confidence scoring
 
-### Safety & Risk Management
-- **Multi-agent risk quorum**: ALL risk agents (size, allowlist, drawdown, rate limit) must unanimously approve before any trade executes
-- **Circuit breakers**: Consecutive loss detection, drawdown limits, volatility spike halt with automatic cooldown
-- **Rate limiter**: Max trades per hour to prevent overtrading in choppy markets
-- **Dead man's switch**: Auto-cancels all orders if agent becomes unresponsive
-- **Position flattener**: Emergency close of all positions on circuit breaker trigger
-- **Daily drawdown reset**: Calendar-day automatic reset of loss tracking
-- **Kill switch**: `touch KILL` to instantly halt all trading
+- **Regime-aware weighting**: Detects trending / mean-reverting / volatile markets and shifts agent weights automatically
+- **Kelly criterion sizing**: Mathematically optimal position sizing based on win rate and payoff ratio (half-Kelly for safety)
+- **Adaptive learning**: Weights evolve toward agents whose signals predict profitable trades (+5% boost / -3% penalty)
+- **Multi-signal fusion**: 6 signal sources with normalized confidence scoring and vol/spread damping
+
+### 8 Layers of Risk Management
+
+1. **Multi-agent risk quorum** -- ALL 4 risk agents (size, allowlist, drawdown, rate limit) must unanimously approve before any trade executes
+2. **Circuit breakers** -- Consecutive loss detection (5), drawdown limits, volatility spike halt with automatic cooldown
+3. **Rate limiter** -- Max trades per hour to prevent overtrading in choppy markets
+4. **Daily drawdown limit** -- Configurable max daily loss with midnight UTC auto-reset
+5. **Kill switch** -- `touch KILL` to instantly halt all trading, or one-click from web dashboard
+6. **Dead man's switch** -- Auto-cancels all orders via Kraken CLI if agent becomes unresponsive
+7. **Position flattener** -- Emergency close of all positions on circuit breaker trigger
+8. **Full audit trail** -- Every intent, verdict, and execution logged to SQLite with per-agent PnL attribution
+
+### Performance Reporting
+
+- **Sharpe ratio**, **Sortino ratio**, **Calmar ratio**
+- **Equity curve** with drawdown visualization
+- **PnL distribution** histogram
+- **Per-trade log** with agent attribution
+- **HTML export**: `python -m swarmtrader.report --html report.html`
+- **JSON API**: `GET /api/report` from web dashboard
 
 ### Web Dashboard
-Real-time monitoring dashboard served via aiohttp with WebSocket streaming:
-- Live agent activity, signal strength, and trade flow
-- Interactive kill switch toggle
-- Trade history query from SQLite audit log
-- Start with `--web` flag
 
-### Multi-Asset Trading
-Trade ETH, BTC, SOL, and 650+ pairs simultaneously with independent signal generation per asset.
+Real-time command center served via aiohttp with WebSocket streaming:
+- Live agent activity panel with status indicators
+- Signal strength bars with weighted score display
+- Risk consensus panel with per-intent verdict tracking
+- Candlestick price chart (canvas-rendered)
+- Active intents with TTL countdown + execution log
+- One-click kill switch
+- Performance report at `/report`
+- Presentation slides at `/slides`
 
 ### Backtesting Engine
-Replay historical Kraken OHLC data through the full agent pipeline with simulated clock, computing Sharpe ratio, max drawdown, win rate, and per-trade PnL.
+
+Replay historical Kraken OHLC data through the full agent pipeline:
+```bash
+python -m swarmtrader.backtest --pair ETHUSD --interval 5 --base-size 500
+```
+Computes Sharpe ratio, max drawdown, win rate, and per-trade PnL with simulated clock for accurate cooldown/TTL behavior.
+
+### Multi-Asset Trading
+
+Trade ETH, BTC, SOL, XRP, ADA, DOT, LINK, AVAX, and 650+ pairs simultaneously with independent signal generation per asset.
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Install dependencies (just 2 packages!)
 pip install aiohttp python-dotenv
 
 # Install Kraken CLI
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh
 
-# Set up credentials
+# Set up credentials (optional for paper mode)
 cp .env.example .env
 # Edit .env with your Kraken API key and private key
 
@@ -127,17 +131,20 @@ kraken paper init --balance 10000
 # Run in mock mode (no keys needed)
 python -m swarmtrader.main mock 60
 
-# Run with real Kraken data + paper trading
-python -m swarmtrader.main paper 300 --pairs ETHUSD
+# Run with real Kraken data + paper trading + web dashboard
+python -m swarmtrader.main paper 300 --pairs ETHUSD --web
 
-# Multi-asset with dashboard
+# Multi-asset with terminal dashboard
 python -m swarmtrader.main paper 600 --pairs ETHUSD BTCUSD SOLUSD --dashboard
 
 # Run backtester
 python -m swarmtrader.backtest --pair ETHUSD --interval 5 --base-size 500
 
+# Generate performance report
+python -m swarmtrader.report --db swarm.db --html report.html
+
 # Run tests
-python -m tests.test_smoke
+python -m pytest tests/
 ```
 
 ## Modes
@@ -145,8 +152,8 @@ python -m tests.test_smoke
 | Mode | Data Source | Execution | Keys Required |
 |------|------------|-----------|---------------|
 | `mock` | Simulated (GBM) | Dry-run | None |
-| `paper` | Real Kraken | Paper trades | None |
-| `live` | Real Kraken | Real orders | API key + secret |
+| `paper` | Real Kraken | Paper trades via Kraken CLI | None |
+| `live` | Real Kraken | Real market orders | API key + secret |
 
 ## CLI Options
 
@@ -166,40 +173,46 @@ python -m swarmtrader.main [mock|paper|live] [duration_seconds]
 
 ## Technology
 
-- **Kraken CLI** — Zero-dependency Rust binary for market data and trade execution
-- **PRISM/Strykr API** — AI-powered trading signals and risk metrics
-- **Python asyncio** — Event-driven pub/sub architecture
-- **SQLite** — Append-only audit trail with PnL tracking
+| Component | Technology |
+|-----------|-----------|
+| **Runtime** | Python 3.11+ asyncio |
+| **Market Data** | Kraken CLI (zero-dep Rust binary) |
+| **AI Signals** | PRISM / Strykr API |
+| **Web Dashboard** | aiohttp + WebSocket + Canvas |
+| **Audit Trail** | SQLite (append-only) |
+| **Dependencies** | Just 2: `aiohttp` + `python-dotenv` |
 
 ## Project Structure
 
 ```
 swarmtrader/
-├── core.py              # Data types + async pub/sub bus
-├── agents.py            # Core analysts (momentum, mean reversion, volatility)
-├── agents_advanced.py   # Order book, funding rate, spread, regime detection
-├── strategy.py          # Strategist + risk agents + coordinator
-├── execution.py         # Simulator + executor + auditor
-├── kraken.py            # Kraken CLI integration (scout + executor)
-├── signals.py           # PRISM/Strykr AI signal integration
-├── safety.py            # Circuit breakers + dead man's switch
-├── risk.py              # Rate limiter, position tracker, daily drawdown
-├── dashboard.py         # Live terminal dashboard
-├── web.py               # Web dashboard (aiohttp + WebSocket)
-├── backtest.py          # Historical backtesting engine
-└── main.py              # Entry point with mode selection
+  core.py              # Data types + async pub/sub bus
+  agents.py            # Core analysts (momentum, mean reversion, volatility)
+  agents_advanced.py   # Order book, funding rate, spread, regime detection
+  strategy.py          # Strategist + risk agents + coordinator
+  execution.py         # Simulator + executor + auditor
+  kraken.py            # Kraken CLI integration (scout + executor)
+  signals.py           # PRISM/Strykr AI signal integration
+  safety.py            # Circuit breakers + dead man's switch
+  risk.py              # Rate limiter, position tracker, daily drawdown
+  report.py            # Performance report generator (Sharpe, Sortino, equity curve)
+  backtest.py          # Historical backtesting engine
+  dashboard.py         # Live terminal dashboard
+  web.py               # Web dashboard (aiohttp + WebSocket)
+  static/
+    index.html         # Command center UI
+    slides.html        # Hackathon presentation deck
+tests/
+  test_smoke.py        # Integration tests
 ```
 
-## Going Live Checklist
+## Hackathon Prize Targets
 
-1. [ ] Generate Kraken API keys with trade permissions
-2. [ ] Store keys in `.env` (never commit!)
-3. [ ] Run paper mode for 24+ hours, verify PnL tracking
-4. [ ] Review circuit breaker thresholds
-5. [ ] Set `--max-drawdown` to your risk tolerance
-6. [ ] Switch to `live` mode
-7. [ ] Monitor with `--dashboard`
-8. [ ] Keep `touch KILL` ready as emergency stop
+| Prize | Our Edge |
+|-------|---------|
+| **Best Risk-Adjusted Return ($5k)** | 8-layer risk management, Kelly criterion sizing, regime-aware adaptive strategy |
+| **Best Compliance & Risk Guardrails** | Multi-agent quorum, circuit breakers, dead man's switch, full audit trail, position flattener |
+| **Kraken Challenge** | Deep Kraken CLI integration: REST + WS data, paper/live execution, orderbook depth, funding rates, emergency cancel-all |
 
 ## License
 

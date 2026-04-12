@@ -8,6 +8,19 @@ from .agents_advanced import OrderBookAgent, FundingRateAgent, SpreadAgent, Regi
 from .safety import CircuitBreaker, PositionFlattener
 from .risk import RateLimiter, DailyDrawdownTracker, rate_limit_check
 from .dashboard import Dashboard
+from .strategies import (
+    RSIAgent, MACDAgent, BollingerAgent, VWAPAgent, IchimokuAgent,
+    LiquidationCascadeAgent, ATRTrailingStopAgent, depth_liquidity_check,
+)
+from .news import NewsAgent
+from .multitf import MultiTimeframeMomentum
+from .correlation import CorrelationAgent
+from .positions import PositionManager, max_positions_check
+from .twap import TWAPExecutor
+from .confluence import ConfluenceDetector
+from .whale import WhaleAgent
+from .wallet import WalletManager, funds_check, allocation_check
+from .automation import AgentSupervisor, Scheduler, build_scheduler, HeartbeatMixin
 
 __all__ = [
     "Bus", "MarketSnapshot", "Signal", "TradeIntent", "RiskVerdict", "ExecutionReport",
@@ -21,4 +34,15 @@ __all__ = [
     "CircuitBreaker", "PositionFlattener",
     "RateLimiter", "DailyDrawdownTracker", "rate_limit_check",
     "Dashboard",
+    # TA strategy agents
+    "RSIAgent", "MACDAgent", "BollingerAgent", "VWAPAgent", "IchimokuAgent",
+    "LiquidationCascadeAgent", "ATRTrailingStopAgent", "depth_liquidity_check",
+    "NewsAgent",
+    "MultiTimeframeMomentum", "CorrelationAgent",
+    "PositionManager", "max_positions_check",
+    "TWAPExecutor", "ConfluenceDetector", "WhaleAgent",
+    # Wallet management
+    "WalletManager", "funds_check", "allocation_check",
+    # Automation
+    "AgentSupervisor", "Scheduler", "build_scheduler", "HeartbeatMixin",
 ]

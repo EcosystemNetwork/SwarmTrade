@@ -2,7 +2,10 @@
 from __future__ import annotations
 import asyncio, json, logging, os, time
 from pathlib import Path
-from .core import Bus, MarketSnapshot, TradeIntent, ExecutionReport
+from .core import (
+    Bus, MarketSnapshot, TradeIntent, ExecutionReport,
+    PortfolioTracker, QUOTE_ASSETS,
+)
 
 log = logging.getLogger("swarm.kraken")
 
@@ -161,70 +164,88 @@ class KrakenWSScout:
 # ---------------------------------------------------------------------------
 # Trade Executor — paper or live via Kraken CLI
 # ---------------------------------------------------------------------------
+def _is_buy(intent: TradeIntent) -> bool:
+    return intent.asset_in.upper() in QUOTE_ASSETS
+
+
+def _base_asset(intent: TradeIntent) -> str:
+    if intent.asset_in.upper() in QUOTE_ASSETS:
+        return intent.asset_out
+    return intent.asset_in
+
+
 class KrakenExecutor:
     """Executes trades via Kraken CLI (paper or live mode).
-    Tracks positions to avoid selling assets we don't hold."""
+    Uses PortfolioTracker for real cost-basis accounting and position checks."""
 
-    def __init__(self, bus: Bus, kill_switch: Path, paper: bool = True):
+    def __init__(self, bus: Bus, kill_switch: Path, paper: bool = True,
+                 portfolio: PortfolioTracker | None = None):
         self.bus = bus
         self.kill_switch = kill_switch
         self.paper = paper
-        self.positions: dict[str, float] = {}  # asset -> quantity held
+        self.portfolio = portfolio or PortfolioTracker()
         bus.subscribe("exec.simulated", self._on_sim)
+        bus.subscribe("market.snapshot", self._on_snap)
+
+    async def _on_snap(self, snap: MarketSnapshot):
+        self.portfolio.update_prices(snap.prices)
 
     async def _on_sim(self, payload):
         intent, eff_price = payload
         if self.kill_switch.exists():
-            await self._report(intent, "rejected", None, None, None, "kill_switch")
+            await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0, "kill_switch")
             return
         if eff_price is None:
-            await self._report(intent, "rejected", None, None, None, "no_quote")
+            await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0, "no_quote")
             return
         if time.time() > intent.ttl:
-            await self._report(intent, "expired", None, None, None, "ttl")
+            await self._report(intent, "expired", None, None, 0.0, 0.0, 0.0, "ttl")
             return
 
-        # Check if we can sell (need holdings)
-        going_long = intent.asset_out in ("ETH", "BTC", "SOL", "XRP", "ADA", "DOT", "LINK", "AVAX")
-        if not going_long:
-            held = self.positions.get(intent.asset_in, 0.0)
-            if held < 0.001:
-                # Can't sell what we don't have — skip
-                await self._report(intent, "rejected", None, None, None, "no_position")
+        buying = _is_buy(intent)
+        asset = _base_asset(intent)
+
+        # Check we have something to sell
+        if not buying:
+            pos = self.portfolio.get(asset)
+            if pos.quantity < 1e-3:
+                await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0, "no_position")
                 return
 
         try:
             result = await self._submit(intent, eff_price)
-            # Track position
-            if going_long:
-                volume = intent.amount_in / eff_price
-                self.positions[intent.asset_out] = self.positions.get(intent.asset_out, 0.0) + volume
+
+            if buying:
+                quantity = intent.amount_in / eff_price
+                fee, pnl = self.portfolio.buy(asset, quantity, eff_price)
+                side = "buy"
             else:
-                volume = intent.amount_in
-                self.positions[intent.asset_in] = max(0, self.positions.get(intent.asset_in, 0.0) - volume)
+                pos = self.portfolio.get(asset)
+                quantity = min(intent.amount_in, pos.quantity)
+                fee, pnl = self.portfolio.sell(asset, quantity, eff_price)
+                side = "sell"
+
+            tx_hash = result.get("txid", result.get("order_id", "paper"))
+            slippage = abs(eff_price - self.portfolio.last_prices.get(asset, eff_price)) / eff_price
 
             await self._report(
-                intent, "filled",
-                result.get("txid", result.get("order_id", "paper")),
-                eff_price,
-                0.001,
-                f"{'paper' if self.paper else 'live'}"
+                intent, "filled", tx_hash, eff_price, slippage, pnl, fee,
+                f"{'paper' if self.paper else 'live'} {side} {quantity:.6f} {asset}",
+                side, quantity, asset,
             )
         except Exception as e:
             log.error("Execution failed: %s", e)
-            await self._report(intent, "error", None, None, None, str(e))
+            await self._report(intent, "error", None, None, 0.0, 0.0, 0.0, str(e))
 
     async def _submit(self, intent: TradeIntent, eff_price: float) -> dict:
         """Submit order via Kraken CLI."""
-        going_long = intent.asset_out in ("ETH", "BTC", "SOL", "XRP", "ADA", "DOT", "LINK", "AVAX")
+        buying = _is_buy(intent)
         pair = self._to_kraken_pair(intent.asset_in, intent.asset_out)
 
-        if going_long:
-            # Buying: volume is how much of the base asset to buy
+        if buying:
             volume = intent.amount_in / eff_price
             side = "buy"
         else:
-            # Selling: volume is how much of the base asset to sell
             volume = intent.amount_in
             side = "sell"
 
@@ -244,22 +265,25 @@ class KrakenExecutor:
         """Convert our internal asset names to Kraken pair format."""
         renames = {"BTC": "XBT"}
         assets = {asset_in, asset_out}
-        # Figure out which is the quote (USD/USDC/USDT)
         quotes = {"USD", "USDC", "USDT"}
         base_assets = assets - quotes
         quote_assets = assets & quotes
         if not base_assets or not quote_assets:
-            # Fallback
             return f"{asset_in}{asset_out}"
         base = renames.get(list(base_assets)[0], list(base_assets)[0])
         quote = list(quote_assets)[0]
         return f"{base}{quote}"
 
-    async def _report(self, intent, status, tx, price, slip, note):
-        edge = sum(s.strength * s.confidence for s in intent.supporting) / max(1, len(intent.supporting))
-        sign = 1 if intent.asset_out in ("ETH", "BTC", "SOL") else -1
-        pnl = sign * edge * intent.amount_in * 0.001
-        rep = ExecutionReport(intent.id, status, tx, price, slip, pnl, note)
+    async def _report(self, intent, status, tx, price, slip, pnl, fee, note,
+                      side="", quantity=0.0, asset=""):
+        rep = ExecutionReport(
+            intent.id, status, tx, price, slip, pnl, note,
+            side=side, quantity=quantity, asset=asset or _base_asset(intent),
+            fee_usd=fee,
+        )
         await self.bus.publish("exec.report", rep)
-        contribs = {s.agent_id: s.strength * s.confidence * sign for s in intent.supporting}
-        await self.bus.publish("audit.attribution", {"pnl": pnl, "contribs": contribs})
+        if status == "filled" and intent.supporting:
+            sign = 1 if _is_buy(intent) else -1
+            contribs = {s.agent_id: s.strength * s.confidence * sign
+                        for s in intent.supporting}
+            await self.bus.publish("audit.attribution", {"pnl": pnl, "contribs": contribs})

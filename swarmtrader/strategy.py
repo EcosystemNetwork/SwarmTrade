@@ -1,7 +1,7 @@
 """Strategist + risk + consensus coordinator with regime-aware adaptive weighting."""
 from __future__ import annotations
-import time, logging
-from .core import Bus, Signal, TradeIntent, RiskVerdict
+import asyncio, time, logging
+from .core import Bus, Signal, TradeIntent, RiskVerdict, PortfolioTracker
 
 log = logging.getLogger("swarm")
 
@@ -20,12 +20,27 @@ class Strategist:
 
     # Default weights for all signal sources
     DEFAULT_WEIGHTS = {
-        "momentum": 0.30,
-        "mean_rev": 0.20,
-        "prism": 0.15,
-        "orderbook": 0.15,
-        "funding": 0.10,
-        "prism_breakout": 0.10,
+        "momentum": 0.18,
+        "mean_rev": 0.12,
+        "prism": 0.08,
+        "orderbook": 0.08,
+        "funding": 0.06,
+        "prism_breakout": 0.06,
+        # TA strategy agents
+        "rsi": 0.10,
+        "macd": 0.08,
+        "bollinger": 0.07,
+        "vwap": 0.05,
+        "ichimoku": 0.05,
+        "mtf": 0.04,
+        "correlation": 0.03,
+        "news": 0.06,
+        "whale": 0.04,
+        "confluence": 0.12,
+        "position": 0.03,
+        # Research-driven agents
+        "liquidation": 0.08,
+        "atr_stop": 0.06,
     }
 
     # Regime-specific weight overrides (applied as multipliers)
@@ -33,23 +48,37 @@ class Strategist:
         "trending": {
             "momentum": 2.0, "mean_rev": 0.3, "prism": 1.0,
             "orderbook": 1.2, "funding": 0.8, "prism_breakout": 1.5,
+            "rsi": 0.5, "macd": 2.0, "bollinger": 0.6,
+            "vwap": 0.5, "ichimoku": 1.8, "mtf": 2.0, "correlation": 1.0,
+            "news": 0.8, "whale": 1.0, "confluence": 1.5, "position": 1.0,
+            "liquidation": 0.3, "atr_stop": 1.5,
         },
         "mean_reverting": {
             "momentum": 0.3, "mean_rev": 2.5, "prism": 1.0,
             "orderbook": 1.5, "funding": 1.2, "prism_breakout": 0.5,
+            "rsi": 2.0, "macd": 0.5, "bollinger": 2.0,
+            "vwap": 2.0, "ichimoku": 0.5, "mtf": 0.3, "correlation": 1.5,
+            "news": 1.2, "whale": 1.5, "confluence": 1.5, "position": 1.2,
+            "liquidation": 2.5, "atr_stop": 1.0,
         },
         "volatile": {
             "momentum": 0.5, "mean_rev": 0.5, "prism": 1.5,
             "orderbook": 0.8, "funding": 1.5, "prism_breakout": 0.3,
+            "rsi": 1.2, "macd": 0.6, "bollinger": 1.5,
+            "vwap": 1.0, "ichimoku": 0.4, "mtf": 0.3, "correlation": 0.5,
+            "news": 1.5, "whale": 2.0, "confluence": 1.0, "position": 1.5,
+            "liquidation": 2.0, "atr_stop": 1.8,
         },
     }
 
     def __init__(self, bus: Bus, base_size: float = 500.0, ttl_s: float = 8.0,
-                 cooldown_s: float = 2.0):
+                 cooldown_s: float = 2.0,
+                 portfolio: "PortfolioTracker | None" = None):
         self.bus = bus
         self.base_size = base_size
         self.ttl_s = ttl_s
         self.cooldown_s = cooldown_s
+        self.portfolio = portfolio
         self.weights = dict(self.DEFAULT_WEIGHTS)
         self.latest: dict[str, Signal] = {}
         self.vol_damp: float = 1.0
@@ -65,7 +94,13 @@ class Strategist:
         # Subscribe to all signal channels
         for topic in ("signal.momentum", "signal.mean_rev", "signal.prism",
                        "signal.orderbook", "signal.funding",
-                       "signal.prism_volume", "signal.prism_breakout"):
+                       "signal.prism_volume", "signal.prism_breakout",
+                       "signal.rsi", "signal.macd", "signal.bollinger",
+                       "signal.vwap", "signal.ichimoku",
+                       "signal.mtf", "signal.correlation",
+                       "signal.news", "signal.whale",
+                       "signal.confluence", "signal.position",
+                       "signal.liquidation", "signal.atr_stop"):
             bus.subscribe(topic, self._on_signal)
         bus.subscribe("signal.vol", self._on_vol)
         bus.subscribe("signal.spread", self._on_spread)
@@ -125,9 +160,23 @@ class Strategist:
         going_long = score > 0
         size = self._kelly_size(abs(score))
 
+        # Spot trading: can only sell what we hold
+        if not going_long and self.portfolio:
+            # Determine the asset we'd be selling from the latest signal
+            asset = next((s.asset for s in self.latest.values()), "ETH")
+            held = self.portfolio.get(asset).quantity
+            if held < 1e-9:
+                return  # no position to sell — skip
+            # Cap sell size to what we hold (in asset units * price)
+            price = self.portfolio.last_prices.get(asset, 0)
+            if price > 0:
+                size = min(size, held * price * 0.95)  # sell up to 95% of position
+
+        # Determine assets from the signal context
+        asset = next((s.asset for s in self.latest.values()), "ETH")
         intent = TradeIntent.new(
-            asset_in="USDC" if going_long else "ETH",
-            asset_out="ETH" if going_long else "USDC",
+            asset_in="USDC" if going_long else asset,
+            asset_out=asset if going_long else "USDC",
             amount_in=size,
             min_out=0.0,
             ttl=now + self.ttl_s,
@@ -156,11 +205,11 @@ class Strategist:
         payoff_ratio = avg_win / avg_loss
         # Kelly: f* = (p * b - q) / b where p=win_rate, q=1-p, b=payoff_ratio
         kelly_f = (win_rate * payoff_ratio - (1 - win_rate)) / payoff_ratio
-        # Use half-Kelly for safety
-        kelly_f = max(0.05, min(0.5, kelly_f * 0.5))
+        # Use quarter-Kelly for crypto safety (fat-tailed distributions)
+        kelly_f = max(0.02, min(0.25, kelly_f * 0.25))
 
-        size = self.base_size * kelly_f * min(1.0, score) / 0.25  # normalize
-        return max(10.0, min(self.base_size * 2, size))  # clamp
+        size = self.base_size * kelly_f * min(1.0, score) / 0.125  # normalize
+        return max(10.0, min(self.base_size * 1.5, size))  # clamp tighter
 
     async def _on_attribution(self, payload: dict):
         """Adaptive weighting: nudge weights toward profitable agents."""
@@ -222,25 +271,57 @@ def drawdown_check(state: dict, max_dd: float):
 
 # ---------- Coordinator ----------
 class Coordinator:
-    def __init__(self, bus: Bus, n_risk_agents: int):
+    """Collects risk verdicts and forwards approved intents to execution.
+
+    - Unanimous consensus: ALL risk agents must approve
+    - Verdict timeout: auto-rejects if not all verdicts arrive within timeout_s
+    - Stale intent cleanup: purges old entries to prevent memory leaks
+    """
+
+    def __init__(self, bus: Bus, n_risk_agents: int, timeout_s: float = 5.0):
         self.bus = bus
         self.n = n_risk_agents
+        self.timeout_s = timeout_s
         self.intents: dict[str, TradeIntent] = {}
         self.verdicts: dict[str, list[RiskVerdict]] = {}
+        self._timers: dict[str, asyncio.Task] = {}
         bus.subscribe("intent.new", self._on_intent)
         bus.subscribe("risk.verdict", self._on_verdict)
 
     async def _on_intent(self, intent: TradeIntent):
         self.intents[intent.id] = intent
         self.verdicts[intent.id] = []
+        self._timers[intent.id] = asyncio.create_task(self._timeout(intent.id))
+
+    async def _timeout(self, intent_id: str):
+        """Auto-reject if not all verdicts arrive in time."""
+        await asyncio.sleep(self.timeout_s)
+        if intent_id in self.verdicts and len(self.verdicts[intent_id]) < self.n:
+            got = len(self.verdicts.get(intent_id, []))
+            log.warning("TIMEOUT %s got %d/%d verdicts — auto-rejecting",
+                        intent_id, got, self.n)
+            self._cleanup(intent_id)
 
     async def _on_verdict(self, v: RiskVerdict):
         bucket = self.verdicts.setdefault(v.intent_id, [])
         bucket.append(v)
         if len(bucket) < self.n:
             return
+        # Cancel timeout timer
+        timer = self._timers.pop(v.intent_id, None)
+        if timer and not timer.done():
+            timer.cancel()
         if all(x.approve for x in bucket):
             await self.bus.publish("exec.go", self.intents[v.intent_id])
         else:
             vetoes = "; ".join(f"{x.agent_id}:{x.reason}" for x in bucket if not x.approve)
             log.info("VETO %s %s", v.intent_id, vetoes)
+        self._cleanup(v.intent_id)
+
+    def _cleanup(self, intent_id: str):
+        """Remove stale intent/verdict data."""
+        self.intents.pop(intent_id, None)
+        self.verdicts.pop(intent_id, None)
+        timer = self._timers.pop(intent_id, None)
+        if timer and not timer.done():
+            timer.cancel()

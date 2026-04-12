@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SwarmTrader // Hackathon Presentation</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        void: "#0a0e17", surface: "#0f131c", "s-low": "#181b25",
+        neon: "#00ff88", electric: "#00d4ff", amber: "#ffaa00", signal: "#ff3366",
+      },
+      fontFamily: {
+        mono: ["JetBrains Mono", "monospace"],
+        headline: ["Space Grotesk", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+      },
+    },
+  },
+}
+</script>
+<style>
+  body { background: #0a0e17; color: #dfe2ef; overflow: hidden; }
+  .slide { display: none; min-height: 100vh; }
+  .slide.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-in { animation: fadeIn 0.6s ease-out forwards; }
+  .glow-green { text-shadow: 0 0 20px rgba(0,255,136,0.4); }
+  .glow-blue { text-shadow: 0 0 20px rgba(0,212,255,0.4); }
+  .scan-lines {
+    background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.12) 50%);
+    background-size: 100% 2px; pointer-events: none;
+  }
+  .node { width: 10px; height: 10px; border-radius: 50%; position: absolute; }
+  @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(0,255,136,0.4); } 70% { box-shadow: 0 0 0 10px rgba(0,255,136,0); } 100% { box-shadow: 0 0 0 0 rgba(0,255,136,0); } }
+  .pulse-ring { animation: pulse-ring 2s infinite; }
+</style>
+</head>
+<body class="font-body select-none cursor-default">
+<div class="fixed inset-0 scan-lines z-50 opacity-15"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 1: TITLE
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide active flex-col items-center justify-center text-center p-12" id="s1">
+  <div class="animate-in">
+    <div class="flex items-center justify-center gap-4 mb-8">
+      <span class="material-symbols-outlined text-neon text-6xl" style="font-variation-settings:'FILL' 1">hub</span>
+    </div>
+    <h1 class="text-7xl font-mono font-black text-neon glow-green tracking-tight mb-4">SWARMTRADER</h1>
+    <p class="text-2xl font-headline text-gray-300 mb-2">Multi-Agent Autonomous Trading Platform</p>
+    <p class="text-lg text-electric font-mono mt-6">9 specialized AI agents collaborating in real-time</p>
+    <p class="text-base text-gray-500 font-mono mt-2">Powered by Kraken CLI + PRISM AI Signals</p>
+    <div class="mt-12 flex items-center justify-center gap-8 text-sm text-gray-500 font-mono">
+      <span>AI Trading Agents Hackathon 2026</span>
+      <span class="text-neon">|</span>
+      <span>lablab.ai</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 2: THE PROBLEM
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s2">
+  <div class="max-w-5xl w-full animate-in">
+    <h2 class="text-4xl font-headline font-bold text-signal mb-12 text-center">The Problem</h2>
+    <div class="grid grid-cols-3 gap-8">
+      <div class="bg-surface border border-signal/20 rounded-lg p-8 text-center">
+        <span class="material-symbols-outlined text-signal text-4xl mb-4" style="font-variation-settings:'FILL' 1">psychology</span>
+        <h3 class="text-xl font-bold mb-3 text-white">Single-Agent Bias</h3>
+        <p class="text-gray-400">One model, one perspective. Misses market regime shifts, orderbook imbalances, and cross-signal confirmation.</p>
+      </div>
+      <div class="bg-surface border border-signal/20 rounded-lg p-8 text-center">
+        <span class="material-symbols-outlined text-signal text-4xl mb-4" style="font-variation-settings:'FILL' 1">dangerous</span>
+        <h3 class="text-xl font-bold mb-3 text-white">No Risk Guardrails</h3>
+        <p class="text-gray-400">Most bots lack circuit breakers, drawdown limits, or rate limiting. One bad trade cascades into disaster.</p>
+      </div>
+      <div class="bg-surface border border-signal/20 rounded-lg p-8 text-center">
+        <span class="material-symbols-outlined text-signal text-4xl mb-4" style="font-variation-settings:'FILL' 1">visibility_off</span>
+        <h3 class="text-xl font-bold mb-3 text-white">Black Box Execution</h3>
+        <p class="text-gray-400">No audit trail, no attribution, no way to know which signal caused which trade or why.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 3: THE SOLUTION — SWARM ARCHITECTURE
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s3">
+  <div class="max-w-6xl w-full animate-in">
+    <h2 class="text-4xl font-headline font-bold text-neon mb-10 text-center glow-green">The Swarm</h2>
+    <div class="grid grid-cols-4 gap-4 mb-8">
+      <!-- Data Layer -->
+      <div class="col-span-4 mb-2">
+        <div class="text-[10px] font-mono text-electric uppercase tracking-widest mb-3">Data Layer</div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-s-low border border-electric/20 rounded p-4">
+            <div class="text-electric font-mono font-bold text-sm">KrakenScout</div>
+            <div class="text-gray-500 text-xs mt-1">REST + WebSocket real-time prices</div>
+          </div>
+          <div class="bg-s-low border border-electric/20 rounded p-4">
+            <div class="text-electric font-mono font-bold text-sm">OrderBookAgent</div>
+            <div class="text-gray-500 text-xs mt-1">L2 bid/ask imbalance analysis</div>
+          </div>
+          <div class="bg-s-low border border-electric/20 rounded p-4">
+            <div class="text-electric font-mono font-bold text-sm">FundingRateAgent</div>
+            <div class="text-gray-500 text-xs mt-1">Futures funding contrarian signals</div>
+          </div>
+          <div class="bg-s-low border border-electric/20 rounded p-4">
+            <div class="text-electric font-mono font-bold text-sm">PRISM AI</div>
+            <div class="text-gray-500 text-xs mt-1">External AI sentiment + breakouts</div>
+          </div>
+        </div>
+      </div>
+      <!-- Analysis Layer -->
+      <div class="col-span-4 mb-2">
+        <div class="text-[10px] font-mono text-neon uppercase tracking-widest mb-3">Analysis Layer</div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-s-low border border-neon/20 rounded p-4">
+            <div class="text-neon font-mono font-bold text-sm">Momentum</div>
+            <div class="text-gray-500 text-xs mt-1">20-window trend detection</div>
+          </div>
+          <div class="bg-s-low border border-neon/20 rounded p-4">
+            <div class="text-neon font-mono font-bold text-sm">MeanReversion</div>
+            <div class="text-gray-500 text-xs mt-1">50-window z-score analysis</div>
+          </div>
+          <div class="bg-s-low border border-neon/20 rounded p-4">
+            <div class="text-neon font-mono font-bold text-sm">Volatility</div>
+            <div class="text-gray-500 text-xs mt-1">Confidence dampening</div>
+          </div>
+          <div class="bg-s-low border border-neon/20 rounded p-4">
+            <div class="text-neon font-mono font-bold text-sm">RegimeAgent</div>
+            <div class="text-gray-500 text-xs mt-1">ADX + Hurst exponent classification</div>
+          </div>
+        </div>
+      </div>
+      <!-- Strategy Layer -->
+      <div class="col-span-4 mb-2">
+        <div class="text-[10px] font-mono text-white uppercase tracking-widest mb-3">Strategy Layer</div>
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2 bg-s-low border border-white/20 rounded p-4">
+            <div class="text-white font-mono font-bold text-sm">Strategist</div>
+            <div class="text-gray-500 text-xs mt-1">Regime-aware weighted signal fusion + Kelly criterion sizing + adaptive PnL attribution learning</div>
+          </div>
+          <div class="bg-s-low border border-amber/20 rounded p-4">
+            <div class="text-amber font-mono font-bold text-sm">Risk Quorum</div>
+            <div class="text-gray-500 text-xs mt-1">4 agents must ALL approve: size, allowlist, drawdown, rate limit</div>
+          </div>
+        </div>
+      </div>
+      <!-- Execution Layer -->
+      <div class="col-span-4">
+        <div class="text-[10px] font-mono text-signal uppercase tracking-widest mb-3">Execution + Safety</div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="bg-s-low border border-signal/20 rounded p-4">
+            <div class="text-signal font-mono font-bold text-sm">Simulator</div>
+            <div class="text-gray-500 text-xs mt-1">Slippage modeling + min_out</div>
+          </div>
+          <div class="bg-s-low border border-signal/20 rounded p-4">
+            <div class="text-signal font-mono font-bold text-sm">KrakenExecutor</div>
+            <div class="text-gray-500 text-xs mt-1">Paper/live via Kraken CLI</div>
+          </div>
+          <div class="bg-s-low border border-signal/20 rounded p-4">
+            <div class="text-signal font-mono font-bold text-sm">CircuitBreaker</div>
+            <div class="text-gray-500 text-xs mt-1">Multi-layer halt system</div>
+          </div>
+          <div class="bg-s-low border border-signal/20 rounded p-4">
+            <div class="text-signal font-mono font-bold text-sm">Auditor</div>
+            <div class="text-gray-500 text-xs mt-1">SQLite append-only audit trail</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 4: SIGNAL FUSION + KELLY SIZING
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s4">
+  <div class="max-w-5xl w-full animate-in">
+    <h2 class="text-4xl font-headline font-bold text-electric mb-10 text-center glow-blue">Intelligent Strategy</h2>
+    <div class="grid grid-cols-2 gap-8">
+      <div class="space-y-6">
+        <div class="bg-surface border border-electric/20 rounded-lg p-6">
+          <h3 class="text-lg font-bold text-electric font-mono mb-3">Regime-Aware Weighting</h3>
+          <p class="text-gray-400 text-sm mb-3">Automatic weight profiles based on detected market regime:</p>
+          <div class="space-y-2 font-mono text-xs">
+            <div class="flex justify-between p-2 bg-s-low rounded">
+              <span class="text-neon">Trending</span>
+              <span class="text-gray-400">Momentum 2x | MeanRev 0.3x</span>
+            </div>
+            <div class="flex justify-between p-2 bg-s-low rounded">
+              <span class="text-electric">Mean Reverting</span>
+              <span class="text-gray-400">MeanRev 2.5x | Momentum 0.3x</span>
+            </div>
+            <div class="flex justify-between p-2 bg-s-low rounded">
+              <span class="text-signal">Volatile</span>
+              <span class="text-gray-400">PRISM 1.5x | Funding 1.5x</span>
+            </div>
+          </div>
+        </div>
+        <div class="bg-surface border border-neon/20 rounded-lg p-6">
+          <h3 class="text-lg font-bold text-neon font-mono mb-3">Adaptive Learning</h3>
+          <p class="text-gray-400 text-sm">Weights evolve over time: agents whose signals align with realized PnL get +5% boost, misaligned agents get -3%. No retraining needed.</p>
+        </div>
+      </div>
+      <div class="space-y-6">
+        <div class="bg-surface border border-amber/20 rounded-lg p-6">
+          <h3 class="text-lg font-bold text-amber font-mono mb-3">Kelly Criterion Sizing</h3>
+          <p class="text-gray-400 text-sm mb-3">Mathematically optimal position sizing:</p>
+          <div class="bg-s-low rounded p-4 font-mono text-sm text-center">
+            <div class="text-amber text-lg mb-2">f* = (p * b - q) / b</div>
+            <div class="text-gray-500 text-xs">p = win rate | b = payoff ratio | q = 1 - p</div>
+            <div class="text-gray-500 text-xs mt-1">Uses half-Kelly for safety (clamped 5%..50%)</div>
+          </div>
+        </div>
+        <div class="bg-surface border border-white/10 rounded-lg p-6">
+          <h3 class="text-lg font-bold text-white font-mono mb-3">Multi-Signal Fusion</h3>
+          <div class="space-y-2 font-mono text-xs">
+            <div class="text-gray-400">6 signal sources weighted and normalized:</div>
+            <div class="flex items-center gap-2">
+              <div class="h-2 bg-neon/60 rounded" style="width:30%"></div>
+              <span class="text-gray-400">Momentum (30%)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="h-2 bg-electric/60 rounded" style="width:20%"></div>
+              <span class="text-gray-400">MeanRev (20%)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="h-2 bg-purple-400/60 rounded" style="width:15%"></div>
+              <span class="text-gray-400">PRISM AI (15%)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="h-2 bg-amber/60 rounded" style="width:15%"></div>
+              <span class="text-gray-400">OrderBook (15%)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="h-2 bg-signal/60 rounded" style="width:10%"></div>
+              <span class="text-gray-400">Funding (10%)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="h-2 bg-white/30 rounded" style="width:10%"></div>
+              <span class="text-gray-400">Breakout (10%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 5: RISK MANAGEMENT — "BEST COMPLIANCE" PITCH
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s5">
+  <div class="max-w-5xl w-full animate-in">
+    <h2 class="text-4xl font-headline font-bold text-amber mb-4 text-center">8 Layers of Risk Management</h2>
+    <p class="text-gray-400 text-center mb-10 text-lg">Every trade passes through unanimous multi-agent risk consensus</p>
+    <div class="grid grid-cols-4 gap-4">
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-amber text-3xl mb-2" style="font-variation-settings:'FILL' 1">groups</span>
+        <h3 class="text-sm font-bold text-amber font-mono mb-2">Risk Quorum</h3>
+        <p class="text-gray-500 text-xs">4 independent risk agents must ALL approve. One veto = trade blocked.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-signal text-3xl mb-2" style="font-variation-settings:'FILL' 1">emergency</span>
+        <h3 class="text-sm font-bold text-signal font-mono mb-2">Circuit Breaker</h3>
+        <p class="text-gray-500 text-xs">Halts after 5 consecutive losses, max drawdown breach, or volatility spike.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-electric text-3xl mb-2" style="font-variation-settings:'FILL' 1">speed</span>
+        <h3 class="text-sm font-bold text-electric font-mono mb-2">Rate Limiter</h3>
+        <p class="text-gray-500 text-xs">Max 20 trades/hour. Prevents overtrading in choppy markets.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-neon text-3xl mb-2" style="font-variation-settings:'FILL' 1">trending_down</span>
+        <h3 class="text-sm font-bold text-neon font-mono mb-2">Drawdown Limit</h3>
+        <p class="text-gray-500 text-xs">Configurable daily max loss with automatic midnight UTC reset.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-signal text-3xl mb-2" style="font-variation-settings:'FILL' 1">power_settings_new</span>
+        <h3 class="text-sm font-bold text-signal font-mono mb-2">Kill Switch</h3>
+        <p class="text-gray-500 text-xs">Instant halt: <code class="text-signal">touch KILL</code> or one-click from web dashboard.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-electric text-3xl mb-2" style="font-variation-settings:'FILL' 1">sync_problem</span>
+        <h3 class="text-sm font-bold text-electric font-mono mb-2">Dead Man's Switch</h3>
+        <p class="text-gray-500 text-xs">Auto-cancels ALL open orders via Kraken CLI if agent becomes unresponsive.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-neon text-3xl mb-2" style="font-variation-settings:'FILL' 1">compress</span>
+        <h3 class="text-sm font-bold text-neon font-mono mb-2">Position Flattener</h3>
+        <p class="text-gray-500 text-xs">Emergency close of ALL positions when circuit breaker fires.</p>
+      </div>
+      <div class="bg-surface border border-amber/30 rounded-lg p-5 text-center">
+        <span class="material-symbols-outlined text-amber text-3xl mb-2" style="font-variation-settings:'FILL' 1">receipt_long</span>
+        <h3 class="text-sm font-bold text-amber font-mono mb-2">Full Audit Trail</h3>
+        <p class="text-gray-500 text-xs">Every intent, verdict, and execution logged to SQLite. Full PnL attribution per agent.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 6: KRAKEN CLI INTEGRATION
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s6">
+  <div class="max-w-5xl w-full animate-in">
+    <h2 class="text-4xl font-headline font-bold text-electric mb-10 text-center glow-blue">Kraken CLI Integration</h2>
+    <div class="grid grid-cols-2 gap-8">
+      <div class="space-y-4">
+        <div class="bg-surface border border-electric/20 rounded-lg p-6">
+          <h3 class="text-lg font-bold text-white font-mono mb-4">Market Data</h3>
+          <div class="space-y-3 text-sm">
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">REST ticker polling (configurable interval)</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">WebSocket streaming (<code class="text-electric">kraken ws ticker</code>)</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">L2 orderbook depth (<code class="text-electric">kraken depth</code>)</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">Historical OHLC for backtesting</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">Futures funding rates</span>
+            </div>
+          </div>
+        </div>
+        <div class="bg-surface border border-neon/20 rounded-lg p-6">
+          <h3 class="text-lg font-bold text-white font-mono mb-4">Trade Execution</h3>
+          <div class="space-y-3 text-sm">
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">Paper trading sandbox (no API keys)</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">Live market orders via CLI</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">Position tracking (prevents selling unheld)</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-neon text-sm" style="font-variation-settings:'FILL' 1">check_circle</span>
+              <span class="text-gray-300">Emergency cancel-all on circuit break</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="bg-surface border border-white/10 rounded-lg p-6 font-mono text-sm">
+          <div class="text-gray-500 text-xs mb-4"># Three trading modes</div>
+          <div class="space-y-4">
+            <div>
+              <div class="text-electric">$ python -m swarmtrader.main mock 60</div>
+              <div class="text-gray-600 text-xs mt-1"># Simulated prices, dry-run (no keys)</div>
+            </div>
+            <div>
+              <div class="text-neon">$ python -m swarmtrader.main paper 300 \</div>
+              <div class="text-neon">&nbsp;&nbsp;--pairs ETHUSD BTCUSD --web</div>
+              <div class="text-gray-600 text-xs mt-1"># Real Kraken data, paper orders</div>
+            </div>
+            <div>
+              <div class="text-signal">$ python -m swarmtrader.main live 3600 \</div>
+              <div class="text-signal">&nbsp;&nbsp;--pairs ETHUSD --max-drawdown 100</div>
+              <div class="text-gray-600 text-xs mt-1"># Real execution with API keys</div>
+            </div>
+            <div class="border-t border-white/10 pt-4 mt-4">
+              <div class="text-amber">$ python -m swarmtrader.backtest \</div>
+              <div class="text-amber">&nbsp;&nbsp;--pair ETHUSD --interval 5</div>
+              <div class="text-gray-600 text-xs mt-1"># Historical backtesting with Sharpe/drawdown</div>
+            </div>
+            <div>
+              <div class="text-white">$ python -m swarmtrader.report \</div>
+              <div class="text-white">&nbsp;&nbsp;--html report.html</div>
+              <div class="text-gray-600 text-xs mt-1"># Generate performance report</div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 bg-surface border border-electric/10 rounded-lg p-4 text-center">
+          <div class="text-xs text-gray-500 font-mono">Multi-asset support</div>
+          <div class="flex justify-center gap-3 mt-2 font-mono text-sm font-bold">
+            <span class="text-electric">ETH</span>
+            <span class="text-neon">BTC</span>
+            <span class="text-amber">SOL</span>
+            <span class="text-signal">XRP</span>
+            <span class="text-purple-400">ADA</span>
+            <span class="text-gray-400">+650 pairs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 7: LIVE DEMO / DASHBOARD
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s7">
+  <div class="max-w-5xl w-full animate-in text-center">
+    <h2 class="text-4xl font-headline font-bold text-neon mb-6 glow-green">Live Command Center</h2>
+    <p class="text-gray-400 text-lg mb-8">Real-time web dashboard with WebSocket streaming</p>
+    <div class="bg-surface border border-neon/20 rounded-lg p-8">
+      <div class="grid grid-cols-3 gap-6 text-left">
+        <div>
+          <h3 class="text-sm font-mono font-bold text-electric uppercase mb-3">Agent Swarm Panel</h3>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li>Live agent status (idle/active)</li>
+            <li>Per-agent tick counter</li>
+            <li>Role-based grouping</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-sm font-mono font-bold text-neon uppercase mb-3">Signal Analysis</h3>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li>Real-time signal strength bars</li>
+            <li>Weighted score visualization</li>
+            <li>Direction + confidence display</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-sm font-mono font-bold text-amber uppercase mb-3">Risk Consensus</h3>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li>Per-intent verdict display</li>
+            <li>Quorum progress tracking</li>
+            <li>One-click kill switch</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mt-6 pt-6 border-t border-white/10 grid grid-cols-3 gap-6 text-left">
+        <div>
+          <h3 class="text-sm font-mono font-bold text-white uppercase mb-3">Candlestick Chart</h3>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li>Canvas-rendered price chart</li>
+            <li>Real-time price updates</li>
+            <li>Delta percentage tracking</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-sm font-mono font-bold text-white uppercase mb-3">Trade Activity</h3>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li>Active intents with TTL countdown</li>
+            <li>Full execution log with PnL</li>
+            <li>Status badges (filled/rejected/expired)</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-sm font-mono font-bold text-white uppercase mb-3">Performance Report</h3>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li>Sharpe / Sortino / Calmar ratios</li>
+            <li>Equity curve + PnL distribution</li>
+            <li>HTML export at <code class="text-neon">/report</code></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="mt-6 font-mono text-sm text-gray-500">
+      Launch: <code class="text-neon">python -m swarmtrader.main paper 600 --pairs ETHUSD --web</code>
+      &nbsp;then open <code class="text-electric">http://localhost:8080</code>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 8: TECH STACK + DIFFERENTIATORS
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s8">
+  <div class="max-w-5xl w-full animate-in">
+    <h2 class="text-4xl font-headline font-bold text-white mb-10 text-center">Why SwarmTrader Wins</h2>
+    <div class="grid grid-cols-3 gap-6">
+      <div class="bg-neon/5 border border-neon/30 rounded-lg p-6">
+        <div class="text-3xl font-black font-mono text-neon mb-2">9</div>
+        <div class="text-sm font-bold text-white mb-2">Specialized Agents</div>
+        <p class="text-gray-500 text-xs">Not one model doing everything. Each agent is an expert in one domain: orderbook, funding, regime, momentum.</p>
+      </div>
+      <div class="bg-electric/5 border border-electric/30 rounded-lg p-6">
+        <div class="text-3xl font-black font-mono text-electric mb-2">8</div>
+        <div class="text-sm font-bold text-white mb-2">Risk Guardrail Layers</div>
+        <p class="text-gray-500 text-xs">Circuit breakers, rate limiters, kill switch, dead man's switch, position flattener. Trade-by-trade quorum.</p>
+      </div>
+      <div class="bg-amber/5 border border-amber/30 rounded-lg p-6">
+        <div class="text-3xl font-black font-mono text-amber mb-2">3</div>
+        <div class="text-sm font-bold text-white mb-2">Regime Profiles</div>
+        <p class="text-gray-500 text-xs">Automatically detects trending, mean-reverting, or volatile markets and shifts strategy weights.</p>
+      </div>
+      <div class="bg-surface border border-white/10 rounded-lg p-6">
+        <h3 class="text-sm font-bold text-white mb-3">Tech Stack</h3>
+        <div class="space-y-1 text-xs text-gray-400 font-mono">
+          <div>Python 3.11+ asyncio</div>
+          <div>Kraken CLI (Rust binary)</div>
+          <div>PRISM / Strykr API</div>
+          <div>aiohttp + WebSocket</div>
+          <div>SQLite audit trail</div>
+        </div>
+      </div>
+      <div class="bg-surface border border-white/10 rounded-lg p-6">
+        <h3 class="text-sm font-bold text-white mb-3">Zero Dependencies*</h3>
+        <div class="space-y-1 text-xs text-gray-400">
+          <div>Only 2 Python packages: <code class="text-electric">aiohttp</code> + <code class="text-electric">python-dotenv</code></div>
+          <div class="mt-2">No ML frameworks, no heavyweight ORMs, no complex infra. Pure async event-driven architecture.</div>
+        </div>
+      </div>
+      <div class="bg-surface border border-white/10 rounded-lg p-6">
+        <h3 class="text-sm font-bold text-white mb-3">Full Transparency</h3>
+        <div class="space-y-1 text-xs text-gray-400">
+          <div>Every trade has a full audit trail</div>
+          <div>PnL attribution to individual agents</div>
+          <div>Equity curve + risk metrics report</div>
+          <div>Web dashboard for live monitoring</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDE 9: THANK YOU / LINKS
+     ═══════════════════════════════════════════════════════════ -->
+<section class="slide flex-col items-center justify-center p-12" id="s9">
+  <div class="animate-in text-center">
+    <span class="material-symbols-outlined text-neon text-6xl mb-6" style="font-variation-settings:'FILL' 1">hub</span>
+    <h1 class="text-6xl font-mono font-black text-neon glow-green mb-4">SWARMTRADER</h1>
+    <p class="text-xl text-gray-400 font-headline mb-8">Multi-Agent Autonomous Trading Platform</p>
+    <div class="flex items-center justify-center gap-8 text-sm font-mono">
+      <div class="bg-surface border border-neon/20 rounded px-6 py-3">
+        <div class="text-[9px] text-gray-500 uppercase mb-1">GitHub</div>
+        <div class="text-neon">github.com/EcosystemNetwork/swarmtrader</div>
+      </div>
+      <div class="bg-surface border border-electric/20 rounded px-6 py-3">
+        <div class="text-[9px] text-gray-500 uppercase mb-1">Quick Start</div>
+        <div class="text-electric">pip install aiohttp python-dotenv</div>
+      </div>
+    </div>
+    <div class="mt-12 text-gray-600 text-xs font-mono">
+      AI Trading Agents Hackathon 2026 // lablab.ai // Kraken CLI Challenge
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     NAVIGATION
+     ═══════════════════════════════════════════════════════════ -->
+<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-surface/90 backdrop-blur-md border border-white/10 rounded-full px-6 py-3">
+  <button onclick="prev()" class="text-gray-400 hover:text-white transition">
+    <span class="material-symbols-outlined">arrow_back</span>
+  </button>
+  <div class="flex gap-2" id="dots"></div>
+  <button onclick="next()" class="text-gray-400 hover:text-white transition">
+    <span class="material-symbols-outlined">arrow_forward</span>
+  </button>
+  <span class="text-gray-600 font-mono text-xs ml-3" id="slide-num">1/9</span>
+</div>
+
+<script>
+const slides = document.querySelectorAll(".slide");
+let current = 0;
+const total = slides.length;
+
+function show(idx) {
+  slides.forEach((s, i) => {
+    s.classList.toggle("active", i === idx);
+  });
+  current = idx;
+  document.getElementById("slide-num").textContent = `${idx + 1}/${total}`;
+  renderDots();
+}
+
+function next() { show((current + 1) % total); }
+function prev() { show((current - 1 + total) % total); }
+
+function renderDots() {
+  const el = document.getElementById("dots");
+  let html = "";
+  for (let i = 0; i < total; i++) {
+    const active = i === current;
+    html += `<button onclick="show(${i})" class="w-2 h-2 rounded-full transition ${active ? "bg-neon" : "bg-gray-600 hover:bg-gray-400"}"></button>`;
+  }
+  el.innerHTML = html;
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); next(); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
+  if (e.key === "Home") show(0);
+  if (e.key === "End") show(total - 1);
+});
+
+// Touch support
+let touchStartX = 0;
+document.addEventListener("touchstart", (e) => { touchStartX = e.touches[0].clientX; });
+document.addEventListener("touchend", (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 50) dx > 0 ? prev() : next();
+});
+
+renderDots();
+</script>
+</body>
+</html>

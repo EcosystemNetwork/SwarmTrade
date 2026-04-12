@@ -41,9 +41,24 @@ from . import (
     RateLimiter, rate_limit_check,
     # External signals
     PRISMSignalAgent,
+    NewsAgent,
+    WhaleAgent,
+    # Intelligence
+    MultiTimeframeMomentum,
+    CorrelationAgent,
+    ConfluenceDetector,
+    # TA strategy agents
+    RSIAgent, MACDAgent, BollingerAgent, VWAPAgent, IchimokuAgent,
+    LiquidationCascadeAgent, ATRTrailingStopAgent, depth_liquidity_check,
+    # Position management
+    PositionManager, max_positions_check,
+    TWAPExecutor,
     # Dashboard
     Dashboard,
 )
+from .automation import AgentSupervisor, build_scheduler
+from .core import PortfolioTracker
+from .wallet import WalletManager, funds_check, allocation_check
 from .web import WebDashboard
 
 
@@ -112,6 +127,18 @@ def parse_args() -> argparse.Namespace:
                    help="Launch web dashboard on http://localhost:8080")
     p.add_argument("--web-port", type=int, default=8080,
                    help="Web dashboard port (default: 8080)")
+    p.add_argument("--max-positions", type=int, default=5,
+                   help="Max simultaneous open positions (default: 5)")
+    p.add_argument("--hard-stop", type=float, default=0.05,
+                   help="Hard stop-loss per position as decimal (default: 0.05 = 5%%)")
+    p.add_argument("--trail-stop", type=float, default=0.03,
+                   help="Trailing stop as decimal (default: 0.03 = 3%%)")
+    p.add_argument("--max-hold", type=float, default=3600.0,
+                   help="Max hold time per position in seconds (default: 3600)")
+    p.add_argument("--capital", type=float, default=10000.0,
+                   help="Starting capital in USD (default: 10000)")
+    p.add_argument("--max-alloc", type=float, default=50.0,
+                   help="Max allocation per asset in %% (default: 50)")
     return p.parse_args()
 
 
@@ -127,13 +154,25 @@ async def run(args: argparse.Namespace):
              args.mode, args.duration, args.pairs)
 
     bus = Bus()
-    state: dict = {"daily_pnl": 0.0}
+    state: dict = {"daily_pnl": 0.0, "trade_count": 0, "total_fees": 0.0}
     kill_switch = Path(args.kill_switch)
-    tasks_to_cancel = []
-    stoppables = []
+    portfolio = PortfolioTracker()
 
     assets = _pairs_to_assets(args.pairs)
     primary_asset = assets[0]
+
+    # ── Supervisor — monitors agent health, auto-restarts crashes ──
+    supervisor = AgentSupervisor(bus, check_interval=5.0, max_restarts=3)
+
+    # ── Wallet Manager ─────────────────────────────────────────
+    alloc_cfg = {a: {"target_pct": 0.0, "max_pct": args.max_alloc} for a in assets}
+    wallet = WalletManager(
+        bus, portfolio,
+        starting_capital=args.capital,
+        db_path=Path(args.db),
+        allocations=alloc_cfg,
+    )
+    log.info("Wallet: capital=%.0f max_alloc=%.0f%%", args.capital, args.max_alloc)
 
     # ── Data Scouts ─────────────────────────────────────────────
     if args.mode == "mock":
@@ -144,8 +183,7 @@ async def run(args: argparse.Namespace):
     else:
         scout = KrakenScout(bus, pairs=args.pairs, interval=args.poll_interval)
 
-    stoppables.append(scout)
-    tasks_to_cancel.append(asyncio.create_task(scout.run()))
+    supervisor.register("scout", scout.run, stale_after=10.0, stoppable=scout)
 
     # ── Core Analysts (per asset) ───────────────────────────────
     for asset in assets:
@@ -153,39 +191,87 @@ async def run(args: argparse.Namespace):
         MeanReversionAnalyst(bus, asset=asset)
         VolatilityAnalyst(bus, asset=asset)
 
+    # ── TA Strategy Agents (per asset) ─────────────────────────
+    for asset in assets:
+        RSIAgent(bus, asset=asset)          # 7-period, 75/25 thresholds
+        MACDAgent(bus, asset=asset)         # 8/21/5 fast crypto params
+        BollingerAgent(bus, asset=asset)    # 2.5 std for crypto vol
+        VWAPAgent(bus, asset=asset)         # 120-tick weekly anchor
+        IchimokuAgent(bus, asset=asset)
+
+    # ── Research-Driven Agents (per asset) ─────────────────────
+    for asset in assets:
+        LiquidationCascadeAgent(bus, asset=asset)
+        ATRTrailingStopAgent(bus, asset=asset)
+
     # ── Advanced Agents ─────────────────────────────────────────
     if args.mode != "mock" and not args.no_advanced:
         for i, (asset, pair) in enumerate(zip(assets, args.pairs)):
             # Order book agent
             ob = OrderBookAgent(bus, pair=pair, interval=5.0)
-            stoppables.append(ob)
-            tasks_to_cancel.append(asyncio.create_task(ob.run()))
+            supervisor.register(f"orderbook_{asset}", ob.run,
+                                stale_after=15.0, stoppable=ob)
 
             # Spread agent
             sp = SpreadAgent(bus, pair=pair, interval=10.0)
-            stoppables.append(sp)
-            tasks_to_cancel.append(asyncio.create_task(sp.run()))
+            supervisor.register(f"spread_{asset}", sp.run,
+                                stale_after=30.0, stoppable=sp)
 
             # Funding rate agent (only for primary asset to avoid API spam)
             if i == 0:
                 futures_sym = ASSET_CONFIG.get(asset, {}).get("futures", f"PF_{asset}USD")
                 fr = FundingRateAgent(bus, symbol=futures_sym, asset=asset, interval=60.0)
-                stoppables.append(fr)
-                tasks_to_cancel.append(asyncio.create_task(fr.run()))
+                supervisor.register(f"funding_{asset}", fr.run,
+                                    stale_after=120.0, stoppable=fr)
 
         # Regime detector
         RegimeAgent(bus, asset=primary_asset, window=50)
 
+    # ── Multi-Timeframe + Correlation Intelligence ───────────────
+    for asset in assets:
+        MultiTimeframeMomentum(bus, asset=asset)
+    if len(assets) >= 2:
+        ref = "BTC" if "BTC" in assets else assets[0]
+        targets = [a for a in assets if a != ref]
+        if targets:
+            CorrelationAgent(bus, reference=ref, targets=targets)
+            log.info("Correlation agent: %s → %s", ref, targets)
+
+    # ── Confluence Detector ─────────────────────────────────────
+    ConfluenceDetector(bus, min_groups=2)
+
+    # ── News Sentiment ──────────────────────────────────────────
+    if os.getenv("NEWS_API_KEY"):
+        news_agent = NewsAgent(bus, assets=assets, interval=60.0)
+        supervisor.register("news", news_agent.run,
+                            stale_after=120.0, stoppable=news_agent)
+        log.info("News sentiment enabled for: %s", assets)
+
+    # ── Whale Tracking ──────────────────────────────────────────
+    whale = WhaleAgent(bus, assets=assets, interval=120.0)
+    supervisor.register("whale", whale.run, stale_after=300.0, stoppable=whale)
+
     # ── PRISM AI Signals ────────────────────────────────────────
     if os.getenv("PRISM_API_KEY"):
         prism = PRISMSignalAgent(bus, assets=assets, interval=30.0)
-        stoppables.append(prism)
-        tasks_to_cancel.append(asyncio.create_task(prism.run()))
+        supervisor.register("prism", prism.run,
+                            stale_after=90.0, stoppable=prism)
         log.info("PRISM AI signals enabled for: %s", assets)
 
     # ── Strategy ────────────────────────────────────────────────
     tokens = set(assets) | {"USD", "USDC", "USDT"}
-    Strategist(bus, base_size=args.base_size)
+    strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
+
+    # ── Position Management ───────────────────────────────────────
+    pos_mgr = PositionManager(
+        bus,
+        trail_pct=args.trail_stop,
+        hard_stop_pct=args.hard_stop,
+        max_hold=args.max_hold,
+        max_positions=args.max_positions,
+        max_exposure_per_asset=args.max_size * 2,
+        max_total_exposure=args.max_size * 5,
+    )
 
     # ── Risk Agents ─────────────────────────────────────────────
     rate_limiter = RateLimiter(bus, max_trades=20, window_s=3600.0)
@@ -194,11 +280,15 @@ async def run(args: argparse.Namespace):
         RiskAgent(bus, "allowlist", allowlist_check(tokens)),
         RiskAgent(bus, "drawdown", drawdown_check(state, max_dd=args.max_drawdown)),
         RiskAgent(bus, "rate_limit", rate_limit_check(rate_limiter)),
+        RiskAgent(bus, "positions", max_positions_check(pos_mgr)),
+        RiskAgent(bus, "funds", funds_check(wallet)),
+        RiskAgent(bus, "allocation", allocation_check(wallet)),
+        RiskAgent(bus, "depth", depth_liquidity_check(bus, min_depth_ratio=2.0)),
     ]
     Coordinator(bus, n_risk_agents=len(risks))
 
     # ── Circuit Breakers ────────────────────────────────────────
-    CircuitBreaker(
+    cb = CircuitBreaker(
         bus, kill_switch,
         max_consecutive_losses=5,
         max_drawdown_usd=args.max_drawdown,
@@ -211,27 +301,53 @@ async def run(args: argparse.Namespace):
     # ── Execution Pipeline ──────────────────────────────────────
     Simulator(bus)
     if args.mode == "mock":
-        Executor(bus, kill_switch=kill_switch, dry_run=True)
+        Executor(bus, kill_switch=kill_switch, dry_run=True, portfolio=portfolio)
     else:
-        KrakenExecutor(bus, kill_switch=kill_switch, paper=(args.mode == "paper"))
+        KrakenExecutor(bus, kill_switch=kill_switch, paper=(args.mode == "paper"),
+                       portfolio=portfolio)
 
-    Auditor(bus, db_path=Path(args.db), state=state)
+    Auditor(bus, db_path=Path(args.db), state=state, portfolio=portfolio)
+
+    # ── TWAP Execution (splits large orders) ───────────────────
+    TWAPExecutor(bus, threshold=args.max_size * 0.75, n_slices=5, window_s=60.0)
 
     # ── Terminal Dashboard ──────────────────────────────────────
-    dash = None
     if args.dashboard:
         dash = Dashboard(bus, state, refresh=1.0)
-        stoppables.append(dash)
-        tasks_to_cancel.append(asyncio.create_task(dash.run()))
+        supervisor.register("dashboard", dash.run, stale_after=5.0, stoppable=dash)
 
     # ── Web Dashboard ──────────────────────────────────────────
     if args.web:
         web_dash = WebDashboard(
             bus, state, db_path=Path(args.db),
             kill_switch=kill_switch, port=args.web_port,
+            wallet=wallet,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
+
+    # ── Scheduler — periodic automation tasks ───────────────────
+    scheduler = build_scheduler(
+        bus,
+        supervisor=supervisor,
+        circuit_breaker=cb,
+        strategist=strategist,
+        portfolio=portfolio,
+        state=state,
+    )
+
+    # ── Launch all supervised agents + scheduler ─────────────────
+    sup_tasks = supervisor.start_all()
+    sched_task = asyncio.create_task(scheduler.run())
+    health_task = asyncio.create_task(supervisor.run())
+
+    agent_count = len(supervisor._agents)
+    log.info("SWARM ONLINE: %d supervised agents, scheduler active", agent_count)
+    await bus.publish("automation.startup", {
+        "agents": list(supervisor._agents.keys()),
+        "mode": args.mode,
+        "assets": assets,
+    })
 
     # ── Run ──────────────────────────────────────────────────────
     try:
@@ -239,17 +355,27 @@ async def run(args: argparse.Namespace):
     except asyncio.CancelledError:
         pass
     finally:
-        for s in stoppables:
-            s.stop()
-        for t in tasks_to_cancel:
-            t.cancel()
+        log.info("SWARM SHUTDOWN starting...")
+        scheduler.stop()
+        sched_task.cancel()
+        supervisor.stop_all()
+        health_task.cancel()
+        all_tasks = sup_tasks + [sched_task, health_task]
+        for t in all_tasks:
+            if not t.done():
+                t.cancel()
             try:
                 await t
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
+        log.info("SWARM SHUTDOWN complete")
 
-    log.info("FINAL daily_pnl=%+.4f trades=%d",
-             state["daily_pnl"], state.get("trade_count", 0))
+    log.info("FINAL daily_pnl=%+.4f trades=%d equity=%.4f fees=%.4f",
+             state["daily_pnl"], state.get("trade_count", 0),
+             portfolio.total_equity(), portfolio.total_fees())
+    import json as _json
+    log.info("POSITIONS %s", _json.dumps(pos_mgr.summary(), indent=2))
+    log.info("WALLET %s", _json.dumps(wallet.summary(), indent=2))
 
     # Print paper account summary
     if args.mode == "paper":

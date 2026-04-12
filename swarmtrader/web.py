@@ -4,6 +4,7 @@ import asyncio, json, logging, time, sqlite3
 from pathlib import Path
 from aiohttp import web
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
+from .report import load_from_db, generate_html_report
 
 log = logging.getLogger("swarm.web")
 
@@ -12,13 +13,15 @@ class WebDashboard:
     """Serves the frontend and streams Bus events over WebSocket."""
 
     def __init__(self, bus: Bus, state: dict, db_path: Path,
-                 kill_switch: Path, host: str = "0.0.0.0", port: int = 8080):
+                 kill_switch: Path, host: str = "0.0.0.0", port: int = 8080,
+                 wallet=None):
         self.bus = bus
         self.state = state
         self.db_path = db_path
         self.kill_switch = kill_switch
         self.host = host
         self.port = port
+        self.wallet = wallet  # WalletManager instance (optional)
         self._clients: set[web.WebSocketResponse] = set()
 
         # Cached state for new clients
@@ -38,11 +41,19 @@ class WebDashboard:
         for topic in ("signal.momentum", "signal.mean_rev", "signal.vol",
                        "signal.prism", "signal.orderbook", "signal.funding",
                        "signal.spread", "signal.regime",
-                       "signal.prism_volume", "signal.prism_breakout"):
+                       "signal.prism_volume", "signal.prism_breakout",
+                       "signal.news", "signal.confluence",
+                       "signal.whale", "signal.correlation",
+                       "signal.rsi", "signal.macd", "signal.bollinger",
+                       "signal.vwap", "signal.ichimoku", "signal.mtf",
+                       "signal.liquidation", "signal.atr_stop"):
             bus.subscribe(topic, self._on_signal)
         bus.subscribe("intent.new", self._on_intent)
         bus.subscribe("risk.verdict", self._on_verdict)
         bus.subscribe("exec.report", self._on_report)
+        bus.subscribe("wallet.update", self._on_wallet_update)
+        bus.subscribe("wallet.low_funds", self._on_wallet_low_funds)
+        bus.subscribe("wallet.rebalance", self._on_wallet_rebalance)
 
         self._init_agents()
 
@@ -61,7 +72,23 @@ class WebDashboard:
             ("Coordinator", "coordinator", "exec.go"),
             ("Simulator", "execution", "exec.simulated"),
             ("Executor", "execution", "exec.report"),
+            ("RiskAgent_Funds", "risk", "risk.verdict"),
+            ("RiskAgent_Allocation", "risk", "risk.verdict"),
             ("Auditor", "audit", "audit.log"),
+            ("WalletManager", "wallet", "wallet.update"),
+            ("News", "external", "signal.news"),
+            ("Whale", "external", "signal.whale"),
+            ("Confluence", "meta", "signal.confluence"),
+            ("Correlation", "analyst", "signal.correlation"),
+            ("RSI", "ta", "signal.rsi"),
+            ("MACD", "ta", "signal.macd"),
+            ("Bollinger", "ta", "signal.bollinger"),
+            ("VWAP", "ta", "signal.vwap"),
+            ("Ichimoku", "ta", "signal.ichimoku"),
+            ("MTF", "analyst", "signal.mtf"),
+            ("Liquidation", "research", "signal.liquidation"),
+            ("ATR_Stop", "research", "signal.atr_stop"),
+            ("RiskAgent_Depth", "risk", "risk.verdict"),
         ]
         for name, role, topic in agent_defs:
             self.agents[name] = {
@@ -103,6 +130,11 @@ class WebDashboard:
         agent_map = {
             "momentum": "Momentum", "mean_rev": "MeanReversion",
             "vol": "Volatility", "prism": "PRISM_AI",
+            "news": "News", "whale": "Whale", "confluence": "Confluence",
+            "correlation": "Correlation", "rsi": "RSI", "macd": "MACD",
+            "bollinger": "Bollinger", "vwap": "VWAP", "ichimoku": "Ichimoku",
+            "mtf": "MTF",
+            "liquidation": "Liquidation", "atr_stop": "ATR_Stop",
         }
         if sig.agent_id in agent_map:
             self._set_agent_active(agent_map[sig.agent_id])
@@ -136,7 +168,8 @@ class WebDashboard:
         self.verdicts.setdefault(v.intent_id, []).append(d)
 
         agent_map = {"size": "RiskAgent_Size", "allowlist": "RiskAgent_Allowlist",
-                     "drawdown": "RiskAgent_Drawdown"}
+                     "drawdown": "RiskAgent_Drawdown",
+                     "funds": "RiskAgent_Funds", "allocation": "RiskAgent_Allocation"}
         if v.agent_id in agent_map:
             self._set_agent_active(agent_map[v.agent_id])
         self._set_agent_active("Coordinator")
@@ -165,6 +198,16 @@ class WebDashboard:
         self._set_agent_active("Auditor")
         await self._broadcast("report", d)
 
+    async def _on_wallet_update(self, data: dict):
+        self._set_agent_active("WalletManager")
+        await self._broadcast("wallet", data)
+
+    async def _on_wallet_low_funds(self, data: dict):
+        await self._broadcast("wallet_low_funds", data)
+
+    async def _on_wallet_rebalance(self, data: dict):
+        await self._broadcast("wallet_rebalance", data)
+
     # ── HTTP Handlers ───────────────────────────────────────────────
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
@@ -192,6 +235,7 @@ class WebDashboard:
                     "uptime": time.time() - self.start_time,
                     "kill_switch": self.kill_switch.exists(),
                 },
+                "wallet": self.wallet.summary() if self.wallet else None,
             },
         }
         await ws.send_str(json.dumps(snapshot))
@@ -220,6 +264,28 @@ class WebDashboard:
             else:
                 self.kill_switch.unlink(missing_ok=True)
             await self._broadcast("kill_switch", {"enabled": self.kill_switch.exists()})
+        elif action == "wallet_deposit" and self.wallet:
+            amount = float(cmd.get("amount", 0))
+            if amount > 0:
+                self.wallet.deposit(amount, cmd.get("note", ""))
+                await self._broadcast("wallet", self.wallet.summary())
+        elif action == "wallet_withdraw" and self.wallet:
+            amount = float(cmd.get("amount", 0))
+            if amount > 0:
+                result = self.wallet.withdraw(amount, cmd.get("note", ""))
+                resp = self.wallet.summary()
+                if result is None:
+                    resp["error"] = "insufficient funds"
+                await self._broadcast("wallet", resp)
+        elif action == "wallet_set_allocation" and self.wallet:
+            asset = cmd.get("asset", "")
+            if asset:
+                self.wallet.set_allocation(
+                    asset,
+                    target_pct=float(cmd.get("target_pct", 0)),
+                    max_pct=float(cmd.get("max_pct", 50)),
+                )
+                await self._broadcast("wallet", self.wallet.summary())
 
     async def _handle_history(self, request: web.Request) -> web.Response:
         """Query trade history from SQLite."""
@@ -261,8 +327,80 @@ class WebDashboard:
             "kill_switch": self.kill_switch.exists(),
         })
 
+    async def _handle_wallet(self, request: web.Request) -> web.Response:
+        """GET /api/wallet — full wallet state."""
+        if not self.wallet:
+            return web.json_response({"error": "wallet not configured"}, status=404)
+        return web.json_response(self.wallet.summary())
+
+    async def _handle_wallet_deposit(self, request: web.Request) -> web.Response:
+        """POST /api/wallet/deposit {amount, note}"""
+        if not self.wallet:
+            return web.json_response({"error": "wallet not configured"}, status=404)
+        body = await request.json()
+        amount = float(body.get("amount", 0))
+        if amount <= 0:
+            return web.json_response({"error": "amount must be positive"}, status=400)
+        self.wallet.deposit(amount, body.get("note", ""))
+        return web.json_response(self.wallet.summary())
+
+    async def _handle_wallet_withdraw(self, request: web.Request) -> web.Response:
+        """POST /api/wallet/withdraw {amount, note}"""
+        if not self.wallet:
+            return web.json_response({"error": "wallet not configured"}, status=404)
+        body = await request.json()
+        amount = float(body.get("amount", 0))
+        if amount <= 0:
+            return web.json_response({"error": "amount must be positive"}, status=400)
+        result = self.wallet.withdraw(amount, body.get("note", ""))
+        if result is None:
+            return web.json_response({"error": "insufficient funds",
+                                      "available": self.wallet.available_cash()}, status=400)
+        return web.json_response(self.wallet.summary())
+
+    async def _handle_wallet_allocations(self, request: web.Request) -> web.Response:
+        """POST /api/wallet/allocations {asset, target_pct, max_pct}"""
+        if not self.wallet:
+            return web.json_response({"error": "wallet not configured"}, status=404)
+        body = await request.json()
+        asset = body.get("asset", "")
+        if not asset:
+            return web.json_response({"error": "asset required"}, status=400)
+        self.wallet.set_allocation(
+            asset,
+            target_pct=float(body.get("target_pct", 0)),
+            max_pct=float(body.get("max_pct", 50)),
+        )
+        return web.json_response(self.wallet.summary())
+
     async def _handle_index(self, request: web.Request) -> web.FileResponse:
         return web.FileResponse(Path(__file__).parent / "static" / "index.html")
+
+    async def _handle_report_json(self, request: web.Request) -> web.Response:
+        try:
+            report = load_from_db(self.db_path)
+            return web.json_response(report.to_dict())
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_report_html(self, request: web.Request) -> web.Response:
+        try:
+            report = load_from_db(self.db_path)
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+                out = Path(f.name)
+            generate_html_report(report, out)
+            html = out.read_text()
+            out.unlink()
+            return web.Response(text=html, content_type="text/html")
+        except Exception as e:
+            return web.Response(text=f"Error: {e}", status=500)
+
+    async def _handle_slides(self, request: web.Request) -> web.FileResponse:
+        slides_path = Path(__file__).parent / "static" / "slides.html"
+        if slides_path.exists():
+            return web.FileResponse(slides_path)
+        return web.Response(text="Slides not found", status=404)
 
     # ── Server Lifecycle ────────────────────────────────────────────
 
@@ -272,6 +410,13 @@ class WebDashboard:
         app.router.add_get("/ws", self._handle_ws)
         app.router.add_get("/api/history", self._handle_history)
         app.router.add_get("/api/state", self._handle_state)
+        app.router.add_get("/api/wallet", self._handle_wallet)
+        app.router.add_post("/api/wallet/deposit", self._handle_wallet_deposit)
+        app.router.add_post("/api/wallet/withdraw", self._handle_wallet_withdraw)
+        app.router.add_post("/api/wallet/allocations", self._handle_wallet_allocations)
+        app.router.add_get("/api/report", self._handle_report_json)
+        app.router.add_get("/report", self._handle_report_html)
+        app.router.add_get("/slides", self._handle_slides)
         app.router.add_static("/static/",
                               Path(__file__).parent / "static",
                               show_index=False)
