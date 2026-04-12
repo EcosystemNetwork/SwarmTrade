@@ -397,8 +397,12 @@ async def run_backtest(
         BacktestExecutor(bus, result, portfolio, starting_capital=starting_capital)
 
         with tempfile.TemporaryDirectory() as d:
-            Auditor(bus, db_path=Path(d) / "backtest.db", state=state, portfolio=portfolio)
+            from .database import Database
+            bt_db = Database(sqlite_path=Path(d) / "backtest.db")
+            await bt_db.connect()
+            Auditor(bus, db=bt_db, state=state, portfolio=portfolio)
             await scout.run()
+            await bt_db.close()
     finally:
         _strat_mod.time = time
         _exec_mod.time = time
@@ -487,8 +491,12 @@ async def run_walk_forward(
             BacktestExecutor(bus, result, portfolio, starting_capital=starting_capital)
 
             with tempfile.TemporaryDirectory() as d:
-                Auditor(bus, db_path=Path(d) / "backtest.db", state=state, portfolio=portfolio)
+                from .database import Database
+                bt_db = Database(sqlite_path=Path(d) / "backtest.db")
+                await bt_db.connect()
+                Auditor(bus, db=bt_db, state=state, portfolio=portfolio)
                 await scout.run()
+                await bt_db.close()
         finally:
             _strat_mod.time = time
             _exec_mod.time = time

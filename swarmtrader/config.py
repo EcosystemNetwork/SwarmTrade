@@ -87,6 +87,15 @@ class StrategyConfig:
 
 
 @dataclass
+class DatabaseConfig:
+    """Database connection parameters."""
+    url: str = ""                            # DATABASE_URL (Neon Postgres)
+    sqlite_path: str = "swarm.db"            # fallback for offline/backtest
+    min_pool: int = 2
+    max_pool: int = 10
+
+
+@dataclass
 class DashboardConfig:
     """Web dashboard parameters."""
     host: str = "0.0.0.0"
@@ -103,6 +112,7 @@ class TradingConfig:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     kraken: KrakenAPIConfig = field(default_factory=KrakenAPIConfig)
 
@@ -153,6 +163,12 @@ class TradingConfig:
             os.getenv("SWARM_CB_MAX_DRAWDOWN", cfg.circuit_breaker.max_drawdown_usd))
         cfg.circuit_breaker.cooldown_seconds = float(
             os.getenv("SWARM_CB_COOLDOWN", cfg.circuit_breaker.cooldown_seconds))
+
+        # Database
+        cfg.database.url = os.getenv("DATABASE_URL", cfg.database.url)
+        cfg.database.sqlite_path = os.getenv("SWARM_DB_PATH", cfg.database.sqlite_path)
+        cfg.database.min_pool = int(os.getenv("SWARM_DB_MIN_POOL", cfg.database.min_pool))
+        cfg.database.max_pool = int(os.getenv("SWARM_DB_MAX_POOL", cfg.database.max_pool))
 
         # Dashboard
         cfg.dashboard.port = int(os.getenv("SWARM_DASHBOARD_PORT", cfg.dashboard.port))

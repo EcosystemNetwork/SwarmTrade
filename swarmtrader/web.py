@@ -5,7 +5,7 @@ SWARM_DASHBOARD_TOKEN env var (or auto-generated on startup).
 Static assets (CSS/JS) are unauthenticated.
 """
 from __future__ import annotations
-import asyncio, hmac, json, logging, math, os, secrets, time, sqlite3
+import asyncio, hmac, json, logging, math, os, secrets, time
 from pathlib import Path
 from aiohttp import web
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
@@ -95,13 +95,14 @@ class WebDashboard:
     _CMD_RATE_LIMIT = 60
     _CMD_WINDOW_SECS = 60.0
 
-    def __init__(self, bus: Bus, state: dict, db_path: Path,
-                 kill_switch, host: str = "0.0.0.0", port: int = 8080,
+    def __init__(self, bus: Bus, state: dict, db=None,
+                 kill_switch=None, host: str = "0.0.0.0", port: int = 8080,
                  wallet=None, gateway: AgentGateway | None = None,
+                 strategist=None, capital_allocator=None,
                  memory=None, erc8004=None):
         self.bus = bus
         self.state = state
-        self.db_path = db_path
+        self.db = db  # Database instance
         self.kill_switch = kill_switch
         self.host = host
         self.port = port
@@ -109,6 +110,10 @@ class WebDashboard:
         self.gateway = gateway  # AgentGateway instance (optional)
         self.memory = memory  # AgentMemory instance (optional)
         self.erc8004 = erc8004  # ERC8004Pipeline instance (optional)
+        self.strategist = strategist  # Strategist instance (for NLP config)
+        self.capital_allocator = capital_allocator  # CapitalAllocator (leaderboard)
+        self._privacy_mgr = None  # lazy init
+        self._pyth_oracle = None  # lazy init
         self._clients: set[web.WebSocketResponse] = set()
         self._runner: web.AppRunner | None = None
 
@@ -686,37 +691,30 @@ class WebDashboard:
     # ── HTTP Handlers ───────────────────────────────────────────────
 
     async def _handle_history(self, request: web.Request) -> web.Response:
-        """Query trade history from SQLite (runs in thread to avoid blocking)."""
+        """Query trade history from database."""
+        if not self.db:
+            return web.json_response({"error": "database not configured"}, status=503)
         try:
             limit = min(10000, max(1, int(request.query.get("limit", "100"))))
         except (ValueError, TypeError):
             limit = 100
-        status = request.query.get("status", None)
-
-        def _query():
-            conn = sqlite3.connect(self.db_path, timeout=5.0)
-            try:
-                conn.row_factory = sqlite3.Row
-                if status:
-                    rows = conn.execute(
-                        "SELECT * FROM reports WHERE status=? ORDER BY ts DESC LIMIT ?",
-                        (status, limit),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        "SELECT * FROM reports ORDER BY ts DESC LIMIT ?", (limit,)
-                    ).fetchall()
-                intents = conn.execute(
-                    "SELECT * FROM intents ORDER BY ts DESC LIMIT ?", (limit,)
-                ).fetchall()
-                return {"reports": [dict(r) for r in rows], "intents": [dict(i) for i in intents]}
-            finally:
-                conn.close()
+        status_filter = request.query.get("status", None)
 
         try:
-            result = await asyncio.to_thread(_query)
-            return web.json_response(result)
-        except Exception as e:
+            if status_filter:
+                rows = await self.db.fetch(
+                    "SELECT * FROM reports WHERE status=$1 ORDER BY ts DESC LIMIT $2",
+                    status_filter, limit,
+                )
+            else:
+                rows = await self.db.fetch(
+                    "SELECT * FROM reports ORDER BY ts DESC LIMIT $1", limit,
+                )
+            intents = await self.db.fetch(
+                "SELECT * FROM intents ORDER BY ts DESC LIMIT $1", limit,
+            )
+            return web.json_response({"reports": rows, "intents": intents})
+        except Exception:
             log.exception("History query failed")
             return web.json_response({"error": "failed to load history"}, status=500)
 
@@ -783,18 +781,18 @@ class WebDashboard:
         return web.FileResponse(Path(__file__).parent / "static" / "index.html")
 
     async def _handle_report_json(self, request: web.Request) -> web.Response:
-        def _load():
-            return load_from_db(self.db_path)
+        if not self.db:
+            return web.json_response({"error": "database not configured"}, status=503)
         try:
-            report = await asyncio.to_thread(_load)
+            report = await load_from_db(self.db)
             return web.json_response(report.to_dict())
-        except Exception as e:
+        except Exception:
             log.exception("Report JSON generation failed")
             return web.json_response({"error": "failed to generate report"}, status=500)
 
     async def _handle_report_html(self, request: web.Request) -> web.Response:
-        def _generate():
-            report = load_from_db(self.db_path)
+        async def _generate():
+            report = await load_from_db(self.db)
             import tempfile
             out = None
             try:
@@ -806,10 +804,12 @@ class WebDashboard:
                 if out and out.exists():
                     out.unlink()
 
+        if not self.db:
+            return web.Response(text="Database not configured", status=503)
         try:
-            html = await asyncio.to_thread(_generate)
+            html = await _generate()
             return web.Response(text=html, content_type="text/html")
-        except Exception as e:
+        except Exception:
             log.exception("Report HTML generation failed")
             return web.Response(text="Error generating report", status=500)
 
@@ -839,6 +839,173 @@ class WebDashboard:
         if slides_path.exists():
             return web.FileResponse(slides_path)
         return web.Response(text="Slides not found", status=404)
+
+    # ── Competition Features ─────────────────────────────────────────
+
+    async def _handle_nlp_strategy(self, request: web.Request) -> web.Response:
+        """POST /api/strategy/nlp — configure strategy from natural language.
+
+        Body: {"strategy": "momentum following with RSI and whale tracking"}
+        """
+        if not self.strategist:
+            return web.json_response({"error": "strategist not available"}, status=400)
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        text = body.get("strategy", body.get("text", ""))
+        if not text:
+            return web.json_response({"error": "missing 'strategy' field"}, status=400)
+
+        from .nlp_strategy import parse_strategy, apply_strategy
+        config = parse_strategy(text)
+        result = apply_strategy(self.strategist, config)
+        await self._broadcast("strategy_update", result)
+        return web.json_response({"ok": True, **result})
+
+    async def _handle_strategy_presets(self, request: web.Request) -> web.Response:
+        """GET /api/strategy/presets — list available preset strategies."""
+        from .nlp_strategy import PRESETS
+        return web.json_response({"presets": PRESETS})
+
+    async def _handle_strategy_weights(self, request: web.Request) -> web.Response:
+        """GET /api/strategy/weights — current strategist weights."""
+        if not self.strategist:
+            return web.json_response({"error": "strategist not available"}, status=400)
+        return web.json_response({
+            "weights": {k: round(v, 4) for k, v in self.strategist.weights.items()},
+            "threshold": self.strategist.THRESHOLD,
+            "regime": getattr(self.strategist, "regime", "unknown"),
+            "base_size": self.strategist.base_size,
+        })
+
+    async def _handle_leaderboard(self, request: web.Request) -> web.Response:
+        """GET /api/leaderboard — agent performance leaderboard."""
+        if not self.capital_allocator:
+            return web.json_response({"leaderboard": [], "agents_tracked": 0})
+        return web.json_response(self.capital_allocator.summary())
+
+    async def _handle_confidence(self, request: web.Request) -> web.Response:
+        """GET /api/confidence — swarm confidence gauge data."""
+        if not self.strategist:
+            return web.json_response({"confidence": 0, "signals": 0})
+
+        signals = self.strategist.latest
+        if not signals:
+            return web.json_response({"confidence": 0, "signals": 0, "direction": "flat"})
+
+        # Compute weighted consensus
+        active = {a for a in self.strategist.weights if a in signals}
+        total_w = sum(self.strategist.weights[a] for a in active) or 1.0
+        score = sum(
+            (self.strategist.weights[a] / total_w)
+            * signals[a].strength * signals[a].confidence
+            for a in active
+        )
+
+        # Confidence = how much agents agree (low variance = high confidence)
+        strengths = [signals[a].strength for a in active]
+        if len(strengths) > 1:
+            mean_s = sum(strengths) / len(strengths)
+            variance = sum((s - mean_s) ** 2 for s in strengths) / len(strengths)
+            agreement = max(0.0, 1.0 - variance * 4)  # 0-1 scale
+        else:
+            agreement = 0.5
+
+        direction = "long" if score > 0.05 else "short" if score < -0.05 else "flat"
+
+        return web.json_response({
+            "score": round(score, 4),
+            "confidence": round(agreement, 3),
+            "direction": direction,
+            "active_agents": len(active),
+            "total_agents": len(self.strategist.weights),
+            "regime": getattr(self.strategist, "regime", "unknown"),
+            "vol_damp": round(getattr(self.strategist, "vol_damp", 1.0), 3),
+            "top_signals": [
+                {
+                    "agent": a,
+                    "direction": signals[a].direction,
+                    "strength": round(signals[a].strength, 3),
+                    "confidence": round(signals[a].confidence, 3),
+                    "weight": round(self.strategist.weights.get(a, 0), 4),
+                }
+                for a in sorted(active,
+                                key=lambda x: abs(signals[x].strength * signals[x].confidence),
+                                reverse=True)[:10]
+            ],
+        })
+
+    async def _handle_strategy_commit(self, request: web.Request) -> web.Response:
+        """POST /api/strategy/commit — commit current strategy (privacy layer)."""
+        if not self.strategist:
+            return web.json_response({"error": "strategist not available"}, status=400)
+
+        from .strategy_privacy import StrategyPrivacyManager
+        if not self._privacy_mgr:
+            self._privacy_mgr = StrategyPrivacyManager()
+
+        commit = self._privacy_mgr.commit(
+            self.strategist.weights,
+            metadata={
+                "regime": getattr(self.strategist, "regime", ""),
+                "threshold": self.strategist.THRESHOLD,
+            },
+        )
+        return web.json_response({
+            "ok": True,
+            "commit_hash": commit.commit_hash,
+            "timestamp": commit.timestamp,
+            "message": "Strategy committed. Weights are now hidden until reveal.",
+        })
+
+    async def _handle_strategy_reveal(self, request: web.Request) -> web.Response:
+        """POST /api/strategy/reveal — reveal a committed strategy."""
+        if not self._privacy_mgr:
+            return web.json_response({"error": "no strategies committed"}, status=400)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        commit_hash = body.get("commit_hash", "")
+        if not commit_hash:
+            # Reveal the active commit
+            active = self._privacy_mgr.active_commit
+            if not active:
+                return web.json_response({"error": "no active commit"}, status=400)
+            commit_hash = active.commit_hash
+
+        try:
+            reveal = self._privacy_mgr.reveal(commit_hash)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=404)
+
+        return web.json_response({
+            "ok": True,
+            "valid": reveal.valid,
+            "commit_hash": reveal.commit_hash,
+            "weights": reveal.weights,
+            "committed_at": reveal.timestamp_committed,
+            "revealed_at": reveal.timestamp_revealed,
+            "hidden_duration_s": round(reveal.timestamp_revealed - reveal.timestamp_committed),
+        })
+
+    async def _handle_pyth_prices(self, request: web.Request) -> web.Response:
+        """GET /api/pyth — fetch decentralized price from Pyth oracle."""
+        try:
+            from .pyth_oracle import PythOracle
+            if not self._pyth_oracle:
+                self._pyth_oracle = PythOracle(self.bus, assets=["ETH", "BTC", "SOL"])
+            prices = await self._pyth_oracle._fetch_prices(
+                [fid for fid in __import__("swarmtrader.pyth_oracle",
+                                           fromlist=["PYTH_FEEDS"]).PYTH_FEEDS.values()][:3]
+            )
+            return web.json_response({"source": "pyth_hermes", "prices": prices})
+        except Exception as e:
+            return web.json_response({"error": str(e), "source": "pyth_hermes"}, status=500)
 
     # ── Emergency Controls ─────────────────────────────────────────
 
@@ -1005,6 +1172,15 @@ class WebDashboard:
         app.router.add_get("/api/memory", self._handle_memory)
         app.router.add_get("/report", self._handle_report_html)
         app.router.add_get("/slides", self._handle_slides)
+        # ── Competition features ───────────────────────────────────
+        app.router.add_post("/api/strategy/nlp", self._handle_nlp_strategy)
+        app.router.add_get("/api/strategy/presets", self._handle_strategy_presets)
+        app.router.add_get("/api/strategy/weights", self._handle_strategy_weights)
+        app.router.add_get("/api/leaderboard", self._handle_leaderboard)
+        app.router.add_get("/api/confidence", self._handle_confidence)
+        app.router.add_post("/api/strategy/commit", self._handle_strategy_commit)
+        app.router.add_post("/api/strategy/reveal", self._handle_strategy_reveal)
+        app.router.add_get("/api/pyth", self._handle_pyth_prices)
         # ── Emergency controls ─────────────────────────────────────
         app.router.add_post("/api/cancel-all", self._handle_cancel_all)
         app.router.add_post("/api/flatten", self._handle_flatten)

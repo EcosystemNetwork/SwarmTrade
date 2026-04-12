@@ -83,6 +83,7 @@ from .wallet import WalletManager, funds_check, allocation_check
 from .web import WebDashboard
 from .gateway import AgentGateway
 from .checkpoint import Checkpoint
+from .database import Database
 from .demo import DemoScout, MultiAssetDemoScout
 from .memory import AgentMemory
 from .erc8004 import ERC8004Pipeline
@@ -138,7 +139,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-drawdown", type=float, default=200.0,
                    help="Max daily drawdown in USD (default: 200)")
     p.add_argument("--db", type=str, default="swarm.db",
-                   help="SQLite database path")
+                   help="SQLite fallback path (ignored when DATABASE_URL is set)")
     p.add_argument("--kill-switch", type=str, default="KILL",
                    help="Kill switch file path")
     p.add_argument("--ws", action="store_true",
@@ -215,6 +216,16 @@ async def run(args: argparse.Namespace):
     assets = _pairs_to_assets(args.pairs)
     primary_asset = assets[0]
 
+    # ── Database ───────────────────────────────────────────────
+    database_url = os.getenv("DATABASE_URL", "")
+    db = Database(
+        database_url=database_url or None,
+        sqlite_path=Path(args.db) if not database_url else None,
+    )
+    await db.connect()
+    backend = "Postgres (Neon)" if db.is_postgres else f"SQLite ({args.db})"
+    log.info("Database: %s", backend)
+
     # ── Supervisor — monitors agent health, auto-restarts crashes ──
     supervisor = AgentSupervisor(bus, check_interval=5.0, max_restarts=3)
 
@@ -223,9 +234,10 @@ async def run(args: argparse.Namespace):
     wallet = WalletManager(
         bus, portfolio,
         starting_capital=args.capital,
-        db_path=Path(args.db),
+        db=db,
         allocations=alloc_cfg,
     )
+    await wallet.load_state()
     log.info("Wallet: capital=%.0f max_alloc=%.0f%%", args.capital, args.max_alloc)
 
     # ── Agent Memory — cross-session learning ──────────────────
@@ -493,7 +505,7 @@ async def run(args: argparse.Namespace):
         KrakenExecutor(bus, kill_switch=kill_switch, paper=(args.mode == "paper"),
                        portfolio=portfolio)
 
-    Auditor(bus, db_path=Path(args.db), state=state, portfolio=portfolio)
+    Auditor(bus, db=db, state=state, portfolio=portfolio)
 
     # ── TWAP Execution (splits large orders) ───────────────────
     TWAPExecutor(bus, threshold=args.max_size * 0.75, n_slices=5, window_s=60.0)
@@ -552,10 +564,15 @@ async def run(args: argparse.Namespace):
 
     # ── Web Dashboard ──────────────────────────────────────────
     if args.web:
+        # Capital allocator for agent leaderboard
+        from .capital_allocator import CapitalAllocator
+        cap_alloc = CapitalAllocator(bus, total_capital=args.capital)
+
         web_dash = WebDashboard(
-            bus, state, db_path=Path(args.db),
+            bus, state, db=db,
             kill_switch=kill_switch, port=args.web_port,
             wallet=wallet, gateway=gateway,
+            strategist=strategist, capital_allocator=cap_alloc,
             memory=memory, erc8004=erc8004,
         )
         await web_dash.start()
@@ -612,6 +629,8 @@ async def run(args: argparse.Namespace):
                 await t
             except (asyncio.CancelledError, Exception):
                 pass
+        # Close database connection pool
+        await db.close()
         log.info("SWARM SHUTDOWN complete")
 
     # ── Write session memory ──────────────────────────────────────

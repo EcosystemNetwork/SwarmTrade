@@ -424,6 +424,12 @@ tailwind.config = {
       <div class="kpi-label">UTC</div>
       <div class="kpi-value text-electric text-xs" id="utc-clock">--:--:--</div>
     </div>
+    <button id="demo-btn" class="kill-btn kill-btn-idle" style="background:rgba(168,85,247,0.15);color:#c084fc;border-color:rgba(168,85,247,0.3)" onclick="toggleDemo()">
+      <span class="flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-xs">play_circle</span>
+        Demo
+      </span>
+    </button>
     <button id="gw-toggle-btn" class="kill-btn kill-btn-idle" style="background:rgba(59,130,246,0.15);color:#60a5fa;border-color:rgba(59,130,246,0.3)" onclick="toggleGatewayPanel()">
       <span class="flex items-center gap-1.5">
         <span class="material-symbols-outlined text-xs">cable</span>
@@ -1091,23 +1097,59 @@ function connect() {
   try {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws`);
-  } catch (e) { startDemoMode(); return; }
+  } catch (e) { showOffline(); return; }
 
   ws.onopen = () => {
     wsRetries = 0;
+    if (demoMode) stopDemoMode();
     document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-accent status-pulse";
     document.getElementById("conn-text").textContent = "CONNECTED";
     document.getElementById("sys-status").textContent = "SYS_READY";
+    document.getElementById("demo-btn").style.display = "none";
     if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
   };
   ws.onclose = () => {
     document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-amber status-pulse";
     wsRetries++;
-    if (wsRetries >= 2 && !demoMode) startDemoMode();
+    if (wsRetries >= 3 && !demoMode) showOffline();
     else if (!demoMode) { document.getElementById("conn-text").textContent = "RECONNECTING"; reconnectTimer = setTimeout(connect, 2000); }
   };
   ws.onerror = () => ws.close();
   ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+}
+
+function showOffline() {
+  document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-muted-dim";
+  document.getElementById("conn-text").textContent = "OFFLINE";
+  document.getElementById("sys-status").textContent = "WAITING";
+  document.getElementById("demo-btn").style.display = "";
+}
+
+function stopDemoMode() {
+  demoMode = false;
+  if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
+  document.getElementById("conn-dot").className = "w-2 h-2 rounded-full bg-muted-dim";
+  document.getElementById("conn-text").textContent = "OFFLINE";
+  document.getElementById("sys-status").textContent = "WAITING";
+  document.getElementById("mode-badge").textContent = "MOCK";
+  document.getElementById("mode-badge").className = "mode-badge border border-electric/30 text-electric bg-electric/10";
+  document.getElementById("demo-btn").querySelector("span > span:first-child").textContent = "play_circle";
+  document.getElementById("demo-btn").querySelector("span").lastChild.textContent = " Demo";
+  document.getElementById("demo-btn").style.background = "rgba(168,85,247,0.15)";
+  document.getElementById("demo-btn").style.color = "#c084fc";
+  document.getElementById("demo-btn").style.borderColor = "rgba(168,85,247,0.3)";
+  updateGatewayStatus();
+}
+
+function toggleDemo() {
+  if (demoMode) { stopDemoMode(); return; }
+  startDemoMode();
+  const btn = document.getElementById("demo-btn");
+  btn.querySelector("span > span:first-child").textContent = "stop_circle";
+  btn.querySelector("span").lastChild.textContent = " Stop Demo";
+  btn.style.background = "rgba(239,68,68,0.15)";
+  btn.style.color = "#f87171";
+  btn.style.borderColor = "rgba(239,68,68,0.3)";
 }
 
 function startDemoMode() {

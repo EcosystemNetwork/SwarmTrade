@@ -217,16 +217,22 @@ async def test_wallet_manager():
     from swarmtrader.core import PortfolioTracker
     from swarmtrader.wallet import WalletManager, funds_check, allocation_check
 
+    from swarmtrader.database import Database
+
     bus_w = Bus()
     portfolio = PortfolioTracker()
     with tempfile.TemporaryDirectory() as d:
-        db = Path(d) / "wallet.db"
+        db_path = Path(d) / "wallet.db"
+        db = Database(sqlite_path=db_path)
+        await db.connect()
+
         wallet = WalletManager(
             bus_w, portfolio,
             starting_capital=10_000.0,
-            db_path=db,
+            db=db,
             allocations={"ETH": {"target_pct": 30.0, "max_pct": 50.0}},
         )
+        await wallet.load_state()
 
         # Initial state
         assert wallet.cash_balance == 10_000.0
@@ -260,9 +266,14 @@ async def test_wallet_manager():
         assert "ETH" in summary["allocations"]
         assert summary["allocations"]["ETH"]["max_pct"] == 50.0
 
-        # Persistence
-        wallet2 = WalletManager(bus_w, portfolio, starting_capital=999.0, db_path=db)
+        # Persistence — let background save tasks complete, then reload
+        import asyncio
+        await asyncio.sleep(0.1)
+        wallet2 = WalletManager(bus_w, portfolio, starting_capital=999.0, db=db)
+        await wallet2.load_state()
         assert abs(wallet2.cash_balance - 13_000.0) < 0.01
+
+        await db.close()
 
     print("OK wallet_manager")
 

@@ -1,12 +1,11 @@
-"""Simulator, executor (dry-run safe), and SQLite auditor.
+"""Simulator, executor (dry-run safe), and database auditor.
 
 PnL is calculated from actual price deltas via PortfolioTracker, not signal
 edge proxies. Every fill updates a real position ledger with cost basis,
 and sells compute realized PnL = (fill - avg_entry) * qty - fees.
 """
 from __future__ import annotations
-import logging, sqlite3, time, json
-from pathlib import Path
+import logging, time, json
 from .core import (
     Bus, TradeIntent, ExecutionReport, MarketSnapshot,
     PortfolioTracker, QUOTE_ASSETS,
@@ -130,30 +129,37 @@ class Executor:
 
 
 class Auditor:
-    """Append-only SQLite log + running daily PnL from real fills."""
+    """Append-only database log + running daily PnL from real fills.
 
-    def __init__(self, bus: Bus, db_path: Path, state: dict,
+    Accepts a ``Database`` instance (Postgres or SQLite) instead of a raw
+    path.  All writes are async — safe for the event loop.
+    """
+
+    def __init__(self, bus: Bus, db, state: dict,
                  portfolio: PortfolioTracker | None = None):
         self.bus, self.state = bus, state
         self.portfolio = portfolio
-        self.conn = sqlite3.connect(db_path)
-        self.conn.execute("""CREATE TABLE IF NOT EXISTS reports(
-            ts REAL, intent_id TEXT, status TEXT, tx TEXT,
-            fill_price REAL, slippage REAL, pnl REAL, fee REAL,
-            side TEXT, quantity REAL, asset TEXT, note TEXT)""")
-        self.conn.execute("""CREATE TABLE IF NOT EXISTS intents(
-            ts REAL, id TEXT, asset_in TEXT, asset_out TEXT,
-            amount_in REAL, supporting TEXT)""")
-        self.conn.commit()
+        self.db = db  # Database instance (already connected)
         bus.subscribe("intent.new", self._on_intent)
         bus.subscribe("exec.report", self._on_report)
 
     async def _on_intent(self, intent: TradeIntent):
-        self.conn.execute("INSERT INTO intents VALUES (?,?,?,?,?,?)",
-                          (time.time(), intent.id, intent.asset_in, intent.asset_out,
-                           intent.amount_in,
-                           json.dumps([s.__dict__ for s in intent.supporting], default=str)))
-        self.conn.commit()
+        supporting = json.dumps(
+            [s.__dict__ for s in intent.supporting], default=str)
+        if self.db.is_postgres:
+            await self.db.execute(
+                "INSERT INTO intents (ts, intent_id, asset_in, asset_out, amount_in, supporting) "
+                "VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
+                time.time(), intent.id, intent.asset_in, intent.asset_out,
+                intent.amount_in, supporting,
+            )
+        else:
+            await self.db.execute(
+                "INSERT INTO intents (ts, id, asset_in, asset_out, amount_in, supporting) "
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                time.time(), intent.id, intent.asset_in, intent.asset_out,
+                intent.amount_in, supporting,
+            )
 
     async def _on_report(self, rep: ExecutionReport):
         # Idempotency: skip duplicate reports for the same intent+status
@@ -161,12 +167,14 @@ class Auditor:
         if self.bus.is_duplicate(dedup_key):
             log.debug("Skipping duplicate report: %s", dedup_key)
             return
-        self.conn.execute(
-            "INSERT INTO reports VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (time.time(), rep.intent_id, rep.status, rep.tx_hash,
-             rep.fill_price, rep.realized_slippage, rep.pnl_estimate,
-             rep.fee_usd, rep.side, rep.quantity, rep.asset, rep.note))
-        self.conn.commit()
+        await self.db.execute(
+            "INSERT INTO reports (ts, intent_id, status, tx, fill_price, slippage, "
+            "pnl, fee, side, quantity, asset, note) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            time.time(), rep.intent_id, rep.status, rep.tx_hash,
+            rep.fill_price, rep.realized_slippage, rep.pnl_estimate,
+            rep.fee_usd, rep.side, rep.quantity, rep.asset, rep.note,
+        )
         pnl = rep.pnl_estimate or 0.0
         self.state["daily_pnl"] = self.state.get("daily_pnl", 0.0) + pnl
         if rep.status == "filled":

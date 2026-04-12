@@ -1,13 +1,12 @@
 """Wallet management — cash balance, allocation limits, fund reserves, and persistence.
 
 Tracks available capital, enforces per-asset allocation caps, reserves funds for
-pending orders, and persists wallet state to SQLite so it survives restarts.
+pending orders, and persists wallet state to the database so it survives restarts.
 Publishes wallet events on the bus for dashboard consumption.
 """
 from __future__ import annotations
-import logging, sqlite3, time, json
+import logging, time, json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
 from .core import (
@@ -79,7 +78,7 @@ class WalletManager:
         bus: Bus,
         portfolio: PortfolioTracker,
         starting_capital: float = 10_000.0,
-        db_path: Path | None = None,
+        db=None,
         allocations: dict[str, dict] | None = None,
     ):
         self.bus = bus
@@ -92,7 +91,7 @@ class WalletManager:
         self.reserves: dict[str, FundReserve] = {}
         self.allocations: dict[str, Allocation] = {}
         self.transactions: list[WalletTransaction] = []
-        self._db_path = db_path
+        self.db = db  # Database instance (already connected)
 
         # Set up allocations
         if allocations:
@@ -103,15 +102,15 @@ class WalletManager:
                     max_pct=cfg.get("max_pct", 50.0),
                 )
 
-        # Persistence — load saved state if available
-        if self._db_path:
-            self._init_db()
-            self._load_state()
-
         # Subscribe to bus events
         bus.subscribe("intent.new", self._on_intent)
         bus.subscribe("exec.report", self._on_report)
         bus.subscribe("market.snapshot", self._on_snapshot)
+
+    async def load_state(self):
+        """Load persisted wallet state from database (call after construction)."""
+        if self.db:
+            await self._load_state()
 
     # ── Bus Handlers ───────────────────────────────────────────────
 
@@ -389,84 +388,91 @@ class WalletManager:
 
     # ── Persistence ────────────────────────────────────────────────
 
-    def _init_db(self):
-        if not self._db_path:
-            return
-        with sqlite3.connect(self._db_path) as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS wallet_state(
-                key TEXT PRIMARY KEY, value TEXT)""")
-            conn.execute("""CREATE TABLE IF NOT EXISTS wallet_transactions(
-                ts REAL, tx_type TEXT, amount REAL, note TEXT)""")
-            conn.commit()
-
     def _save_state(self):
-        if not self._db_path:
+        """Schedule an async save — safe to call from sync bus handlers."""
+        if not self.db:
             return
+        import asyncio
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                state = json.dumps({
-                    "cash_balance": self.cash_balance,
-                    "starting_capital": self.starting_capital,
-                    "peak_equity": self.peak_equity,
-                    "deposits_total": self._deposits_total,
-                    "withdrawals_total": self._withdrawals_total,
-                    "allocations": {
-                        a: {"target_pct": al.target_pct, "max_pct": al.max_pct}
-                        for a, al in self.allocations.items()
-                    },
-                })
-                conn.execute(
-                    "INSERT OR REPLACE INTO wallet_state(key, value) VALUES (?, ?)",
-                    ("state", state),
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._save_state_async())
+        except RuntimeError:
+            pass  # no event loop — skip persistence (e.g. during tests)
+
+    async def _save_state_async(self):
+        try:
+            state_json = json.dumps({
+                "cash_balance": self.cash_balance,
+                "starting_capital": self.starting_capital,
+                "peak_equity": self.peak_equity,
+                "deposits_total": self._deposits_total,
+                "withdrawals_total": self._withdrawals_total,
+                "allocations": {
+                    a: {"target_pct": al.target_pct, "max_pct": al.max_pct}
+                    for a, al in self.allocations.items()
+                },
+            })
+            if self.db.is_postgres:
+                await self.db.execute(
+                    "INSERT INTO wallet_state (key, value, updated_at) "
+                    "VALUES ($1, $2::jsonb, NOW()) "
+                    "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+                    "state", state_json,
                 )
-                # Persist recent transactions
-                for tx in self.transactions[-10:]:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO wallet_transactions VALUES (?, ?, ?, ?)",
-                        (tx.ts, tx.tx_type, tx.amount_usd, tx.note),
-                    )
-                conn.commit()
+            else:
+                await self.db.execute(
+                    "INSERT OR REPLACE INTO wallet_state(key, value) VALUES ($1, $2)",
+                    "state", state_json,
+                )
+            # Persist recent transactions
+            for tx in self.transactions[-10:]:
+                await self.db.execute(
+                    "INSERT INTO wallet_transactions (ts, tx_type, amount, note) "
+                    "VALUES ($1, $2, $3, $4)",
+                    tx.ts, tx.tx_type, tx.amount_usd, tx.note,
+                )
         except Exception as e:
             log.warning("WALLET save failed: %s", e)
 
-    def _load_state(self):
-        if not self._db_path:
+    async def _load_state(self):
+        if not self.db:
             return
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                row = conn.execute(
-                    "SELECT value FROM wallet_state WHERE key='state'"
-                ).fetchone()
-                if row:
-                    saved = json.loads(row[0])
-                    self.cash_balance = float(saved.get("cash_balance", self.starting_capital))
-                    self.starting_capital = float(saved.get("starting_capital", self.starting_capital))
-                    self.peak_equity = float(saved.get("peak_equity", self.peak_equity))
-                    self._deposits_total = float(saved.get("deposits_total", 0.0))
-                    self._withdrawals_total = float(saved.get("withdrawals_total", 0.0))
-                    # Validate loaded values
-                    if self.cash_balance < 0:
-                        log.warning("WALLET loaded negative cash (%.2f), resetting to 0",
-                                    self.cash_balance)
-                        self.cash_balance = 0.0
-                    for asset, cfg in saved.get("allocations", {}).items():
-                        self.allocations[asset] = Allocation(
-                            asset=asset,
-                            target_pct=cfg.get("target_pct", 0.0),
-                            max_pct=cfg.get("max_pct", 50.0),
-                        )
-                    log.info("WALLET loaded: cash=%.2f capital=%.2f peak=%.2f",
-                             self.cash_balance, self.starting_capital, self.peak_equity)
+            row = await self.db.fetchone(
+                "SELECT value FROM wallet_state WHERE key=$1", "state",
+            )
+            if row:
+                raw = row["value"]
+                saved = json.loads(raw) if isinstance(raw, str) else raw
+                self.cash_balance = float(saved.get("cash_balance", self.starting_capital))
+                self.starting_capital = float(saved.get("starting_capital", self.starting_capital))
+                self.peak_equity = float(saved.get("peak_equity", self.peak_equity))
+                self._deposits_total = float(saved.get("deposits_total", 0.0))
+                self._withdrawals_total = float(saved.get("withdrawals_total", 0.0))
+                # Validate loaded values
+                if self.cash_balance < 0:
+                    log.warning("WALLET loaded negative cash (%.2f), resetting to 0",
+                                self.cash_balance)
+                    self.cash_balance = 0.0
+                for asset, cfg in saved.get("allocations", {}).items():
+                    self.allocations[asset] = Allocation(
+                        asset=asset,
+                        target_pct=cfg.get("target_pct", 0.0),
+                        max_pct=cfg.get("max_pct", 50.0),
+                    )
+                log.info("WALLET loaded: cash=%.2f capital=%.2f peak=%.2f",
+                         self.cash_balance, self.starting_capital, self.peak_equity)
 
-                # Load transaction history
-                rows = conn.execute(
-                    "SELECT ts, tx_type, amount, note FROM wallet_transactions "
-                    "ORDER BY ts DESC LIMIT 100"
-                ).fetchall()
-                self.transactions = [
-                    WalletTransaction(ts=r[0], tx_type=r[1], amount_usd=float(r[2]), note=r[3])
-                    for r in reversed(rows)
-                ]
+            # Load transaction history
+            rows = await self.db.fetch(
+                "SELECT ts, tx_type, amount, note FROM wallet_transactions "
+                "ORDER BY ts DESC LIMIT 100",
+            )
+            self.transactions = [
+                WalletTransaction(ts=r["ts"], tx_type=r["tx_type"],
+                                  amount_usd=float(r["amount"]), note=r["note"])
+                for r in reversed(rows)
+            ]
         except Exception as e:
             log.warning("WALLET load failed (using defaults): %s", e)
 

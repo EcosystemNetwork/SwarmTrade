@@ -1,5 +1,5 @@
 """
-PnL report generator — reads SQLite audit trail and produces performance metrics.
+PnL report generator — reads database audit trail and produces performance metrics.
 
 Generates:
   - Summary stats (total PnL, Sharpe, Sortino, max drawdown, win rate, profit factor)
@@ -12,7 +12,7 @@ Usage:
   python -m swarmtrader.report [--db swarm.db] [--json] [--html report.html]
 """
 from __future__ import annotations
-import argparse, json, math, sqlite3, time
+import argparse, json, math, time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -271,27 +271,27 @@ class PerformanceReport:
         return "\n".join(lines)
 
 
-def load_from_db(db_path: Path) -> PerformanceReport:
-    """Load trades from SQLite audit database."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+async def load_from_db(db) -> PerformanceReport:
+    """Load trades from the database (Postgres or SQLite).
 
+    Accepts a ``Database`` instance from ``swarmtrader.database``.
+    """
     # Load reports
-    reports = conn.execute("SELECT * FROM reports ORDER BY ts ASC").fetchall()
+    report_rows = await db.fetch("SELECT * FROM reports ORDER BY ts ASC")
 
     # Load intents for asset info
-    intents = {}
+    intents: dict[str, dict] = {}
     try:
-        for row in conn.execute("SELECT * FROM intents ORDER BY ts ASC").fetchall():
-            intents[row["id"]] = dict(row)
+        intent_rows = await db.fetch("SELECT * FROM intents ORDER BY ts ASC")
+        for row in intent_rows:
+            # Postgres uses 'intent_id', SQLite uses 'id'
+            iid = row.get("intent_id") or row.get("id", "")
+            intents[iid] = row
     except Exception:
         pass
 
-    conn.close()
-
     trades = []
-    for r in reports:
-        rd = dict(r)
+    for rd in report_rows:
         intent = intents.get(rd.get("intent_id", ""), {})
         trades.append(TradeRecord(
             ts=rd.get("ts", 0.0),
@@ -639,27 +639,38 @@ window.addEventListener("resize", () => {{ drawEquity(); drawDist(); }});
 
 
 def main():
+    import asyncio, os
     p = argparse.ArgumentParser(description="SwarmTrader Performance Report")
     p.add_argument("--db", default="swarm.db", help="SQLite database path")
     p.add_argument("--json", action="store_true", help="Output JSON to stdout")
     p.add_argument("--html", type=str, default=None, help="Generate HTML report to file")
     args = p.parse_args()
 
-    db = Path(args.db)
-    if not db.exists():
-        print(f"Database not found: {db}")
-        return
+    async def _run():
+        from .database import Database
+        database_url = os.getenv("DATABASE_URL")
+        db = Database(
+            database_url=database_url,
+            sqlite_path=Path(args.db) if not database_url else None,
+        )
+        if not database_url and not Path(args.db).exists():
+            print(f"Database not found: {args.db}")
+            return
+        await db.connect()
+        try:
+            report = await load_from_db(db)
+            if args.json:
+                print(json.dumps(report.to_dict(), indent=2))
+            elif args.html:
+                out = Path(args.html)
+                generate_html_report(report, out)
+                print(f"HTML report written to: {out}")
+            else:
+                print(report.summary())
+        finally:
+            await db.close()
 
-    report = load_from_db(db)
-
-    if args.json:
-        print(json.dumps(report.to_dict(), indent=2))
-    elif args.html:
-        out = Path(args.html)
-        generate_html_report(report, out)
-        print(f"HTML report written to: {out}")
-    else:
-        print(report.summary())
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

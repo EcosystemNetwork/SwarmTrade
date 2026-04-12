@@ -267,11 +267,11 @@ class Reconciler:
     def __init__(
         self,
         portfolio: PortfolioTracker,
-        db_conn=None,
+        db=None,
         interval_s: float = 60.0,
     ):
         self.portfolio = portfolio
-        self.db_conn = db_conn
+        self.db = db  # Database instance (optional)
         self.interval_s = interval_s
         self._running = False
 
@@ -279,22 +279,23 @@ class Reconciler:
         """Return ``{matches: bool, discrepancies: list[dict]}``."""
         discrepancies: list[dict] = []
 
-        if self.db_conn is None:
+        if self.db is None:
             return {"matches": True, "discrepancies": discrepancies}
 
-        # Build positions from SQLite reports
-        cursor = self.db_conn.execute(
-            "SELECT asset, side, quantity FROM reports WHERE status='filled'"
+        # Build positions from database reports
+        rows = await self.db.fetch(
+            "SELECT asset, side, quantity FROM reports WHERE status=$1", "filled",
         )
         db_positions: dict[str, float] = {}
-        for asset, side, qty in cursor.fetchall():
+        for row in rows:
+            asset = row.get("asset")
             if not asset:
                 continue
             db_positions.setdefault(asset, 0.0)
-            if side == "buy":
-                db_positions[asset] += qty
-            elif side == "sell":
-                db_positions[asset] -= qty
+            if row["side"] == "buy":
+                db_positions[asset] += row["quantity"]
+            elif row["side"] == "sell":
+                db_positions[asset] -= row["quantity"]
 
         # Compare against PortfolioTracker
         all_assets = set(db_positions.keys()) | set(self.portfolio.positions.keys())
