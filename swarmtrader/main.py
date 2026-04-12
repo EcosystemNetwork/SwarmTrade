@@ -513,7 +513,7 @@ async def run(args: argparse.Namespace):
             master_key=master_key,
         )
         log.info("Agent Gateway enabled — external agents can connect")
-        log.info("  master_key=%s...", gateway.master_key[:8])
+        log.info("  master_key configured (length=%d)", len(gateway.master_key))
         if not args.web:
             # Launch standalone gateway server
             from aiohttp import web as aweb

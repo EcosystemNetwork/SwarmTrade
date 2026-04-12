@@ -94,6 +94,7 @@ async def _run_cli(*args: str, timeout: float = _CLI_TIMEOUT) -> dict | list | s
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
+        await proc.wait()
         raise RuntimeError(f"kraken CLI timed out after {timeout}s: {' '.join(args)}")
 
     if proc.returncode != 0:

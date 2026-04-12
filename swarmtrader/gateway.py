@@ -736,7 +736,7 @@ class AgentGateway:
           {"type": "execution", ...}
           {"type": "signal_ack", ...}
         """
-        ws = web.WebSocketResponse(heartbeat=30.0)
+        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=1024 * 1024)
         await ws.prepare(request)
 
         api_key = request.query.get("api_key", "")

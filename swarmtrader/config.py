@@ -190,10 +190,21 @@ class TradingConfig:
         log.info("Loaded config from %s", p)
         return cfg
 
-    def to_dict(self) -> dict:
-        """Serialize config to dict (for logging/persistence)."""
+    def to_dict(self, *, include_secrets: bool = False) -> dict:
+        """Serialize config to dict (for logging/persistence).
+
+        By default, API keys and secrets are redacted.
+        Pass include_secrets=True only when saving to a secure config file.
+        """
         import dataclasses
-        return dataclasses.asdict(self)
+        d = dataclasses.asdict(self)
+        if not include_secrets:
+            kraken = d.get("kraken", {})
+            if kraken.get("api_key"):
+                kraken["api_key"] = "***"
+            if kraken.get("api_secret"):
+                kraken["api_secret"] = "***"
+        return d
 
     def save(self, path: str | Path):
         """Save config to JSON file."""

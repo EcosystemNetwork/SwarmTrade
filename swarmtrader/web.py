@@ -45,12 +45,24 @@ async def auth_middleware(request: web.Request, handler):
     """Require Bearer token for all API/WS endpoints.
 
     Unauthenticated paths: static assets, health check.
+    Gateway paths use their own API key auth (handled by gateway handlers).
     """
     path = request.path
 
     # Allow static assets, health check, and HTML pages without auth
     if (path.startswith("/static/") or path == "/health"
             or path == "/" or path == "/slides" or path == "/report"):
+        return await handler(request)
+
+    # Gateway endpoints authenticate via their own API key mechanism
+    # (handled inside gateway.handle_signal, handle_market, etc.)
+    if (path.startswith("/api/gateway/signal") or
+            path.startswith("/api/gateway/market") or
+            path.startswith("/api/gateway/portfolio") or
+            path.startswith("/api/gateway/agents") or
+            path.startswith("/api/gateway/registry") or
+            path.startswith("/api/gateway/disconnect") or
+            path == "/ws/agent"):
         return await handler(request)
 
     token = request.app.get("_dashboard_token")
@@ -154,7 +166,7 @@ class WebDashboard:
                     "types": {}, "categories": {}, "capabilities": []}
         return {
             "enabled": True,
-            "master_key": self.gateway.master_key,
+            "master_key_configured": True,
             "agents": [
                 {
                     "agent_id": a.agent_id,
@@ -443,7 +455,7 @@ class WebDashboard:
     # ── WebSocket Handler ──────────────────────────────────────────
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(heartbeat=30.0)
+        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=1024 * 1024)
         await ws.prepare(request)
         self._clients.add(ws)
         log.info("WebSocket client connected (%d total)", len(self._clients))
@@ -945,7 +957,7 @@ class WebDashboard:
         reg["endpoints"] = {
             "signal": "POST /api/gateway/signal",
             "market": "GET /api/gateway/market",
-            "websocket": f"WS /ws/agent?api_key={reg['api_key']}",
+            "websocket": "WS /ws/agent (use Authorization: Bearer <api_key> header)",
         }
         return web.json_response(reg)
 
@@ -973,9 +985,9 @@ class WebDashboard:
         token = os.environ.get("SWARM_DASHBOARD_TOKEN", "")
         if not token:
             token = _generate_token()
-            log.warning("No SWARM_DASHBOARD_TOKEN set — generated: %s... (save to env var)",
-                        token[:8])
-            log.warning("Set this env var to persist across restarts.")
+            log.warning("No SWARM_DASHBOARD_TOKEN set — auto-generated (set env var to persist)")
+            import sys
+            print(f"\n  Dashboard token: {token}\n", file=sys.stderr)
 
         app = web.Application(middlewares=[auth_middleware])
         app["_dashboard_token"] = token
