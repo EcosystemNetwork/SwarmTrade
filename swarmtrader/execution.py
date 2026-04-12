@@ -19,7 +19,10 @@ class Simulator:
         bus.subscribe("exec.go", self._on_go)
 
     async def _on_snap(self, snap: MarketSnapshot):
-        self.last_price = snap.prices.get("ETH")
+        # Grab the first available price (works for any asset)
+        for price in snap.prices.values():
+            self.last_price = price
+            break
 
     async def _on_go(self, intent: TradeIntent):
         if self.last_price is None:

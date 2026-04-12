@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SWARMTRADER | CONFIGURATION</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#00fd87",
+                    "on-tertiary": "#480014",
+                    "secondary-fixed": "#79dfff",
+                    "primary-fixed-dim": "#00ed7e",
+                    "inverse-primary": "#006e37",
+                    "primary-fixed": "#00fd87",
+                    "on-tertiary-container": "#000000",
+                    "surface-tint": "#a4ffb9",
+                    "on-secondary-fixed": "#003a47",
+                    "on-primary-fixed": "#004621",
+                    "error-container": "#9f0519",
+                    "on-background": "#ebedfb",
+                    "inverse-on-surface": "#515560",
+                    "secondary-container": "#00677e",
+                    "on-primary": "#006532",
+                    "on-secondary": "#004352",
+                    "surface-container-lowest": "#000000",
+                    "outline": "#727581",
+                    "surface-dim": "#0a0e17",
+                    "inverse-surface": "#faf9ff",
+                    "on-secondary-container": "#eefaff",
+                    "error": "#ff716c",
+                    "surface-variant": "#202633",
+                    "tertiary": "#ff6e85",
+                    "surface-container-low": "#0f131d",
+                    "tertiary-dim": "#e31754",
+                    "surface-container-highest": "#202633",
+                    "error-dim": "#d7383b",
+                    "tertiary-fixed": "#ff909e",
+                    "surface": "#0a0e17",
+                    "on-surface-variant": "#a7abb7",
+                    "primary-dim": "#00ed7e",
+                    "on-tertiary-fixed": "#39000e",
+                    "tertiary-fixed-dim": "#ff788c",
+                    "secondary-fixed-dim": "#1cd5ff",
+                    "on-secondary-fixed-variant": "#00586c",
+                    "on-error-container": "#ffa8a3",
+                    "on-secondary": "#004352",
+                    "secondary": "#00d2fd",
+                    "tertiary-container": "#fd3164",
+                    "surface-container": "#151925",
+                    "primary": "#a4ffb9",
+                    "on-error": "#490006",
+                    "outline-variant": "#444852",
+                    "surface-bright": "#262c3a",
+                    "on-tertiary-fixed-variant": "#780027",
+                    "surface-container-high": "#1a1f2c",
+                    "secondary-dim": "#00c3eb",
+                    "background": "#0a0e17",
+                    "on-primary-container": "#005b2c"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Space Grotesk"],
+                    "body": ["Inter"],
+                    "label": ["Inter"],
+                    "mono": ["JetBrains Mono"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scan-line {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100;
+            opacity: 0.02;
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0a0e17; }
+        ::-webkit-scrollbar-thumb { background: #444852; }
+        ::-webkit-scrollbar-thumb:hover { background: #a4ffb9; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary">
+<div class="scan-line"></div>
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#0a0e17] border-b border-primary/20 shadow-[0_0_10px_rgba(0,255,136,0.1)] flex justify-between items-center px-6 h-16">
+<div class="flex items-center gap-8">
+<h1 class="text-xl font-bold tracking-tighter text-primary font-headline">SWARMTRADER</h1>
+<nav class="hidden md:flex gap-6 font-headline uppercase tracking-widest text-sm">
+<a class="text-gray-500 hover:text-primary/80 transition-all duration-200" href="#">DASHBOARD</a>
+<a class="text-gray-500 hover:text-primary/80 transition-all duration-200" href="#">MARKETS</a>
+<a class="text-gray-500 hover:text-primary/80 transition-all duration-200" href="#">PORTFOLIO</a>
+<a class="text-primary border-b-2 border-primary pb-1" href="#">CONFIG</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex bg-surface-container rounded-none p-1 border border-outline-variant">
+<button class="px-3 py-1 text-[10px] font-mono text-secondary-dim border border-secondary-dim/30">MOCK</button>
+<button class="px-3 py-1 text-[10px] font-mono bg-primary/10 text-primary border border-primary/50">PAPER</button>
+<button class="px-3 py-1 text-[10px] font-mono text-gray-500">LIVE</button>
+</div>
+<button class="bg-tertiary-container hover:bg-tertiary transition-colors px-4 py-1.5 font-headline font-bold text-xs tracking-widest text-on-tertiary-container shadow-[0_0_15px_rgba(253,49,100,0.3)]">
+                KILL_SWITCH
+            </button>
+</div>
+</header>
+<div class="flex pt-16 min-h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px-32px)] w-60 bg-[#151925] border-r border-primary/10 flex flex-col py-4 overflow-y-auto">
+<div class="px-6 mb-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-primary/20 flex items-center justify-center border border-primary/40">
+<span class="material-symbols-outlined text-primary text-sm">terminal</span>
+</div>
+<div>
+<p class="font-mono text-xs font-black text-primary uppercase">NODE_01</p>
+<p class="font-mono text-[9px] text-gray-500">v4.2.0-STABLE</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1 font-mono text-[11px] uppercase tracking-tight">
+<a class="flex items-center gap-3 px-6 py-3 bg-[#262c3a] text-primary border-l-4 border-primary" href="#">
+<span class="material-symbols-outlined text-lg">settings</span>
+                    GENERAL
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">account_balance</span>
+                    EXCHANGE
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">gpp_maybe</span>
+                    RISK_LIMITS
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">psychology</span>
+                    STRATEGY
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">hub</span>
+                    AGENTS
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">sensors</span>
+                    SIGNALS
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">database</span>
+                    DATABASE
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">vpn_key</span>
+                    API_KEYS
+                </a>
+<a class="flex items-center gap-3 px-6 py-3 text-gray-400 hover:text-white hover:bg-[#262c3a]/50 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">notifications</span>
+                    NOTIFICATIONS
+                </a>
+</nav>
+<div class="mt-auto px-6 pt-4 border-t border-primary/5">
+<a class="flex items-center gap-3 py-3 text-gray-500 hover:text-error transition-colors font-mono text-[10px]" href="#">
+<span class="material-symbols-outlined text-lg">logout</span>
+                    LOGOUT
+                </a>
+<div class="mt-4 pb-2">
+<p class="font-mono text-[9px] text-gray-600 leading-tight">Swarm Trade v0.1.0</p>
+<p class="font-mono text-[9px] text-gray-600 leading-tight">Python 3.11.4</p>
+</div>
+</div>
+</aside>
+<!-- Content Panel -->
+<main class="ml-60 flex-1 p-8 bg-surface mb-8">
+<div class="max-w-5xl mx-auto space-y-12 pb-16">
+<!-- Header -->
+<header class="flex items-center gap-6 pb-6 border-b border-outline-variant">
+<div class="p-4 bg-surface-container border border-primary/20">
+<span class="material-symbols-outlined text-4xl text-primary" style="font-variation-settings: 'FILL' 1;">settings</span>
+</div>
+<div>
+<h2 class="text-3xl font-headline font-bold tracking-tight text-on-surface">GENERAL CONFIGURATION</h2>
+<p class="font-mono text-xs text-secondary-dim uppercase tracking-widest mt-1">Global system parameters &amp; node orchestration</p>
+</div>
+</header>
+<!-- Execution Mode -->
+<section>
+<h3 class="font-mono text-xs font-bold text-primary mb-4 flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-primary"></span> EXECUTION_MODE
+                    </h3>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="p-5 border border-secondary/30 bg-secondary/5 group cursor-pointer hover:bg-secondary/10 transition-all">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-secondary">biotech</span>
+<div class="w-4 h-4 border border-secondary/40"></div>
+</div>
+<h4 class="font-headline font-bold text-on-surface">MOCK MODE</h4>
+<p class="text-[11px] text-on-surface-variant mt-2 leading-relaxed">Local simulated environment. No network latency.</p>
+</div>
+<div class="p-5 border-2 border-primary bg-primary/10 group cursor-pointer shadow-[0_0_20px_rgba(164,255,185,0.1)]">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-primary">description</span>
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">square</span>
+</div>
+<h4 class="font-headline font-bold text-on-surface">PAPER MODE</h4>
+<p class="text-[11px] text-on-surface-variant mt-2 leading-relaxed">Real-time exchange data. Simulated execution.</p>
+</div>
+<div class="p-5 border border-tertiary/30 bg-tertiary/5 group cursor-pointer hover:bg-tertiary/10 transition-all">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-tertiary">bolt</span>
+<span class="px-1.5 py-0.5 bg-tertiary text-[9px] font-black text-on-tertiary uppercase">DANGER</span>
+</div>
+<h4 class="font-headline font-bold text-on-surface">LIVE MODE</h4>
+<p class="text-[11px] text-on-surface-variant mt-2 leading-relaxed">Live capital deployment. Network priority enabled.</p>
+</div>
+</div>
+</section>
+<!-- Trading Parameters -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+<div class="space-y-6">
+<h3 class="font-mono text-xs font-bold text-primary flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-primary"></span> TRADING_PARAMETERS
+                        </h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Base Trade Size</label>
+<input class="w-full bg-transparent border-none focus:ring-0 font-mono text-sm text-primary" type="text" value="500 USDC"/>
+</div>
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Max Trade Size</label>
+<input class="w-full bg-transparent border-none focus:ring-0 font-mono text-sm text-primary" type="text" value="2000 USDC"/>
+</div>
+<div class="relative bg-surface-container-low p-3 border-2 border-error">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-error uppercase">Max Daily Drawdown</label>
+<input class="w-full bg-transparent border-none focus:ring-0 font-mono text-sm text-error" type="text" value="100 USD"/>
+</div>
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Intent TTL</label>
+<input class="w-full bg-transparent border-none focus:ring-0 font-mono text-sm text-primary" type="text" value="8s"/>
+</div>
+</div>
+<div class="space-y-4">
+<div class="flex justify-between items-end">
+<span class="font-mono text-[10px] text-gray-500">CONFIDENCE_THRESHOLD</span>
+<span class="font-mono text-xs text-primary">0.20</span>
+</div>
+<input class="w-full accent-primary bg-surface-container-highest h-1 rounded-none appearance-none" max="1" min="0" step="0.01" type="range" value="0.20"/>
+</div>
+</div>
+<div class="space-y-6">
+<h3 class="font-mono text-xs font-bold text-primary flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-primary"></span> EXCHANGE_CONFIG
+                        </h3>
+<div class="space-y-4">
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Primary Exchange</label>
+<select class="w-full bg-transparent border-none focus:ring-0 font-mono text-sm text-on-surface">
+<option>Kraken</option>
+<option>Binance</option>
+<option>Coinbase</option>
+</select>
+</div>
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Active Pairs</label>
+<div class="flex flex-wrap gap-2 pt-2">
+<span class="px-2 py-0.5 bg-primary/10 text-primary font-mono text-[10px] border border-primary/30 flex items-center gap-1">ETH/USD <span class="material-symbols-outlined text-[10px] cursor-pointer">close</span></span>
+<span class="px-2 py-0.5 bg-primary/10 text-primary font-mono text-[10px] border border-primary/30 flex items-center gap-1">BTC/USD <span class="material-symbols-outlined text-[10px] cursor-pointer">close</span></span>
+<input class="flex-1 min-w-[60px] bg-transparent border-none focus:ring-0 font-mono text-[10px] p-0" placeholder="Add pair..." type="text"/>
+</div>
+</div>
+<div class="flex gap-6 items-center pt-2">
+<span class="font-mono text-[10px] text-gray-500 uppercase">Data Source:</span>
+<label class="flex items-center gap-2 cursor-pointer group">
+<div class="w-3 h-3 rounded-full border-2 border-primary bg-primary shadow-[0_0_5px_rgba(0,255,136,0.5)]"></div>
+<span class="font-mono text-[10px] text-on-surface">WebSocket</span>
+</label>
+<label class="flex items-center gap-2 cursor-pointer group">
+<div class="w-3 h-3 rounded-full border-2 border-outline-variant"></div>
+<span class="font-mono text-[10px] text-gray-500 group-hover:text-on-surface">REST API</span>
+</label>
+</div>
+</div>
+</div>
+</section>
+<!-- API Keys & Safety -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-12 pt-4">
+<div class="space-y-6">
+<h3 class="font-mono text-xs font-bold text-primary flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-primary"></span> API_KEYS
+                        </h3>
+<div class="space-y-4">
+<div class="space-y-1">
+<p class="font-mono text-[9px] text-gray-500 ml-1">KRAKEN_API_KEY</p>
+<div class="flex bg-surface-container-low border border-outline-variant px-3 py-2">
+<input class="flex-1 bg-transparent border-none focus:ring-0 font-mono text-xs text-on-surface" type="password" value="************************"/>
+<span class="material-symbols-outlined text-sm text-gray-500 cursor-pointer hover:text-primary">visibility</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-mono text-[9px] text-gray-500 ml-1">KRAKEN_PRIVATE_KEY</p>
+<div class="flex bg-surface-container-low border border-outline-variant px-3 py-2">
+<input class="flex-1 bg-transparent border-none focus:ring-0 font-mono text-xs text-on-surface" type="password" value="************************"/>
+<span class="material-symbols-outlined text-sm text-gray-500 cursor-pointer hover:text-primary">visibility</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-mono text-[9px] text-gray-500 ml-1">PRISM_API_KEY</p>
+<div class="flex bg-surface-container-low border border-primary/40 px-3 py-2 items-center gap-3">
+<input class="flex-1 bg-transparent border-none focus:ring-0 font-mono text-xs text-on-surface" type="password" value="************************"/>
+<span class="px-1.5 py-0.5 bg-primary/20 text-primary text-[8px] font-black tracking-widest border border-primary/50">CONNECTED</span>
+</div>
+</div>
+</div>
+</div>
+<div class="space-y-6">
+<h3 class="font-mono text-xs font-bold text-primary flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-primary"></span> KILL_SWITCH_&amp;_SAFETY
+                        </h3>
+<div class="space-y-4">
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Kill File Path</label>
+<div class="flex items-center justify-between">
+<input class="flex-1 bg-transparent border-none focus:ring-0 font-mono text-xs text-primary" type="text" value="/var/run/swarm/kill_signal.lock"/>
+<span class="px-2 py-0.5 bg-primary/20 text-primary text-[10px] font-mono border border-primary/30">INACTIVE</span>
+</div>
+</div>
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Database Instance</label>
+<input class="w-full bg-transparent border-none focus:ring-0 font-mono text-xs text-on-surface" type="text" value="swarm.db"/>
+</div>
+<div class="relative bg-surface-container-low p-3 border border-outline-variant">
+<label class="absolute -top-2 left-2 px-1 bg-surface-container-low text-[9px] font-mono text-gray-500 uppercase">Log Level</label>
+<select class="w-full bg-transparent border-none focus:ring-0 font-mono text-xs text-on-surface">
+<option>INFO</option>
+<option>DEBUG</option>
+<option>WARNING</option>
+<option>CRITICAL</option>
+</select>
+</div>
+</div>
+</div>
+</section>
+<!-- Action Footer -->
+<footer class="pt-8 flex flex-wrap gap-4 items-center justify-between border-t border-outline-variant">
+<div class="flex gap-4">
+<button class="px-6 py-2 border border-outline-variant text-gray-400 font-headline font-bold text-xs uppercase hover:text-on-surface hover:border-on-surface transition-all">
+                            RESET TO DEFAULTS
+                        </button>
+<button class="px-6 py-2 border border-secondary text-secondary font-headline font-bold text-xs uppercase hover:bg-secondary/10 transition-all">
+                            EXPORT CONFIG
+                        </button>
+</div>
+<button class="px-10 py-3 bg-primary text-on-primary font-headline font-black text-sm tracking-[0.2em] shadow-[0_0_25px_rgba(0,255,136,0.4)] hover:shadow-[0_0_40px_rgba(0,255,136,0.6)] transition-all">
+                        SAVE CONFIGURATION
+                    </button>
+</footer>
+</div>
+</main>
+</div>
+<!-- Footer Status Bar -->
+<footer class="fixed bottom-0 w-full h-8 bg-surface-container-low border-t border-primary/10 flex items-center px-4 justify-between font-mono text-[9px] z-50">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 bg-primary animate-pulse"></span>
+<span class="text-primary uppercase font-bold">SYSTEM_OK</span>
+</div>
+<div class="text-gray-500 uppercase">CPU: <span class="text-on-surface">12.4%</span></div>
+<div class="text-gray-500 uppercase">MEM: <span class="text-on-surface">2.1 GB / 16 GB</span></div>
+<div class="text-gray-500 uppercase">LATENCY: <span class="text-primary">14ms</span></div>
+</div>
+<div class="flex items-center gap-6 text-gray-500">
+<div>NODE: <span class="text-on-surface">US-EAST-1A</span></div>
+<div>UPTIME: <span class="text-on-surface">14D 02H 33M</span></div>
+<div class="flex items-center gap-1 text-primary">
+<span class="material-symbols-outlined text-[12px]">rss_feed</span>
+                KRAKEN:CONNECTED
+            </div>
+</div>
+</footer>
+</body></html>

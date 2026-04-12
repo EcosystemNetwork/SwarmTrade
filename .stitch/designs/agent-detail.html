@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>KINETIC_TERMINAL | MOMENTUM_ANALYST_01</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700&amp;family=Inter:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#400011",
+                        "secondary": "#a2e7ff",
+                        "surface-container-low": "#181b25",
+                        "on-primary": "#003919",
+                        "inverse-on-surface": "#2c303a",
+                        "on-secondary-fixed": "#001f27",
+                        "surface-variant": "#31353f",
+                        "primary-fixed-dim": "#00e479",
+                        "tertiary-fixed-dim": "#ffb2ba",
+                        "on-surface-variant": "#b9cbb9",
+                        "surface-bright": "#353943",
+                        "inverse-primary": "#006d37",
+                        "primary-container": "#00ff88",
+                        "on-secondary-fixed-variant": "#004e5f",
+                        "surface-dim": "#0f131c",
+                        "outline": "#849585",
+                        "on-tertiary-container": "#c40044",
+                        "on-tertiary-fixed-variant": "#910030",
+                        "surface": "#0f131c",
+                        "secondary-fixed-dim": "#3cd7ff",
+                        "outline-variant": "#3b4b3d",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#005228",
+                        "tertiary-fixed": "#ffd9dc",
+                        "tertiary": "#fffaf9",
+                        "primary-fixed": "#60ff99",
+                        "on-primary-fixed": "#00210c",
+                        "surface-tint": "#00e479",
+                        "secondary-fixed": "#b4ebff",
+                        "on-surface": "#dfe2ef",
+                        "background": "#0f131c",
+                        "surface-container": "#1c1f29",
+                        "on-tertiary": "#670020",
+                        "tertiary-container": "#ffd4d7",
+                        "surface-container-high": "#262a34",
+                        "error-container": "#93000a",
+                        "primary": "#f1ffef",
+                        "on-primary-container": "#007139",
+                        "on-background": "#dfe2ef",
+                        "on-error": "#690005",
+                        "on-secondary": "#003642",
+                        "inverse-surface": "#dfe2ef",
+                        "on-secondary-container": "#005669",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-lowest": "#0a0e17",
+                        "surface-container-highest": "#31353f",
+                        "secondary-container": "#00d2fd"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0a0e17;
+            color: #dfe2ef;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .scan-line {
+            background: linear-gradient(to bottom, transparent 50%, rgba(0, 255, 136, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .crt-glow {
+            box-shadow: inset 0 0 10px rgba(0, 255, 136, 0.1);
+        }
+        .ghost-border {
+            border: 1px solid rgba(132, 149, 133, 0.2);
+        }
+        .neon-glow-text {
+            text-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+        }
+        .mono-data {
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+<div class="fixed inset-0 scan-line"></div>
+<!-- Top Navigation Bar -->
+<header class="flex justify-between items-center w-full px-6 py-3 bg-[#0a0e17] border-b border-[#00ff88]/30 z-50">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#00ff88] drop-shadow-[0_0_8px_rgba(0,255,136,0.4)] font-['Space_Grotesk'] uppercase">KINETIC_TERMINAL</span>
+<nav class="flex items-center gap-4 font-['Space_Grotesk'] uppercase tracking-widest text-xs">
+<span class="text-[#849585]">SWARM</span>
+<span class="text-[#849585]">/</span>
+<span class="text-[#849585]">AGENTS</span>
+<span class="text-[#849585]">/</span>
+<span class="text-[#00ff88] border-b-2 border-[#00ff88] pb-1">MOMENTUM_ANALYST_01</span>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex bg-surface-container-low p-1">
+<button class="px-3 py-1 text-[10px] font-bold tracking-widest uppercase bg-secondary-container text-on-secondary-container">MOCK</button>
+<button class="px-3 py-1 text-[10px] font-bold tracking-widest uppercase text-[#849585] hover:text-white transition-colors">LIVE</button>
+</div>
+<div class="flex flex-col items-end">
+<span class="mono-data text-[#00ff88] text-sm font-bold">+24.8% PnL</span>
+</div>
+<button class="bg-[#93000a] hover:bg-red-600 text-white px-4 py-1.5 text-xs font-bold tracking-tighter uppercase transition-all active:scale-95 duration-75">
+                KILL_SWITCH
+            </button>
+</div>
+</header>
+<!-- Agent Header Section -->
+<section class="bg-surface-dim px-6 py-8 border-b border-outline-variant/20">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-6">
+<div class="relative w-20 h-20 flex items-center justify-center">
+<div class="absolute inset-0 border-2 border-[#00ff88] rounded-full animate-pulse opacity-20"></div>
+<div class="absolute inset-2 border border-[#00ff88] rounded-full opacity-40"></div>
+<div class="w-14 h-14 bg-surface-container-high flex items-center justify-center border border-[#00ff88]/50">
+<span class="material-symbols-outlined text-[#00ff88] text-3xl" data-icon="robot_2">robot_2</span>
+</div>
+</div>
+<div>
+<div class="flex items-center gap-3">
+<h1 class="text-3xl font-bold font-headline text-on-surface tracking-tight">MOMENTUM_ANALYST_01</h1>
+<span class="border border-secondary-container text-secondary-container px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest">ANALYST</span>
+</div>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 bg-[#00ff88] rounded-full animate-ping"></span>
+<span class="text-[10px] uppercase font-bold tracking-widest text-[#00ff88]">ACTIVE</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-outline" data-icon="schedule">schedule</span>
+<span class="mono-data text-xs text-outline">UPTIME: 04:22:17</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-8">
+<div class="flex flex-col items-end">
+<span class="text-[10px] uppercase text-outline tracking-widest">Signals Emitted</span>
+<span class="mono-data text-xl text-on-surface">1,247</span>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] uppercase text-outline tracking-widest">Accuracy</span>
+<span class="mono-data text-xl text-secondary-container">67.3%</span>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] uppercase text-outline tracking-widest">Avg Latency</span>
+<span class="mono-data text-xl text-on-surface">2.1ms</span>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] uppercase text-outline tracking-widest">Last Tick</span>
+<span class="mono-data text-xl text-on-surface">0.3s ago</span>
+</div>
+</div>
+</div>
+<!-- Health Progress Bar -->
+<div class="mt-8 w-full h-1 bg-surface-container-low overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary-container to-[#00d2fd] w-[88%] shadow-[0_0_8px_rgba(0,255,136,0.5)]"></div>
+</div>
+</section>
+<!-- Main Content Grid -->
+<main class="flex-1 grid grid-cols-1 md:grid-cols-[40%_35%_25%] gap-0 border-b border-outline-variant/20 h-full">
+<!-- Column 1: SIGNAL EMISSION LOG -->
+<section class="border-r border-outline-variant/20 flex flex-col bg-surface-container-lowest">
+<div class="p-4 bg-surface-container border-b border-outline-variant/20 flex justify-between items-center">
+<h2 class="text-xs font-bold uppercase tracking-[0.2em] text-[#849585]">SIGNAL_EMISSION_LOG</h2>
+<span class="material-symbols-outlined text-sm text-outline" data-icon="terminal">terminal</span>
+</div>
+<div class="flex-1 overflow-y-auto font-mono text-[11px] p-2 leading-relaxed">
+<!-- Log Rows -->
+<div class="flex items-center gap-2 p-1.5 hover:bg-surface-container-high transition-colors group">
+<span class="text-outline">23:41:02</span>
+<span class="text-outline">|</span>
+<span class="text-[#00ff88] font-bold">▲ LONG</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">STR: +0.42</span>
+<span class="text-outline">|</span>
+<span class="text-secondary-container">CONF: 78%</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">ETH/USD</span>
+<div class="ml-auto w-1.5 h-6 bg-[#00ff88]/30 group-hover:bg-[#00ff88]"></div>
+</div>
+<div class="flex items-center gap-2 p-1.5 hover:bg-surface-container-high transition-colors group">
+<span class="text-outline">23:40:48</span>
+<span class="text-outline">|</span>
+<span class="text-tertiary-fixed-dim font-bold">▼ SHORT</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">STR: -0.12</span>
+<span class="text-outline">|</span>
+<span class="text-secondary-container">CONF: 62%</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">BTC/USD</span>
+<div class="ml-auto w-1.5 h-6 bg-error/30 group-hover:bg-error"></div>
+</div>
+<div class="flex items-center gap-2 p-1.5 hover:bg-surface-container-high transition-colors group">
+<span class="text-outline">23:40:12</span>
+<span class="text-outline">|</span>
+<span class="text-[#00ff88] font-bold">▲ LONG</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">STR: +0.89</span>
+<span class="text-outline">|</span>
+<span class="text-secondary-container">CONF: 91%</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">SOL/USD</span>
+<div class="ml-auto w-1.5 h-6 bg-[#00ff88]/30 group-hover:bg-[#00ff88]"></div>
+</div>
+<div class="flex items-center gap-2 p-1.5 hover:bg-surface-container-high transition-colors group">
+<span class="text-outline">23:39:55</span>
+<span class="text-outline">|</span>
+<span class="text-[#00ff88] font-bold">▲ LONG</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">STR: +0.22</span>
+<span class="text-outline">|</span>
+<span class="text-secondary-container">CONF: 55%</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">ETH/USD</span>
+<div class="ml-auto w-1.5 h-6 bg-error/30 group-hover:bg-error"></div>
+</div>
+<!-- Continuous log simulation -->
+<div class="mt-4 p-4 border border-outline-variant/20 bg-surface-container-low italic text-[#849585]">
+                    [SYSTEM] Streaming real-time telemetry from AGENT_SWARM_CLUSTER_B...
+                </div>
+<!-- Repeated for density -->
+<div class="flex items-center gap-2 p-1.5 hover:bg-surface-container-high transition-colors group mt-4">
+<span class="text-outline">23:38:21</span>
+<span class="text-outline">|</span>
+<span class="text-[#00ff88] font-bold">▲ LONG</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">STR: +0.66</span>
+<span class="text-outline">|</span>
+<span class="text-secondary-container">CONF: 82%</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">ETH/USD</span>
+<div class="ml-auto w-1.5 h-6 bg-[#00ff88]/30 group-hover:bg-[#00ff88]"></div>
+</div>
+<div class="flex items-center gap-2 p-1.5 hover:bg-surface-container-high transition-colors group">
+<span class="text-outline">23:37:02</span>
+<span class="text-outline">|</span>
+<span class="text-tertiary-fixed-dim font-bold">▼ SHORT</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">STR: -0.45</span>
+<span class="text-outline">|</span>
+<span class="text-secondary-container">CONF: 74%</span>
+<span class="text-outline">|</span>
+<span class="text-on-surface">BTC/USD</span>
+<div class="ml-auto w-1.5 h-6 bg-[#00ff88]/30 group-hover:bg-[#00ff88]"></div>
+</div>
+</div>
+</section>
+<!-- Column 2: PERFORMANCE METRICS -->
+<section class="border-r border-outline-variant/20 flex flex-col bg-surface">
+<div class="p-4 bg-surface-container border-b border-outline-variant/20 flex justify-between items-center">
+<h2 class="text-xs font-bold uppercase tracking-[0.2em] text-[#849585]">PERFORMANCE_METRICS</h2>
+<span class="material-symbols-outlined text-sm text-outline" data-icon="query_stats">query_stats</span>
+</div>
+<div class="p-6 space-y-8">
+<!-- Accuracy Line Chart -->
+<div class="relative h-40 w-full border border-outline-variant/20 bg-surface-container-lowest p-2">
+<div class="absolute top-2 left-2 text-[9px] uppercase tracking-tighter text-outline">Accuracy % (24h)</div>
+<div class="absolute top-[40%] w-full h-[1px] bg-[#93000a]/30 border-t border-dashed border-[#93000a]/50">
+<span class="absolute -top-3 right-2 text-[8px] text-[#93000a] uppercase font-bold">Min Threshold 60%</span>
+</div>
+<div class="w-full h-full flex items-end gap-1">
+<!-- Simulated Chart Bars -->
+<div class="w-full bg-[#00ff88]/20 h-[65%] border-t-2 border-[#00ff88]"></div>
+<div class="w-full bg-[#00ff88]/20 h-[70%] border-t-2 border-[#00ff88]"></div>
+<div class="w-full bg-[#00ff88]/20 h-[62%] border-t-2 border-[#00ff88]"></div>
+<div class="w-full bg-[#00ff88]/20 h-[58%] border-t-2 border-error"></div>
+<div class="w-full bg-[#00ff88]/20 h-[68%] border-t-2 border-[#00ff88]"></div>
+<div class="w-full bg-[#00ff88]/20 h-[75%] border-t-2 border-[#00ff88]"></div>
+<div class="w-full bg-[#00ff88]/20 h-[60%] border-t-2 border-[#00ff88]"></div>
+</div>
+</div>
+<!-- Histogram -->
+<div class="relative h-40 w-full border border-outline-variant/20 bg-surface-container-lowest p-2">
+<div class="absolute top-2 left-2 text-[9px] uppercase tracking-tighter text-outline">Signal Strength Dist (-1 to +1)</div>
+<div class="w-full h-full flex items-center justify-center gap-0.5 mt-2">
+<div class="w-4 h-4 bg-tertiary-fixed-dim/40 border border-tertiary-fixed-dim/60"></div>
+<div class="w-4 h-8 bg-tertiary-fixed-dim/40 border border-tertiary-fixed-dim/60"></div>
+<div class="w-4 h-12 bg-tertiary-fixed-dim/40 border border-tertiary-fixed-dim/60"></div>
+<div class="w-4 h-6 bg-outline/20 border border-outline/30"></div>
+<div class="w-4 h-16 bg-primary-container/40 border border-primary-container/60"></div>
+<div class="w-4 h-24 bg-primary-container/40 border border-primary-container/60"></div>
+<div class="w-4 h-20 bg-primary-container/40 border border-primary-container/60"></div>
+<div class="w-4 h-10 bg-primary-container/40 border border-primary-container/60"></div>
+</div>
+</div>
+<!-- Scatter Plot Placeholder -->
+<div class="relative h-48 w-full border border-outline-variant/20 bg-surface-container-lowest p-2">
+<div class="absolute top-2 left-2 text-[9px] uppercase tracking-tighter text-outline">Confidence vs Outcome Calibration</div>
+<div class="w-full h-full relative border-l border-b border-outline-variant/50 m-2 mt-6">
+<div class="absolute bottom-1/4 left-1/4 w-1 h-1 bg-[#00ff88] shadow-[0_0_5px_#00ff88]"></div>
+<div class="absolute bottom-1/2 left-1/3 w-1 h-1 bg-[#00ff88] shadow-[0_0_5px_#00ff88]"></div>
+<div class="absolute bottom-2/3 left-1/2 w-1 h-1 bg-[#00ff88] shadow-[0_0_5px_#00ff88]"></div>
+<div class="absolute bottom-1/3 left-2/3 w-1 h-1 bg-error shadow-[0_0_5px_#ffb4ab]"></div>
+<div class="absolute bottom-3/4 left-3/4 w-1.5 h-1.5 bg-[#00d2fd] shadow-[0_0_5px_#00d2fd]"></div>
+<div class="absolute bottom-10 left-10 w-1 h-1 bg-[#00ff88]"></div>
+<div class="absolute bottom-20 left-40 w-1 h-1 bg-[#00ff88]"></div>
+<div class="absolute bottom-32 left-48 w-1 h-1 bg-error"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Column 3: AGENT CONFIG -->
+<section class="flex flex-col bg-surface-dim">
+<div class="p-4 bg-surface-container border-b border-outline-variant/20 flex justify-between items-center">
+<h2 class="text-xs font-bold uppercase tracking-[0.2em] text-[#849585]">AGENT_CONFIG</h2>
+<span class="material-symbols-outlined text-sm text-outline" data-icon="settings_input_component">settings_input_component</span>
+</div>
+<div class="p-4 space-y-6 flex-1 overflow-y-auto">
+<div class="space-y-4">
+<!-- Window Size -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[10px] uppercase font-bold text-outline tracking-widest">Window Size</label>
+<div class="bg-surface-container-low p-2 border-b-2 border-outline flex justify-between items-center">
+<span class="mono-data text-on-surface">20</span>
+<span class="text-[9px] text-outline">TICKS</span>
+</div>
+</div>
+<!-- Signal Topic -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[10px] uppercase font-bold text-outline tracking-widest">Signal Topic (Readonly)</label>
+<div class="bg-surface-container-lowest p-2 border border-outline-variant/30 text-outline-variant mono-data text-xs italic">
+                            TOPIC_MOMENTUM_ALPHA_STREAM
+                        </div>
+</div>
+<!-- Weight Slider -->
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between">
+<label class="text-[10px] uppercase font-bold text-outline tracking-widest">Global Weight</label>
+<span class="mono-data text-[#00ff88] text-[10px]">0.50</span>
+</div>
+<input class="w-full h-1 bg-surface-container-high appearance-none accent-primary-container cursor-pointer" type="range" value="50"/>
+</div>
+<!-- Min Confidence -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[10px] uppercase font-bold text-outline tracking-widest">Min Confidence</label>
+<div class="bg-surface-container-low p-2 border-b-2 border-secondary-container flex justify-between items-center">
+<input class="bg-transparent border-none p-0 focus:ring-0 mono-data text-on-surface text-sm w-full" type="text" value="0.30"/>
+</div>
+</div>
+<!-- Pairs -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[10px] uppercase font-bold text-outline tracking-widest">Active Pairs</label>
+<div class="flex flex-wrap gap-2">
+<span class="bg-[#00d2fd]/10 border border-[#00d2fd]/30 px-2 py-0.5 text-[9px] mono-data text-secondary-container font-bold">ETH/USD</span>
+<span class="bg-[#00d2fd]/10 border border-[#00d2fd]/30 px-2 py-0.5 text-[9px] mono-data text-secondary-container font-bold">BTC/USD</span>
+<span class="bg-[#262a34] border border-outline/20 px-2 py-0.5 text-[9px] mono-data text-outline">+ ADD</span>
+</div>
+</div>
+</div>
+<!-- Dependencies -->
+<div class="pt-4 border-t border-outline-variant/20">
+<h3 class="text-[10px] uppercase font-bold text-outline tracking-widest mb-3">Dependencies</h3>
+<ul class="space-y-2">
+<li class="flex items-center gap-2 text-[10px] mono-data">
+<span class="w-1 h-1 bg-[#00ff88]"></span>
+<span class="text-on-surface">DATA_ORACLE_01</span>
+<span class="text-[#00ff88] ml-auto">SYNCED</span>
+</li>
+<li class="flex items-center gap-2 text-[10px] mono-data">
+<span class="w-1 h-1 bg-[#00ff88]"></span>
+<span class="text-on-surface">SENTIMENT_PARSER</span>
+<span class="text-[#00ff88] ml-auto">SYNCED</span>
+</li>
+</ul>
+</div>
+<!-- Recent Errors -->
+<div class="pt-4 border-t border-outline-variant/20">
+<h3 class="text-[10px] uppercase font-bold text-outline tracking-widest mb-3">Recent Errors</h3>
+<div class="bg-[#93000a]/10 border-l-2 border-[#93000a] p-2">
+<div class="text-[9px] mono-data text-error font-bold mb-1">11:02:44 | TIMEOUT_EXCEPTION</div>
+<div class="text-[8px] text-outline leading-tight">Peer disconnection at cluster node 74. Auto-reconnected in 12ms.</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="pt-6 space-y-3">
+<button class="w-full bg-[#f1ffef] text-[#003919] hover:bg-[#00ff88] py-3 text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_10px_rgba(0,255,136,0.2)]">RESTART AGENT</button>
+<button class="w-full border border-error text-error hover:bg-error hover:text-white py-3 text-xs font-bold uppercase tracking-widest transition-all">REMOVE AGENT</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Status Bar (Ticker Tape) -->
+<footer class="fixed bottom-0 w-full z-50 flex items-center h-8 px-4 overflow-hidden whitespace-nowrap bg-[#0a0e17] border-t border-[#00d2fd]/30">
+<div class="flex items-center gap-8 animate-[ticker_30s_linear_infinite] whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-secondary-container" data-icon="trending_up">trending_up</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">BTC/USD: $64,241.20</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-error" data-icon="trending_down">trending_down</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">ETH/USD: $3,452.12</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-secondary-container" data-icon="trending_up">trending_up</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">SOL/USD: $142.11</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-outline" data-icon="local_gas_station">local_gas_station</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">GAS: 18 GWEI</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-secondary-container" data-icon="psychology">psychology</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">SENTIMENT: BULLISH (74%)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-secondary-container" data-icon="speed">speed</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">LATENCY: 14MS</span>
+</div>
+<!-- Repeat for loop -->
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-secondary-container" data-icon="trending_up">trending_up</span>
+<span class="mono-data text-[10px] uppercase font-headline tracking-widest text-secondary-container">BTC/USD: $64,241.20</span>
+</div>
+</div>
+</footer>
+<style>
+        @keyframes ticker {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+    </style>
+</body></html>

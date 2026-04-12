@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>KINETIC_TERMINAL // SWARM_TRADER</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&amp;family=JetBrains+Mono:wght@400;700;800&amp;family=Space+Grotesk:wght@500;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#00d2fd",
+                        "primary-container": "#00ff88",
+                        "surface-container": "#1c1f29",
+                        "inverse-surface": "#dfe2ef",
+                        "secondary-fixed-dim": "#3cd7ff",
+                        "surface-container-lowest": "#0a0e17",
+                        "surface-container-highest": "#31353f",
+                        "outline-variant": "#3b4b3d",
+                        "on-secondary-container": "#005669",
+                        "surface-bright": "#353943",
+                        "tertiary-fixed-dim": "#ffb2ba",
+                        "inverse-on-surface": "#2c303a",
+                        "surface": "#0f131c",
+                        "outline": "#849585",
+                        "secondary": "#a2e7ff",
+                        "surface-variant": "#31353f",
+                        "inverse-primary": "#006d37",
+                        "on-tertiary-fixed": "#400011",
+                        "on-primary-fixed-variant": "#005228",
+                        "on-secondary-fixed": "#001f27",
+                        "on-error": "#690005",
+                        "tertiary-container": "#ffd4d7",
+                        "on-background": "#dfe2ef",
+                        "on-primary-container": "#007139",
+                        "surface-container-low": "#181b25",
+                        "on-surface-variant": "#b9cbb9",
+                        "primary-fixed-dim": "#00e479",
+                        "on-surface": "#dfe2ef",
+                        "on-secondary-fixed-variant": "#004e5f",
+                        "primary": "#f1ffef",
+                        "tertiary-fixed": "#ffd9dc",
+                        "on-tertiary": "#670020",
+                        "error": "#ffb4ab",
+                        "on-tertiary-container": "#c40044",
+                        "surface-container-high": "#262a34",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#00210c",
+                        "background": "#0f131c",
+                        "on-secondary": "#003642",
+                        "tertiary": "#fffaf9",
+                        "primary-fixed": "#60ff99",
+                        "surface-tint": "#00e479",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed-variant": "#910030",
+                        "on-primary": "#003919",
+                        "surface-dim": "#0f131c",
+                        "secondary-fixed": "#b4ebff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .scan-lines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+        .glow-border-primary { box-shadow: inset 0 0 10px rgba(0, 255, 136, 0.15), 0 0 5px rgba(0, 255, 136, 0.1); }
+        .glow-border-secondary { box-shadow: inset 0 0 10px rgba(0, 210, 253, 0.15), 0 0 5px rgba(0, 210, 253, 0.1); }
+        .node-line { position: absolute; background: rgba(0, 255, 136, 0.2); width: 1px; }
+        .blinking-block { width: 8px; height: 16px; background: #00ff88; display: inline-block; animation: blink 1s infinite steps(1); }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .ticker-scroll { animation: scroll 60s linear infinite; }
+        @keyframes scroll { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+    </style>
+</head>
+<body class="bg-surface-container-lowest text-on-surface font-body overflow-hidden selection:bg-primary-container selection:text-on-primary">
+<div class="fixed inset-0 scan-lines z-[100] opacity-30"></div>
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 flex items-center px-4 justify-between bg-slate-950/90 backdrop-blur-md h-[56px] border-b border-[#00ff88]/30 shadow-[0_0_15px_rgba(0,255,136,0.1)]">
+<div class="flex items-center space-x-6">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-primary-container text-2xl" style="font-variation-settings: 'FILL' 1;">hub</span>
+<span class="font-mono font-black text-primary-container text-xl tracking-tighter uppercase">KINETIC_TERMINAL</span>
+</div>
+<nav class="hidden md:flex items-center space-x-6 font-mono uppercase tracking-widest text-xs">
+<a class="text-slate-500 hover:bg-[#00ff88]/10 hover:text-[#00ff88] duration-75 active:scale-95" href="#">LIVE</a>
+<a class="text-primary-container border-b-2 border-[#00ff88] pb-1 duration-75 active:scale-95" href="#">MOCK</a>
+<a class="text-slate-500 hover:bg-[#00ff88]/10 hover:text-[#00ff88] duration-75 active:scale-95" href="#">PAPER</a>
+</nav>
+</div>
+<div class="flex items-center space-x-6">
+<div class="flex flex-col items-end font-mono">
+<span class="text-[10px] text-slate-500">UTC_SESSION</span>
+<span class="text-sm font-bold text-secondary">23:41:09</span>
+</div>
+<div class="flex flex-col items-end font-mono border-l border-outline-variant/30 pl-4">
+<span class="text-[10px] text-slate-500">DAILY_PNL</span>
+<span class="text-sm font-bold text-primary-container">+$12,402.11</span>
+</div>
+<button class="bg-error-container text-on-error-container px-4 py-1 font-mono font-bold text-xs border border-error/50 hover:bg-error hover:text-on-error transition-all duration-75 uppercase">
+                KILL SWITCH
+            </button>
+<div class="flex items-center space-x-3 text-slate-400">
+<span class="material-symbols-outlined text-lg cursor-pointer hover:text-primary-container">settings</span>
+<span class="material-symbols-outlined text-lg cursor-pointer hover:text-primary-container">sensors</span>
+<span class="material-symbols-outlined text-lg cursor-pointer hover:text-error">power_settings_new</span>
+</div>
+</div>
+</header>
+<div class="flex pt-[56px] h-screen pb-[32px]">
+<!-- Left Sidebar: Agent Swarm Network Tree -->
+<aside class="w-[280px] bg-slate-900 border-r border-[#00ff88]/20 flex flex-col fixed left-0 h-[calc(100vh-88px)]">
+<div class="p-4 border-b border-outline-variant/20">
+<div class="flex items-center space-x-2">
+<span class="text-lg font-bold text-[#00ff88] font-mono uppercase">AGENT SWARM</span>
+<span class="bg-primary-container/10 text-primary-container text-[8px] px-1 font-mono">v4.2</span>
+</div>
+<p class="text-[10px] text-slate-500 font-mono">NETWORK_TREE_ACTIVE</p>
+</div>
+<div class="flex-1 overflow-y-auto p-4 font-mono text-[11px] relative">
+<!-- Swarm Root -->
+<div class="flex items-center space-x-3 mb-6 bg-primary-container/10 border-l-2 border-[#00ff88] p-2">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">hub</span>
+<span class="text-primary-container font-bold">SWARM ROOT [ACTIVE]</span>
+</div>
+<!-- Network Hierarchy -->
+<div class="space-y-4 pl-4 border-l border-outline-variant/30">
+<div class="relative group cursor-pointer flex items-center space-x-3 text-slate-400 hover:text-primary-container">
+<span class="material-symbols-outlined text-sm">search</span>
+<span>DataScout_01</span>
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse absolute -left-[20px]"></div>
+</div>
+<div class="space-y-2 pl-4 border-l border-outline-variant/30">
+<div class="flex items-center space-x-3 text-slate-400">
+<span class="material-symbols-outlined text-sm">analytics</span>
+<span>Analysts_Alpha</span>
+</div>
+<div class="pl-6 space-y-1 opacity-70">
+<div class="flex items-center space-x-2 text-[10px]"><span>- Momentum</span><div class="w-1 h-1 bg-primary-container rounded-full"></div></div>
+<div class="flex items-center space-x-2 text-[10px]"><span>- MeanRev</span><div class="w-1 h-1 bg-primary-container rounded-full"></div></div>
+<div class="flex items-center space-x-2 text-[10px]"><span>- Volatility</span><div class="w-1 h-1 bg-primary-container rounded-full"></div></div>
+</div>
+</div>
+<div class="flex items-center space-x-3 text-secondary-container">
+<span class="material-symbols-outlined text-sm">psychology</span>
+<span class="font-bold">PRISM AI</span>
+<div class="w-1.5 h-1.5 rounded-full bg-secondary-container animate-pulse absolute -left-[20px]"></div>
+</div>
+<div class="flex items-center space-x-3 text-slate-400">
+<span class="material-symbols-outlined text-sm">security</span>
+<span>Risk_Consensus</span>
+</div>
+<div class="flex items-center space-x-3 text-slate-400">
+<span class="material-symbols-outlined text-sm">bolt</span>
+<span>Execution_v2</span>
+</div>
+</div>
+</div>
+<div class="p-4 bg-slate-950/50">
+<button class="w-full bg-primary-container text-on-primary-container py-2 text-[11px] font-bold font-mono tracking-widest hover:shadow-[0_0_15px_#00ff88] transition-all">
+                    DEPLOY NEW AGENT
+                </button>
+</div>
+</aside>
+<!-- Main Center Workspace -->
+<main class="flex-1 ml-[280px] mr-[320px] flex flex-col overflow-hidden bg-surface">
+<!-- Market Chart Area (60%) -->
+<div class="flex-[6] border-b border-outline-variant/20 relative p-4 bg-surface-container-low">
+<div class="flex justify-between items-start mb-4">
+<div class="font-mono">
+<div class="flex items-center space-x-2 text-slate-400 text-xs uppercase">
+<span class="material-symbols-outlined text-sm">trending_up</span>
+<span>ETH / USD - Binance - 5m</span>
+</div>
+<div class="text-4xl font-black text-primary font-headline mt-1">$2,245.67</div>
+<div class="text-primary-container text-sm font-mono">+4.21% (24H)</div>
+</div>
+<div class="flex space-x-2">
+<div class="px-2 py-1 bg-surface-container-highest border border-outline-variant/50 text-[10px] font-mono">INDICATORS: OFF</div>
+<div class="px-2 py-1 bg-surface-container-highest border border-outline-variant/50 text-[10px] font-mono text-primary-container">AGENTS: OVERLAY_ON</div>
+</div>
+</div>
+<!-- Chart Mockup -->
+<div class="w-full h-full max-h-[400px] flex items-end space-x-1 pb-12 relative">
+<div class="absolute inset-0 border border-outline-variant/10 pointer-events-none">
+<div class="h-full w-full opacity-10" style="background-image: linear-gradient(var(--outline-variant) 1px, transparent 1px), linear-gradient(90deg, var(--outline-variant) 1px, transparent 1px); background-size: 50px 50px;"></div>
+</div>
+<!-- Sample Candles -->
+<div class="w-full flex items-end justify-around h-[300px]">
+<div class="w-3 h-[40%] bg-error-container relative"><div class="absolute top-[-20%] left-1/2 w-[1px] h-[140%] bg-error"></div></div>
+<div class="w-3 h-[60%] bg-primary-container/80 relative"><div class="absolute top-[-10%] left-1/2 w-[1px] h-[120%] bg-primary-container"></div></div>
+<div class="w-3 h-[55%] bg-primary-container/80 relative"><div class="absolute top-[-5%] left-1/2 w-[1px] h-[110%] bg-primary-container"></div></div>
+<div class="w-3 h-[30%] bg-error-container relative"><div class="absolute top-[-30%] left-1/2 w-[1px] h-[160%] bg-error"></div><div class="absolute -top-6 left-1/2 -translate-x-1/2 text-[8px] bg-secondary text-on-secondary-container px-1 font-mono">SELL_SIG</div></div>
+<div class="w-3 h-[75%] bg-primary-container relative"><div class="absolute top-[-5%] left-1/2 w-[1px] h-[110%] bg-primary-container"></div><div class="absolute -top-12 left-1/2 -translate-x-1/2 text-[8px] bg-primary-container text-on-primary px-1 font-mono">PRISM_BUY</div></div>
+<div class="w-3 h-[45%] bg-error-container relative"><div class="absolute top-[-20%] left-1/2 w-[1px] h-[140%] bg-error"></div></div>
+<div class="w-3 h-[85%] bg-primary-container relative"><div class="absolute top-[-10%] left-1/2 w-[1px] h-[120%] bg-primary-container"></div></div>
+</div>
+</div>
+</div>
+<!-- Active Intents Area (40%) -->
+<div class="flex-[4] flex flex-col bg-surface-container-low overflow-hidden">
+<div class="flex border-b border-outline-variant/20 bg-slate-900/50">
+<button class="px-4 py-2 border-r border-outline-variant/20 font-mono text-[10px] text-primary-container border-t-2 border-t-primary-container bg-surface-container-high uppercase">ACTIVE INTENTS [08]</button>
+<button class="px-4 py-2 border-r border-outline-variant/20 font-mono text-[10px] text-slate-500 uppercase hover:text-slate-300">COMPLETED</button>
+<button class="px-4 py-2 border-r border-outline-variant/20 font-mono text-[10px] text-slate-500 uppercase hover:text-slate-300">FAILED</button>
+</div>
+<div class="flex-1 overflow-y-auto font-mono">
+<table class="w-full text-left text-[11px]">
+<thead class="sticky top-0 bg-surface-container-low text-slate-500 uppercase border-b border-outline-variant/10">
+<tr>
+<th class="p-3 font-medium">INTENT_ID</th>
+<th class="p-3 font-medium">ROUTE</th>
+<th class="p-3 font-medium">AMOUNT</th>
+<th class="p-3 font-medium">TTL</th>
+<th class="p-3 font-medium">STATUS</th>
+<th class="p-3 font-medium text-right">ACTION</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/10">
+<tr class="hover:bg-primary-container/5 group">
+<td class="p-3 text-secondary font-bold">#INT-88219</td>
+<td class="p-3">USDC <span class="text-slate-500">→</span> ETH</td>
+<td class="p-3">15.000 <span class="text-slate-500">WETH</span></td>
+<td class="p-3 text-tertiary-fixed-dim">00:45s</td>
+<td class="p-3">
+<span class="px-1 py-0.5 bg-primary-container/20 text-primary-container text-[9px] border border-primary-container/30">NEGOTIATING</span>
+</td>
+<td class="p-3 text-right"><span class="material-symbols-outlined text-sm cursor-pointer hover:text-error">close</span></td>
+</tr>
+<tr class="hover:bg-primary-container/5 group">
+<td class="p-3 text-secondary font-bold">#INT-88220</td>
+<td class="p-3">SOL <span class="text-slate-500">→</span> USDC</td>
+<td class="p-3">540.21 <span class="text-slate-500">SOL</span></td>
+<td class="p-3 text-tertiary-fixed-dim">01:12s</td>
+<td class="p-3">
+<span class="px-1 py-0.5 bg-secondary-container/20 text-secondary-container text-[9px] border border-secondary-container/30">QUOTING</span>
+</td>
+<td class="p-3 text-right"><span class="material-symbols-outlined text-sm cursor-pointer hover:text-error">close</span></td>
+</tr>
+<tr class="hover:bg-primary-container/5 group">
+<td class="p-3 text-secondary font-bold">#INT-88224</td>
+<td class="p-3">ETH <span class="text-slate-500">→</span> LINK</td>
+<td class="p-3">1.500 <span class="text-slate-500">ETH</span></td>
+<td class="p-3 text-tertiary-fixed-dim">00:15s</td>
+<td class="p-3">
+<span class="px-1 py-0.5 bg-primary-container/20 text-primary-container text-[9px] border border-primary-container/30">FINALIZING</span>
+</td>
+<td class="p-3 text-right"><span class="material-symbols-outlined text-sm cursor-pointer hover:text-error">close</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+<!-- Right Sidebar -->
+<aside class="w-[320px] fixed right-0 top-[56px] bottom-[32px] bg-slate-900 border-l border-[#00d2fd]/20 flex flex-col">
+<!-- Signal Analysis -->
+<div class="flex-1 border-b border-outline-variant/20 p-4">
+<div class="flex items-center justify-between mb-6">
+<span class="font-mono text-xs font-bold text-secondary uppercase tracking-widest">SIGNAL ANALYSIS</span>
+<span class="material-symbols-outlined text-secondary text-sm">sensors</span>
+</div>
+<div class="space-y-6">
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-mono uppercase text-slate-500">
+<span>MOMENTUM</span>
+<span class="text-primary-container">+0.82</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest relative">
+<div class="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-600"></div>
+<div class="h-full bg-primary-container w-[41%] ml-[50%]"></div>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-mono uppercase text-slate-500">
+<span>MEAN REV</span>
+<span class="text-tertiary-fixed-dim">-0.45</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest relative">
+<div class="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-600"></div>
+<div class="h-full bg-error w-[22.5%] ml-[27.5%]"></div>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-mono uppercase text-slate-500">
+<span>VOLATILITY</span>
+<span class="text-primary-container">+0.12</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest relative">
+<div class="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-600"></div>
+<div class="h-full bg-primary-container w-[6%] ml-[50%]"></div>
+</div>
+</div>
+<div class="pt-4 border-t border-outline-variant/10">
+<div class="bg-secondary-container/5 p-3 border border-secondary-container/20">
+<div class="flex items-center space-x-2 text-secondary-container font-mono font-bold text-[11px] uppercase mb-2">
+<span class="material-symbols-outlined text-sm">psychology</span>
+<span>PRISM AI BIAS</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-2xl font-black text-secondary font-headline">LONG</span>
+<span class="text-xs font-mono text-secondary-container/70">CONF: 94.2%</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Risk Consensus -->
+<div class="flex-1 p-4 overflow-y-auto">
+<div class="flex items-center justify-between mb-4">
+<span class="font-mono text-xs font-bold text-slate-400 uppercase tracking-widest">RISK CONSENSUS</span>
+<span class="material-symbols-outlined text-slate-400 text-sm">verified_user</span>
+</div>
+<div class="space-y-3">
+<div class="p-3 bg-surface-container-low border-l-2 border-primary-container flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+<div class="font-mono">
+<div class="text-[10px] text-slate-500">R1_SIZE_LIMIT</div>
+<div class="text-xs text-on-surface font-bold">120.00 ETH MAX</div>
+</div>
+<div class="flex items-center text-primary-container font-mono text-[10px]">
+<span class="material-symbols-outlined text-sm mr-1">check_circle</span>
+                            APPROVED
+                        </div>
+</div>
+<div class="p-3 bg-surface-container-low border-l-2 border-primary-container flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+<div class="font-mono">
+<div class="text-[10px] text-slate-500">R2_ALLOWLIST</div>
+<div class="text-xs text-on-surface font-bold">ARB_UNISWAP_V3</div>
+</div>
+<div class="flex items-center text-primary-container font-mono text-[10px]">
+<span class="material-symbols-outlined text-sm mr-1">check_circle</span>
+                            APPROVED
+                        </div>
+</div>
+<div class="p-3 bg-surface-container-low border-l-2 border-primary-container flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+<div class="font-mono">
+<div class="text-[10px] text-slate-500">R3_MAX_DRAWDOWN</div>
+<div class="text-xs text-on-surface font-bold">2.5% PEAK_TO_VALLEY</div>
+</div>
+<div class="flex items-center text-primary-container font-mono text-[10px]">
+<span class="material-symbols-outlined text-sm mr-1">check_circle</span>
+                            APPROVED
+                        </div>
+</div>
+<div class="mt-4 p-3 bg-primary-container/10 border border-primary-container/30 text-center">
+<span class="font-mono text-[10px] font-bold text-primary-container uppercase">ALL RISK CHECKS PASSED: SYSTEM ARMED</span>
+</div>
+</div>
+</div>
+</aside>
+</div>
+<!-- Bottom Status Bar -->
+<footer class="fixed bottom-0 w-full h-[32px] z-50 flex items-center px-2 space-x-6 overflow-hidden bg-slate-950 border-t border-[#00d2fd]/30 font-mono text-[10px] uppercase">
+<div class="flex items-center space-x-2 text-secondary-container shrink-0">
+<div class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></div>
+<span class="font-bold">SYS_READY_00X1</span>
+</div>
+<div class="flex-1 flex items-center overflow-hidden whitespace-nowrap">
+<div class="ticker-scroll flex space-x-12 text-slate-400">
+<span><span class="text-secondary-container">GAS:</span> 12 GWEI</span>
+<span><span class="text-secondary-container">BTC:</span> $64,212.44</span>
+<span><span class="text-secondary-container">ETH:</span> $3,421.10</span>
+<span><span class="text-secondary-container">SOL:</span> $144.12</span>
+<span>[LOG] AGENT_ALPHA_02 DETECTED VOLATILITY_SPIKE ON ARBITRUM</span>
+<span>[LOG] EXECUTED INTENT #INT-88192 [SUCCESS]</span>
+<span>[DB] SQLITE_STATS: 1,402 TPS</span>
+<span>[UPTIME] 114:22:09</span>
+</div>
+</div>
+<div class="flex items-center space-x-4 text-slate-500 shrink-0">
+<span class="material-symbols-outlined text-sm">terminal</span>
+<span class="material-symbols-outlined text-sm">code</span>
+</div>
+</footer>
+</body></html>

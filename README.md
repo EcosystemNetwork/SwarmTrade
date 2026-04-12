@@ -1,4 +1,4 @@
-# SwarmTrader
+# Swarm Trade
 
 Multi-agent DeFi trading swarm. Reference implementation — **dry-run only** out of the box.
 

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .scan-line {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(164, 255, 185, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        .glow-sm {
+            text-shadow: 0 0 10px rgba(164, 255, 185, 0.4);
+        }
+        .glow-border-primary {
+            box-shadow: 0 0 5px rgba(164, 255, 185, 0.2), inset 0 0 2px rgba(164, 255, 185, 0.1);
+        }
+        .glow-border-secondary {
+            box-shadow: 0 0 5px rgba(0, 210, 253, 0.2), inset 0 0 2px rgba(0, 210, 253, 0.1);
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0e17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #262c3a;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a4ffb9;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "inverse-primary": "#006e37",
+                      "background": "#0a0e17",
+                      "on-secondary-fixed-variant": "#00586c",
+                      "surface-dim": "#0a0e17",
+                      "tertiary-container": "#fd3164",
+                      "on-tertiary-container": "#000000",
+                      "secondary-fixed-dim": "#1cd5ff",
+                      "on-error-container": "#ffa8a3",
+                      "surface-bright": "#262c3a",
+                      "on-secondary-container": "#eefaff",
+                      "on-tertiary-fixed-variant": "#780027",
+                      "primary-fixed": "#00fd87",
+                      "error-container": "#9f0519",
+                      "tertiary": "#ff6e85",
+                      "surface-container-lowest": "#000000",
+                      "surface": "#0a0e17",
+                      "on-tertiary-fixed": "#39000e",
+                      "on-surface-variant": "#a7abb7",
+                      "on-primary-container": "#005b2c",
+                      "inverse-on-surface": "#515560",
+                      "on-primary-fixed": "#004621",
+                      "secondary-container": "#00677e",
+                      "primary": "#a4ffb9",
+                      "error": "#ff716c",
+                      "surface-container-low": "#0f131d",
+                      "tertiary-dim": "#e31754",
+                      "surface-tint": "#a4ffb9",
+                      "on-primary-fixed-variant": "#006632",
+                      "secondary-dim": "#00c3eb",
+                      "secondary": "#00d2fd",
+                      "inverse-surface": "#faf9ff",
+                      "surface-container-high": "#1a1f2c",
+                      "on-secondary": "#004352",
+                      "on-error": "#490006",
+                      "outline-variant": "#444852",
+                      "secondary-fixed": "#79dfff",
+                      "surface-variant": "#202633",
+                      "outline": "#727581",
+                      "on-primary": "#006532",
+                      "on-tertiary": "#480014",
+                      "on-surface": "#ebedfb",
+                      "tertiary-fixed": "#ff909e",
+                      "surface-container-highest": "#202633",
+                      "on-background": "#ebedfb",
+                      "primary-dim": "#00ed7e",
+                      "tertiary-fixed-dim": "#ff788c",
+                      "surface-container": "#151925",
+                      "primary-container": "#00fd87",
+                      "error-dim": "#d7383b",
+                      "primary-fixed-dim": "#00ed7e",
+                      "on-secondary-fixed": "#003a47"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0px",
+                      "lg": "0px",
+                      "xl": "0px",
+                      "full": "9999px"
+              },
+              "fontFamily": {
+                      "headline": ["Space Grotesk"],
+                      "body": ["Inter"],
+                      "label": ["Inter"],
+                      "mono": ["JetBrains Mono"]
+              }
+            },
+          }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<div class="scan-line"></div>
+<!-- Top Navigation Bar -->
+<header class="flex justify-between items-center w-full px-6 py-3 bg-[#0a0e17] border-b border-[#a4ffb9]/20 font-['Space_Grotesk'] tracking-widest uppercase text-sm fixed top-0 z-40">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#a4ffb9] glow-sm">SWARM_TRADER</span>
+<nav class="flex gap-6">
+<a class="text-slate-500 hover:text-[#a4ffb9]/70 transition-colors" href="#">TERMINAL</a>
+<a class="text-slate-500 hover:text-[#a4ffb9]/70 transition-colors" href="#">LIQUIDITY</a>
+<a class="text-[#a4ffb9] border-b-2 border-[#a4ffb9] pb-1" href="#">HISTORY</a>
+<a class="text-slate-500 hover:text-[#a4ffb9]/70 transition-colors" href="#">VAULTS</a>
+</nav>
+</div>
+<button class="bg-error-container text-on-error px-4 py-1.5 font-bold tracking-tighter hover:bg-error transition-all active:scale-95 glow-sm">
+            KILL_SWITCH
+        </button>
+</header>
+<!-- Main Content Container -->
+<main class="pt-[52px] pb-[28px] h-screen flex flex-col">
+<!-- Filter & Stats Bar -->
+<section class="h-[80px] bg-surface-container-low border-b border-outline-variant/30 px-6 flex items-center justify-between">
+<div class="flex items-center gap-6">
+<div class="flex flex-col">
+<span class="text-[10px] text-outline font-mono uppercase tracking-widest">Temporal_Range</span>
+<span class="text-secondary font-mono text-xs">2026-04-10 00:00 → 2026-04-11 23:59</span>
+</div>
+<div class="h-8 w-px bg-outline-variant/30 mx-2"></div>
+<div class="flex gap-2">
+<button class="px-3 py-1 bg-primary/10 text-primary border border-primary/30 text-[10px] font-bold">ALL</button>
+<button class="px-3 py-1 border border-primary/20 text-primary/60 hover:text-primary text-[10px] font-bold">FILLED</button>
+<button class="px-3 py-1 border border-error/20 text-error/60 hover:text-error text-[10px] font-bold">REJECTED</button>
+<button class="px-3 py-1 border border-tertiary/20 text-tertiary/60 hover:text-tertiary text-[10px] font-bold">EXPIRED</button>
+<button class="px-3 py-1 border border-error-dim/20 text-error-dim/60 hover:text-error-dim text-[10px] font-bold">ERROR</button>
+</div>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-2 text-xs text-outline">filter_list</span>
+<select class="bg-surface-container border border-outline-variant/30 pl-8 pr-4 py-1 text-[10px] font-mono appearance-none focus:outline-none focus:border-secondary transition-colors">
+<option>ALL PAIRS</option>
+<option>BTC/USD</option>
+<option>ETH/USD</option>
+<option>SOL/USD</option>
+</select>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-surface-container-high px-4 py-2 border border-primary/10">
+<div class="flex flex-col items-end">
+<span class="text-[9px] text-outline uppercase font-mono tracking-tighter">System_Aggregation</span>
+<div class="flex gap-3 text-[10px] font-mono text-primary/80">
+<span>TOT: <span class="text-on-surface">892</span></span>
+<span>FIL: <span class="text-on-surface">756</span></span>
+<span>REJ: <span class="text-error">89</span></span>
+<span>EXP: <span class="text-tertiary">42</span></span>
+<span>ERR: <span class="text-error-dim">5</span></span>
+</div>
+</div>
+<div class="h-8 w-px bg-outline-variant/30"></div>
+<div class="flex flex-col items-end">
+<span class="text-[9px] text-outline uppercase font-mono">Performance_Metrics</span>
+<div class="flex gap-4">
+<span class="text-xs font-mono text-primary font-bold">WR: 64.2%</span>
+<span class="text-xs font-mono text-primary font-bold glow-sm">PNL: +$2,847.33</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Trade Timeline (Top 60%) -->
+<section class="flex-grow flex flex-col overflow-hidden bg-surface">
+<div class="overflow-auto flex-grow">
+<table class="w-full border-collapse font-mono text-[11px] leading-tight text-left">
+<thead class="sticky top-0 bg-surface-container-highest text-outline-variant uppercase z-10">
+<tr>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20">Timestamp</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20">Intent ID</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20">Dir</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20">Pair</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20 text-right">Amount In</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20 text-right">Amount Out</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20 text-right">Fill Price</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20 text-right">Slippage</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20 text-right">PnL</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20">Status</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20">Tx Hash</th>
+<th class="px-4 py-2 font-medium border-b border-outline-variant/20 text-center">Signals</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<!-- Tonal Stepping logic via surface-container variations -->
+<tr class="bg-surface hover:bg-surface-container-low transition-colors group">
+<td class="px-4 py-2 text-outline">10:42:01.002</td>
+<td class="px-4 py-2 text-secondary">#SW-9821-X</td>
+<td class="px-4 py-2 text-primary">LONG</td>
+<td class="px-4 py-2 font-bold">SOL/USD</td>
+<td class="px-4 py-2 text-right">1,200.00</td>
+<td class="px-4 py-2 text-right">1,198.42</td>
+<td class="px-4 py-2 text-right">142.332</td>
+<td class="px-4 py-2 text-right text-tertiary">0.02%</td>
+<td class="px-4 py-2 text-right text-primary">+$112.40</td>
+<td class="px-4 py-2"><span class="bg-primary/10 text-primary px-1.5 py-0.5 border border-primary/20">FILLED</span></td>
+<td class="px-4 py-2 text-outline-variant font-mono">0x7f2...8e21</td>
+<td class="px-4 py-2 text-center"><span class="material-symbols-outlined text-xs text-primary">bolt</span></td>
+</tr>
+<tr class="bg-surface-container-low hover:bg-surface-container transition-colors group">
+<td class="px-4 py-2 text-outline">10:41:55.891</td>
+<td class="px-4 py-2 text-secondary">#SW-9820-A</td>
+<td class="px-4 py-2 text-error">SHORT</td>
+<td class="px-4 py-2 font-bold">BTC/USD</td>
+<td class="px-4 py-2 text-right">0.0500</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2"><span class="bg-error/10 text-error px-1.5 py-0.5 border border-error/20">REJECTED</span></td>
+<td class="px-4 py-2 text-outline-variant font-mono">0x000...0000</td>
+<td class="px-4 py-2 text-center"><span class="material-symbols-outlined text-xs text-error">warning</span></td>
+</tr>
+<tr class="bg-surface hover:bg-surface-container-low transition-colors group">
+<td class="px-4 py-2 text-outline">10:41:42.115</td>
+<td class="px-4 py-2 text-secondary">#SW-9819-B</td>
+<td class="px-4 py-2 text-primary">LONG</td>
+<td class="px-4 py-2 font-bold">ETH/USD</td>
+<td class="px-4 py-2 text-right">10.000</td>
+<td class="px-4 py-2 text-right">9.991</td>
+<td class="px-4 py-2 text-right">3,451.20</td>
+<td class="px-4 py-2 text-right text-tertiary">0.05%</td>
+<td class="px-4 py-2 text-right text-error">-$22.50</td>
+<td class="px-4 py-2"><span class="bg-primary/10 text-primary px-1.5 py-0.5 border border-primary/20">FILLED</span></td>
+<td class="px-4 py-2 text-outline-variant font-mono">0x4a1...9c10</td>
+<td class="px-4 py-2 text-center"><span class="material-symbols-outlined text-xs text-secondary">monitoring</span></td>
+</tr>
+<tr class="bg-surface-container-low hover:bg-surface-container transition-colors group">
+<td class="px-4 py-2 text-outline">10:40:30.421</td>
+<td class="px-4 py-2 text-secondary">#SW-9818-Z</td>
+<td class="px-4 py-2 text-primary">LONG</td>
+<td class="px-4 py-2 font-bold">JUP/USD</td>
+<td class="px-4 py-2 text-right">5,000.00</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2"><span class="bg-tertiary/10 text-tertiary px-1.5 py-0.5 border border-tertiary/20">EXPIRED</span></td>
+<td class="px-4 py-2 text-outline-variant font-mono">0xdead...beef</td>
+<td class="px-4 py-2 text-center"><span class="material-symbols-outlined text-xs text-outline">timer</span></td>
+</tr>
+<tr class="bg-surface hover:bg-surface-container-low transition-colors group">
+<td class="px-4 py-2 text-outline">10:39:11.902</td>
+<td class="px-4 py-2 text-secondary">#SW-9817-Y</td>
+<td class="px-4 py-2 text-error">SHORT</td>
+<td class="px-4 py-2 font-bold">ETH/USD</td>
+<td class="px-4 py-2 text-right">2.5000</td>
+<td class="px-4 py-2 text-right">2.5110</td>
+<td class="px-4 py-2 text-right">3,448.90</td>
+<td class="px-4 py-2 text-right text-primary">0.01%</td>
+<td class="px-4 py-2 text-right text-primary">+$89.12</td>
+<td class="px-4 py-2"><span class="bg-primary/10 text-primary px-1.5 py-0.5 border border-primary/20">FILLED</span></td>
+<td class="px-4 py-2 text-outline-variant font-mono">0x3b2...a7e1</td>
+<td class="px-4 py-2 text-center"><span class="material-symbols-outlined text-xs text-primary">hub</span></td>
+</tr>
+<tr class="bg-surface-container-low hover:bg-surface-container transition-colors group">
+<td class="px-4 py-2 text-outline">10:38:45.102</td>
+<td class="px-4 py-2 text-secondary">#SW-9816-M</td>
+<td class="px-4 py-2 text-primary">LONG</td>
+<td class="px-4 py-2 font-bold">SOL/USD</td>
+<td class="px-4 py-2 text-right">100.00</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2 text-right">--</td>
+<td class="px-4 py-2"><span class="bg-error-dim/10 text-error-dim px-1.5 py-0.5 border border-error-dim/20">ERROR</span></td>
+<td class="px-4 py-2 text-outline-variant font-mono">0xf00...ba72</td>
+<td class="px-4 py-2 text-center"><span class="material-symbols-outlined text-xs text-error-dim" style="font-variation-settings: 'FILL' 1;">dangerous</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- Analytics Section (Bottom 40%) -->
+<section class="h-[40%] bg-surface-container border-t border-outline-variant/30 flex overflow-hidden">
+<!-- PnL Chart -->
+<div class="w-[35%] p-4 border-r border-outline-variant/20 flex flex-col">
+<div class="flex justify-between items-center mb-4">
+<span class="text-[10px] font-mono uppercase tracking-widest text-outline">PnL_Cumulative_Growth</span>
+<span class="text-primary font-mono text-lg font-bold glow-sm">+$2,847.33</span>
+</div>
+<div class="flex-grow bg-surface-container-low relative border border-outline-variant/10">
+<div class="absolute inset-0 flex items-end">
+<svg class="w-full h-full" preserveaspectratio="none">
+<path d="M0,80 Q50,70 100,75 T200,60 T300,50 T400,30 T500,40 T600,20 L600,100 L0,100 Z" fill="url(#pnlGradient)"></path>
+<path d="M0,80 Q50,70 100,75 T200,60 T300,50 T400,30 T500,40 T600,20" fill="none" stroke="#a4ffb9" stroke-width="2"></path>
+<defs>
+<lineargradient id="pnlGradient" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" style="stop-color:#a4ffb9;stop-opacity:0.2"></stop>
+<stop offset="100%" style="stop-color:#a4ffb9;stop-opacity:0"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+<div class="absolute inset-0 grid grid-cols-6 grid-rows-4 opacity-10">
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-r border-b border-outline"></div>
+<div class="border-b border-outline"></div>
+</div>
+</div>
+</div>
+<!-- Donut Chart -->
+<div class="w-[25%] p-4 border-r border-outline-variant/20 flex flex-col items-center">
+<span class="text-[10px] font-mono uppercase tracking-widest text-outline self-start mb-4">Execution_Distribution</span>
+<div class="relative w-32 h-32 mt-4">
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 36 36">
+<circle cx="18" cy="18" fill="none" r="15.915" stroke="#262c3a" stroke-width="3"></circle>
+<circle cx="18" cy="18" fill="none" r="15.915" stroke="#a4ffb9" stroke-dasharray="75 25" stroke-dashoffset="0" stroke-width="3"></circle>
+<circle cx="18" cy="18" fill="none" r="15.915" stroke="#ff716c" stroke-dasharray="10 90" stroke-dashoffset="-75" stroke-width="3"></circle>
+<circle cx="18" cy="18" fill="none" r="15.915" stroke="#ff909e" stroke-dasharray="5 95" stroke-dashoffset="-85" stroke-width="3"></circle>
+<circle cx="18" cy="18" fill="none" r="15.915" stroke="#d7383b" stroke-dasharray="10 90" stroke-dashoffset="-90" stroke-width="3"></circle>
+</svg>
+<div class="absolute inset-0 flex items-center justify-center flex-col">
+<span class="text-[10px] font-mono text-outline">SUCCESS</span>
+<span class="text-sm font-bold font-mono">84.7%</span>
+</div>
+</div>
+<div class="mt-4 grid grid-cols-2 gap-2 w-full text-[10px] font-mono">
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-primary"></span> FILLED</div>
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-error"></span> REJECTED</div>
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-tertiary"></span> EXPIRED</div>
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-error-dim"></span> ERROR</div>
+</div>
+</div>
+<!-- Audit Database Panel -->
+<div class="w-[40%] p-4 flex flex-col">
+<div class="flex justify-between items-center mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-secondary">database</span>
+<span class="text-[10px] font-mono uppercase tracking-widest text-secondary font-bold">AUDIT_DATABASE</span>
+<span class="text-[9px] font-mono text-outline-variant bg-white/5 px-1">swarm.db</span>
+</div>
+<button class="text-[10px] border border-outline-variant/30 px-2 py-0.5 hover:bg-white/5 font-mono">EXPORT_CSV</button>
+</div>
+<div class="grid grid-cols-2 gap-4 mb-3">
+<div class="bg-surface-container-low p-2 border border-outline-variant/10">
+<span class="block text-[8px] text-outline-variant uppercase">Schema_Version</span>
+<span class="text-[10px] font-mono">v4.2-AuditTrail-Native</span>
+</div>
+<div class="bg-surface-container-low p-2 border border-outline-variant/10">
+<span class="block text-[8px] text-outline-variant uppercase">Record_Count</span>
+<span class="text-[10px] font-mono">1,024,891 Entries</span>
+</div>
+</div>
+<div class="flex-grow flex flex-col">
+<div class="flex justify-between items-center text-[8px] text-outline uppercase mb-1">
+<span>Raw_SQL_Console</span>
+<span class="text-secondary">Connected_Secure</span>
+</div>
+<div class="relative flex-grow">
+<textarea class="w-full h-full bg-black text-secondary font-mono text-xs p-3 focus:outline-none border border-secondary/20 resize-none">SELECT * FROM reports ORDER BY ts DESC LIMIT 10;</textarea>
+<button class="absolute bottom-2 right-2 p-1 bg-secondary text-on-secondary text-[10px] font-bold">RUN_QUERY</button>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Side Navigation (Suppressed per task instructions preferring Top Nav but kept as invisible anchor if needed) -->
+<!-- SideNavBar from JSON is available but Top Nav is prioritized per prompt requirements -->
+<!-- Footer Status Bar -->
+<footer class="fixed bottom-0 w-full flex justify-between items-center px-4 py-1 z-50 bg-[#0a0e17] border-t border-[#a4ffb9]/10 font-['JetBrains_Mono'] text-[10px] tracking-tight">
+<div class="flex items-center gap-4">
+<span class="text-[#a4ffb9] glow-sm uppercase">SYSTEM_STABILITY_NOMINAL</span>
+<div class="flex gap-4">
+<span class="text-slate-600 hover:text-[#00d2fd] cursor-pointer">ENCRYPTION_LAYER_ON</span>
+<span class="text-slate-600 hover:text-[#00d2fd] cursor-pointer">API_STATUS</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-slate-600">LATENCY: <span class="text-primary">12ms</span></span>
+<span class="text-slate-600">SYNC: <span class="text-primary">100%</span></span>
+<span class="text-slate-600 underline cursor-pointer hover:text-[#00d2fd]">DOCS</span>
+</div>
+</footer>
+</body></html>

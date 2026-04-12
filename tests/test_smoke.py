@@ -1,15 +1,24 @@
 """Smoke tests. Run: python -m tests.test_smoke"""
-import asyncio, tempfile, os
+import asyncio, tempfile, argparse
 from pathlib import Path
 from swarmtrader.main import run
 from swarmtrader import Bus, TradeIntent, Coordinator, RiskAgent, size_check, allowlist_check
+
+
+def _mock_args(db: Path, kill: Path, duration: float = 6.0) -> argparse.Namespace:
+    return argparse.Namespace(
+        mode="mock", duration=duration, pairs=["ETHUSD"],
+        base_size=1000.0, max_size=5000.0, max_drawdown=50.0,
+        db=str(db), kill_switch=str(kill), ws=False, poll_interval=2.0,
+        dashboard=False, no_advanced=True,
+    )
 
 
 async def test_full_pipeline():
     with tempfile.TemporaryDirectory() as d:
         db = Path(d) / "t.db"
         kill = Path(d) / "KILL"
-        await run(duration=6.0, db=db, kill_switch=kill)
+        await run(_mock_args(db, kill, duration=6.0))
         assert db.exists()
     print("OK full_pipeline")
 
