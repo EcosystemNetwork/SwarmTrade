@@ -85,3 +85,51 @@ Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
 ## Session — 2026-04-12T15:37:00.856245+00:00
 Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
 Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T15:44:12.957680+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T15:57:48.341995+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T15:59:16.439558+00:00
+Duration: 20s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+Top risk rejections:
+  - factor_exposure: factor_check: REJECT excessive exposure on ETH: volatility=+ (x3)
+### Lessons
+- High rejection rate (3 rejections vs 0 fills). Risk limits may be too tight, or signal quality is low.
+
+## Session — 2026-04-12T16:00:43.898247+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:01:18.133982+00:00
+Duration: 5s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:01:31.507518+00:00
+Duration: 5s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:02:24.062946+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:04:04.794585+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:06:08.237458+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:19:22.104797+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00
+
+## Session — 2026-04-12T16:26:57.568588+00:00
+Duration: 6s | PnL: +0.0000 | Trades: 0 (W:0 L:0 WR:0%)
+Fees: 0.0000 | Slippage: 0.0000 | Equity: 0.00 -> 0.00

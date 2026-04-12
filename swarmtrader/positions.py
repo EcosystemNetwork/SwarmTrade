@@ -46,6 +46,10 @@ class ManagedPosition:
     # Time-based exit
     max_hold_seconds: float = 3600.0  # 1 hour max hold
 
+    # Hard stop confirmation: require 2 consecutive ticks below threshold
+    # to avoid flash-crash false triggers
+    _hard_stop_ticks: int = 0
+
     # Remaining quantity fraction (decreases as TPs hit)
     remaining_pct: float = 1.0
 
@@ -70,9 +74,18 @@ class ManagedPosition:
         return pct * self.quantity * self.entry_price
 
     def hard_stop_hit(self, price: float) -> bool:
-        """Unconditional stop: exit if loss exceeds hard_stop_pct."""
+        """Unconditional stop: exit if loss exceeds hard_stop_pct.
+
+        Requires 2 consecutive ticks below threshold to avoid
+        flash-crash false triggers from single bad ticks.
+        """
         pnl = self.unrealized_pnl_pct(price)
-        return pnl <= -self.hard_stop_pct
+        if pnl <= -self.hard_stop_pct:
+            self._hard_stop_ticks += 1
+            return self._hard_stop_ticks >= 2
+        else:
+            self._hard_stop_ticks = 0
+            return False
 
     def trailing_stop_hit(self, price: float) -> bool:
         if self.side == "long":

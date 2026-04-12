@@ -64,7 +64,7 @@
 - **Real-time dashboards** — web UI with WebSocket streaming + terminal TUI
 - **Agent gateway** — HTTP/WebSocket bridge for external AI agents (OpenClaw/Hermes protocols)
 - **ERC-8004 intents** — EIP-712 signed trade intents for trustless on-chain execution
-- **Zero heavy dependencies** — only `aiohttp` + `python-dotenv` at runtime
+- **Minimal dependencies** — `aiohttp`, `python-dotenv` core; `web3`, `eth-account` for blockchain; `psycopg` for Postgres
 
 ## Quick Start
 
@@ -142,6 +142,12 @@ Options:
   --gateway                Enable external agent gateway
   --demo                   Run demo replay mode with pre-recorded scenario
   --db PATH                SQLite database path (default: swarm.db)
+  --checkpoint             Enable state checkpointing for crash recovery
+  --checkpoint-path PATH   Checkpoint file path (default: swarm_checkpoint.json)
+  --erc8004                Enable ERC-8004 on-chain identity and reputation
+  --erc8004-network NET    ERC-8004 network: sepolia, mainnet, base (default: sepolia)
+  --gateway-key KEY        Master key for agent gateway (auto-generated if omitted)
+  --no-advanced            Disable advanced agents (OI, liquidation levels)
 ```
 
 ## Backtesting
@@ -196,7 +202,13 @@ swarmtrader/
 ├── web.py               # Web dashboard (aiohttp + WebSocket)
 ├── gateway.py           # Agent gateway (OpenClaw/Hermes)
 ├── erc8004.py           # ERC-8004 intent signing (EIP-712)
+├── uniswap.py           # Uniswap Trading API executor (DEX on Base)
 ├── checkpoint.py        # State checkpointing for crash recovery
+├── memory.py            # AgentMemory — cross-session learning (SOUL.md)
+├── capital_allocator.py # Agent leaderboard + dynamic capital allocation
+├── database.py          # Postgres (Neon) + SQLite database abstraction
+├── feeds.py             # 7 extended data feed agents
+├── demo.py              # Demo replay scouts (pre-recorded scenarios)
 ├── rate_limit.py        # Shared API rate limiter
 └── static/
     └── index.html       # Web dashboard frontend (Chart.js + Tailwind)
@@ -212,6 +224,7 @@ swarmtrader/
 | Advanced Market | 4 | OrderBook, FundingRate, Spread, Regime |
 | Market Intelligence | 6 | Whale, OnChain, FearGreed, Social, Liquidation, Arbitrage |
 | External Signals | 2 | News (CryptoPanic), PRISM AI |
+| Extended Feeds | 7 | ExchangeFlow, Stablecoin, MacroCalendar, DeribitOptions, TokenUnlock, GitHubDev, RSSNews |
 | Cross-Asset | 3 | MultiTimeframe, Correlation, Confluence |
 | Machine Learning | 1 | GradientBoosted (online training) |
 | Portfolio | 2 | PortfolioOpt, DynamicHedger |
@@ -219,6 +232,43 @@ swarmtrader/
 | Execution | 5 | Simulator, Executor, SOR, TWAP, Iceberg |
 | Safety | 3 | KillSwitch, CircuitBreaker, PositionFlattener |
 | Infrastructure | 4 | Supervisor, Reconciler, DataQuality, TCA |
+
+## Extended Data Feeds
+
+7 additional market intelligence agents run automatically alongside the core swarm:
+
+| Agent | Intelligence | API Key | Interval |
+|-------|-------------|---------|----------|
+| ExchangeFlow | Exchange reserve inflow/outflow via CoinGecko | `COINGECKO_API_KEY` (optional) | 5 min |
+| Stablecoin | USDT/USDC market cap + depeg detection | `COINGECKO_API_KEY` (optional) | 10 min |
+| MacroCalendar | Economic events (FOMC, CPI, NFP) | `FRED_API_KEY` (optional) | 30 min |
+| DeribitOptions | Options IV, put/call ratio, max pain (BTC/ETH) | None (public) | 5 min |
+| TokenUnlock | Token vesting unlock schedule via DeFi Llama | None | 60 min |
+| GitHubDev | Protocol commit velocity + releases | `GITHUB_TOKEN` (optional) | 30 min |
+| RSSNews | Multi-source RSS (CoinDesk, CoinTelegraph, Decrypt) | None | 5 min |
+
+## Advanced Features
+
+- **Crash recovery** — `--checkpoint` saves state periodically to a JSON file. On restart, the swarm resumes from the last checkpoint automatically.
+- **Cross-session learning** — `AgentMemory` system reads/writes `SOUL.md` to learn from past sessions. Strategy notes are auto-appended to `strategy_notes.md` after each run.
+- **Capital allocator** — Agent leaderboard tracks signal performance and dynamically allocates capital to top-performing agents.
+- **Uniswap DEX execution** — When `UNISWAP_API_KEY` and `PRIVATE_KEY` are set, adds Uniswap on Base as a real venue in the Smart Order Router.
+
+## Environment Configuration
+
+All environment variables are documented in `.env.example`. Key categories:
+
+| Category | Variables | Required |
+|----------|-----------|----------|
+| Kraken exchange | `KRAKEN_API_KEY`, `KRAKEN_PRIVATE_KEY`, `KRAKEN_TIER` | Paper/live only |
+| Database | `DATABASE_URL`, `SWARM_DB_PATH`, `SWARM_DB_*_POOL` | No (SQLite fallback) |
+| Risk tuning | `SWARM_RISK_MAX_DAILY_LOSS`, `SWARM_RISK_MAX_TRADES`, etc. | No (sensible defaults) |
+| Circuit breaker | `SWARM_CB_MAX_DRAWDOWN`, `SWARM_CB_COOLDOWN` | No |
+| Execution | `SWARM_MODE`, `SWARM_EXEC_MAX_RETRIES`, `SWARM_DEFAULT_ORDER_TYPE` | No |
+| Blockchain | `PRIVATE_KEY`, `UNISWAP_API_KEY`, `UNISWAP_CHAIN_ID` | ERC-8004/DEX only |
+| Extended feeds | `GITHUB_TOKEN`, `FRED_API_KEY`, `ETHERSCAN_API_KEY`, `COINGECKO_API_KEY` | No (graceful degradation) |
+
+See `.env.example` for the full list with defaults and descriptions.
 
 ## Hackathon
 
@@ -232,11 +282,11 @@ swarmtrader/
 
 - **Language**: Python 3.11+ (async/await throughout)
 - **Architecture**: Event-driven pub/sub via async `Bus`
-- **Runtime deps**: `aiohttp`, `python-dotenv`
+- **Runtime deps**: `aiohttp`, `python-dotenv`, `web3`, `eth-account`, `psycopg`, `psycopg-pool`
 - **ML/Math**: All implemented from scratch — no numpy, scipy, sklearn, or ta-lib
 - **Exchange**: Kraken (REST + WebSocket + CLI)
 - **Blockchain**: ERC-8004 intents on Ethereum (Sepolia testnet)
-- **Storage**: SQLite for audit trail and trade history
+- **Storage**: Postgres (Neon) primary, SQLite fallback for offline/backtest
 - **Frontend**: Tailwind CSS + Chart.js + vanilla JS
 
 ## License

@@ -776,6 +776,16 @@ class WebDashboard:
         max_pct = _safe_float(body.get("max_pct", 50), min_val=0, max_val=100)
         if target_pct is None or max_pct is None:
             return web.json_response({"error": "target_pct and max_pct must be finite numbers 0-100"}, status=400)
+        if target_pct > max_pct:
+            return web.json_response({"error": "target_pct cannot exceed max_pct"}, status=400)
+        # Check total allocations won't exceed 100%
+        existing_total = sum(
+            a.target_pct for name, a in self.wallet.allocations.items() if name != asset
+        )
+        if existing_total + target_pct > 100.0:
+            return web.json_response({
+                "error": f"total allocation would be {existing_total + target_pct:.1f}% (max 100%)"
+            }, status=400)
         self.wallet.set_allocation(asset, target_pct=target_pct, max_pct=max_pct)
         return web.json_response(self.wallet.summary())
 
@@ -998,13 +1008,12 @@ class WebDashboard:
     async def _handle_pyth_prices(self, request: web.Request) -> web.Response:
         """GET /api/pyth — fetch decentralized price from Pyth oracle."""
         try:
-            from .pyth_oracle import PythOracle
+            from .pyth_oracle import PythOracle, PYTH_FEEDS
             if not self._pyth_oracle:
                 self._pyth_oracle = PythOracle(self.bus, assets=["ETH", "BTC", "SOL"])
-            prices = await self._pyth_oracle._fetch_prices(
-                [fid for fid in __import__("swarmtrader.pyth_oracle",
-                                           fromlist=["PYTH_FEEDS"]).PYTH_FEEDS.values()][:3]
-            )
+            feed_ids = [fid for sym, fid in PYTH_FEEDS.items()
+                        if sym in ("ETH", "BTC", "SOL")]
+            prices = await self._pyth_oracle._fetch_prices(feed_ids)
             return web.json_response({"source": "pyth_hermes", "prices": prices})
         except Exception as e:
             return web.json_response({"error": str(e), "source": "pyth_hermes"}, status=500)
@@ -1019,8 +1028,8 @@ class WebDashboard:
             if client._cfg.api_key and client._cfg.api_secret:
                 result = await client.cancel_all()
                 count = result.get("count", 0)
-                await self._broadcast({"type": "dashboard.emergency",
-                                       "action": "cancel_all", "count": count})
+                await self._broadcast("dashboard.emergency",
+                                       {"action": "cancel_all", "count": count})
                 return web.json_response({"ok": True, "cancelled": count})
             return web.json_response({"ok": False, "error": "No API keys configured"}, status=400)
         except Exception as e:
@@ -1038,10 +1047,10 @@ class WebDashboard:
             if client._cfg.api_key and client._cfg.api_secret:
                 result = await client.cancel_all()
                 count = result.get("count", 0)
-            await self._broadcast({"type": "dashboard.emergency",
-                                   "action": "flatten", "count": count})
-            await self._broadcast({"type": "kill_switch", "active": True,
-                                   "reason": "dashboard_flatten"})
+            await self._broadcast("dashboard.emergency",
+                                   {"action": "flatten", "count": count})
+            await self._broadcast("kill_switch",
+                                   {"active": True, "reason": "dashboard_flatten"})
             return web.json_response({"ok": True, "cancelled": count, "kill_switch": True})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)}, status=500)
@@ -1050,12 +1059,12 @@ class WebDashboard:
         """POST /api/pause — Toggle kill switch (pause/resume trading)."""
         if self.kill_switch.active:
             self.kill_switch.disengage()
-            await self._broadcast({"type": "kill_switch", "active": False})
+            await self._broadcast("kill_switch", {"active": False})
             return web.json_response({"ok": True, "paused": False})
         else:
             self.kill_switch.engage("dashboard_pause")
-            await self._broadcast({"type": "kill_switch", "active": True,
-                                   "reason": "dashboard_pause"})
+            await self._broadcast("kill_switch",
+                                   {"active": True, "reason": "dashboard_pause"})
             return web.json_response({"ok": True, "paused": True})
 
     # ── ERC-8004 On-Chain Status ─────────────────────────────────────
@@ -1158,7 +1167,13 @@ class WebDashboard:
     async def start(self):
         # Auth token: from env, or auto-generate and print to console
         token = os.environ.get("SWARM_DASHBOARD_TOKEN", "")
+        mode = os.environ.get("SWARM_MODE", "mock")
         if not token:
+            if mode == "live":
+                raise RuntimeError(
+                    "SWARM_DASHBOARD_TOKEN must be set in live mode — "
+                    "auto-generated tokens are not allowed when trading real money"
+                )
             token = _generate_token()
             log.warning("No SWARM_DASHBOARD_TOKEN set — auto-generated (set env var to persist)")
             import sys

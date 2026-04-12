@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from . import (
     Bus,
     # Data scouts
-    MockScout, KrakenScout, KrakenWSScout,
+    MockScout, KrakenScout,
     # Analysts
     MomentumAnalyst, MeanReversionAnalyst, VolatilityAnalyst,
     # Advanced agents
@@ -156,8 +156,9 @@ def parse_args() -> argparse.Namespace:
                    help="Disable advanced agents (orderbook, funding, spread)")
     p.add_argument("--web", action="store_true",
                    help="Launch web dashboard on http://localhost:8080")
-    p.add_argument("--web-port", type=int, default=8080,
-                   help="Web dashboard port (default: 8080)")
+    p.add_argument("--web-port", type=int,
+                   default=int(os.getenv("PORT", "8080")),
+                   help="Web dashboard port (default: $PORT or 8080)")
     p.add_argument("--max-positions", type=int, default=5,
                    help="Max simultaneous open positions (default: 5)")
     p.add_argument("--hard-stop", type=float, default=0.05,
@@ -190,6 +191,8 @@ def parse_args() -> argparse.Namespace:
 
 async def run(args: argparse.Namespace):
     load_dotenv()
+    # Expose mode to submodules (e.g. web.py token enforcement)
+    os.environ["SWARM_MODE"] = args.mode
     from .logging_config import setup_logging
     setup_logging(
         json_mode=(args.mode != "mock"),
@@ -200,6 +203,17 @@ async def run(args: argparse.Namespace):
     log.setLevel(logging.INFO)
     log.info("Swarm Trade starting: mode=%s duration=%.0fs pairs=%s",
              args.mode, args.duration, args.pairs)
+
+    # Pre-flight: live mode safety gate
+    if args.mode == "live":
+        confirm = os.getenv("SWARM_LIVE_CONFIRM", "")
+        if confirm != "I_ACCEPT_RISK":
+            log.critical("ABORTING: live mode requires SWARM_LIVE_CONFIRM=I_ACCEPT_RISK")
+            raise SystemExit(
+                "Live trading BLOCKED. Set SWARM_LIVE_CONFIRM=I_ACCEPT_RISK to confirm "
+                "you understand this bot will execute real trades with real money."
+            )
+        log.warning("LIVE MODE ENABLED — real orders will execute on Kraken")
 
     # Pre-flight: validate API keys before entering live/paper mode
     if args.mode in ("live", "paper"):
@@ -276,6 +290,40 @@ async def run(args: argparse.Namespace):
         if ckpt.restore():
             log.info("Resumed from checkpoint")
 
+    # ── Kraken REST Client (shared) ──────────────────────────────
+    from .kraken_api import get_client, KrakenAPIConfig as _KrakenCfg
+    kraken_client = get_client(_KrakenCfg(
+        api_key=os.getenv("KRAKEN_API_KEY", ""),
+        api_secret=os.getenv("KRAKEN_PRIVATE_KEY", ""),
+        tier=os.getenv("KRAKEN_TIER", "starter"),
+    ))
+
+    # ── WebSocket v2 Client (shared) ──────────────────────────────
+    ws_v2_client = None
+    if args.ws and args.mode != "mock":
+        from .kraken_ws import KrakenWSv2Client
+        ws_v2_client = KrakenWSv2Client(bus, client=kraken_client)
+        ws_pairs = [p.replace("USD", "/USD") for p in args.pairs]
+        ws_v2_client.subscribe_ticker(ws_pairs)
+        ws_v2_client.subscribe_book(ws_pairs, depth=25)
+        ws_v2_client.subscribe_trades(ws_pairs)
+        supervisor.register("ws_public", ws_v2_client.run_public,
+                            stale_after=30.0)
+        log.info("Kraken WS v2 (public): ticker + book + trades for %s", ws_pairs)
+
+        # Private channels for paper/live (executions feed)
+        if os.getenv("KRAKEN_API_KEY"):
+            ws_v2_client.subscribe_executions()
+            supervisor.register("ws_private", ws_v2_client.run_private,
+                                stale_after=60.0)
+            log.info("Kraken WS v2 (private): executions channel enabled")
+
+    # ── Pyth Oracle (decentralized price redundancy) ──────────────
+    from .pyth_oracle import PythOracle
+    pyth = PythOracle(bus, assets=assets, interval=10.0)
+    supervisor.register("pyth_oracle", pyth.run, stale_after=30.0, stoppable=pyth)
+    log.info("Pyth oracle: decentralized price feeds for %s", assets)
+
     # ── Data Scouts ─────────────────────────────────────────────
     if getattr(args, "demo", False):
         if len(assets) > 1:
@@ -285,11 +333,14 @@ async def run(args: argparse.Namespace):
         log.info("DEMO MODE: replaying pre-recorded market scenario")
     elif args.mode == "mock":
         scout = MockScout(bus, symbol=primary_asset, start=2200.0, interval=0.2)
-    elif args.ws:
-        ws_pairs = [p.replace("USD", "/USD") for p in args.pairs]
-        scout = KrakenWSScout(bus, pairs=ws_pairs)
+    elif args.ws and ws_v2_client:
+        # WS v2 client already registered above — use a lightweight scout as fallback
+        scout = KrakenScout(bus, pairs=args.pairs, interval=args.poll_interval,
+                            client=kraken_client)
+        log.info("KrakenScout (REST fallback alongside WS v2)")
     else:
-        scout = KrakenScout(bus, pairs=args.pairs, interval=args.poll_interval)
+        scout = KrakenScout(bus, pairs=args.pairs, interval=args.poll_interval,
+                            client=kraken_client)
 
     supervisor.register("scout", scout.run, stale_after=10.0, stoppable=scout)
 
@@ -398,6 +449,41 @@ async def run(args: argparse.Namespace):
     arb = ArbitrageAgent(bus, assets=assets, interval=120.0)
     supervisor.register("arbitrage", arb.run, stale_after=300.0, stoppable=arb)
 
+    # ── Extended Data Feeds ───────────────────────────────────
+
+    # Exchange net flow (volume-based reserve proxy via CoinGecko)
+    exflow = ExchangeFlowAgent(bus, assets=assets, interval=300.0)
+    supervisor.register("exchange_flow", exflow.run, stale_after=600.0, stoppable=exflow)
+
+    # Stablecoin health (USDT/USDC market cap + depeg detection)
+    stable = StablecoinAgent(bus, assets=assets, interval=600.0)
+    supervisor.register("stablecoin", stable.run, stale_after=1200.0, stoppable=stable)
+
+    # Macro economic calendar (FOMC, CPI, NFP from free APIs)
+    macro = MacroCalendarAgent(bus, assets=assets, interval=1800.0)
+    supervisor.register("macro", macro.run, stale_after=3600.0, stoppable=macro)
+
+    # Options flow (Deribit put/call ratio, IV, skew — BTC/ETH only)
+    options_assets = [a for a in assets if a in ("BTC", "ETH")]
+    if options_assets:
+        opts = DeribitOptionsAgent(bus, assets=options_assets, interval=300.0)
+        supervisor.register("options", opts.run, stale_after=600.0, stoppable=opts)
+        log.info("Options flow (Deribit) enabled for: %s", options_assets)
+
+    # Token unlock / TVL monitoring (DeFi Llama)
+    unlock = TokenUnlockAgent(bus, assets=assets, interval=3600.0)
+    supervisor.register("unlock", unlock.run, stale_after=7200.0, stoppable=unlock)
+
+    # GitHub developer activity (commit velocity, releases)
+    ghdev = GitHubDevAgent(bus, assets=assets, interval=1800.0)
+    supervisor.register("github", ghdev.run, stale_after=3600.0, stoppable=ghdev)
+
+    # RSS multi-source news (CoinDesk, CoinTelegraph, Decrypt — no API key)
+    rss = RSSNewsAgent(bus, assets=assets, interval=300.0)
+    supervisor.register("rss_news", rss.run, stale_after=600.0, stoppable=rss)
+
+    log.info("Extended feeds: exchange_flow, stablecoin, macro, unlock, github, rss_news")
+
     # ── ML Signal Agent (per asset) ────────────────────────────
     for asset in assets:
         MLSignalAgent(bus, asset=asset, retrain_interval=500, min_samples=200)
@@ -442,9 +528,10 @@ async def run(args: argparse.Namespace):
     log.info("Portfolio optimization (risk parity) + dynamic hedger enabled")
 
     # ── Smart Order Router ─────────────────────────────────────
-    sor = SmartOrderRouter(bus)
+    sor = SmartOrderRouter(bus, ws_client=ws_v2_client)
     supervisor.register("sor", sor.run, stale_after=15.0)
-    log.info("Smart order router: 5 venues (Kraken, Binance, Coinbase, OKX, dYdX)")
+    log.info("Smart order router: 5 venues (Kraken, Binance, Coinbase, OKX, dYdX)%s",
+             " + real L2 book" if ws_v2_client else "")
 
     # ── Microstructure — Iceberg + TCA ─────────────────────────
     iceberg = IcebergExecutor(bus, threshold_usd=args.max_size * 0.75)
@@ -497,9 +584,11 @@ async def run(args: argparse.Namespace):
         max_drawdown_usd=args.max_drawdown,
         vol_halt_threshold=0.05,
         cooldown_seconds=300.0,
+        ws_client=ws_v2_client,
     )
     if args.mode != "mock":
-        PositionFlattener(bus, paper=(args.mode == "paper"), kill_switch=kill_switch)
+        PositionFlattener(bus, paper=(args.mode == "paper"),
+                          kill_switch=kill_switch, ws_client=ws_v2_client)
 
     # ── Execution Pipeline ──────────────────────────────────────
     Simulator(bus)
@@ -507,7 +596,13 @@ async def run(args: argparse.Namespace):
         Executor(bus, kill_switch=kill_switch, dry_run=True, portfolio=portfolio)
     else:
         KrakenExecutor(bus, kill_switch=kill_switch, paper=(args.mode == "paper"),
-                       portfolio=portfolio)
+                       portfolio=portfolio, client=kraken_client)
+        # Order lifecycle tracker — polls for fill confirmation
+        from .kraken import OrderTracker
+        order_tracker = OrderTracker(bus, client=kraken_client, poll_interval=2.0)
+        supervisor.register("order_tracker", order_tracker.run,
+                            stale_after=10.0, stoppable=order_tracker)
+        log.info("Order lifecycle tracker enabled (poll=2s)")
 
     Auditor(bus, db=db, state=state, portfolio=portfolio)
 
@@ -643,6 +738,17 @@ async def run(args: argparse.Namespace):
         pass
     finally:
         log.info("SWARM SHUTDOWN starting...")
+
+        # Cancel all open orders on exchange before shutting down agents
+        if args.mode in ("paper", "live"):
+            try:
+                from .kraken import _run_cli
+                log.info("Cancelling all open orders on Kraken...")
+                await _run_cli("cancel", "--all", timeout=10.0)
+                log.info("All open orders cancelled")
+            except Exception as e:
+                log.warning("Failed to cancel orders on shutdown: %s", e)
+
         scheduler.stop()
         sched_task.cancel()
         supervisor.stop_all()

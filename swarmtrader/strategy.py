@@ -1,7 +1,7 @@
 """Strategist + risk + consensus coordinator with regime-aware adaptive weighting."""
 from __future__ import annotations
 import asyncio, time, logging
-from .core import Bus, Signal, TradeIntent, RiskVerdict, PortfolioTracker, OrderSpec
+from .core import Bus, Signal, TradeIntent, RiskVerdict, ExecutionReport, PortfolioTracker, OrderSpec
 
 log = logging.getLogger("swarm")
 
@@ -367,6 +367,14 @@ class Coordinator:
             got = len(self.verdicts.get(intent_id, []))
             log.warning("TIMEOUT %s got %d/%d verdicts — auto-rejecting",
                         intent_id, got, self.n)
+            # Publish rejection so wallet releases reserves and dashboard updates
+            intent = self.intents.get(intent_id)
+            if intent:
+                rep = ExecutionReport(
+                    intent_id, "rejected", None, None, 0.0, 0.0,
+                    f"risk_timeout: {got}/{self.n} verdicts",
+                )
+                await self.bus.publish("exec.report", rep)
             self._cleanup(intent_id)
 
     async def _on_verdict(self, v: RiskVerdict):

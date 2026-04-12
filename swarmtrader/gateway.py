@@ -506,7 +506,8 @@ class AgentGateway:
         agent_id = f"ext_{name.lower().replace(' ', '_').replace('-', '_')}"
         api_key = secrets.token_hex(32)
         asn = generate_asn()
-        weight = float(body.get("weight", EXTERNAL_AGENT_DEFAULT_WEIGHT))
+        MAX_AGENT_WEIGHT = 0.20  # No single external agent can dominate signals
+        weight = min(MAX_AGENT_WEIGHT, float(body.get("weight", EXTERNAL_AGENT_DEFAULT_WEIGHT)))
 
         agent = ConnectedAgent(
             agent_id=agent_id,

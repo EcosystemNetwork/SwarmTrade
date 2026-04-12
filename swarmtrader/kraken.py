@@ -68,11 +68,21 @@ def _classify_error(msg: str) -> ErrorKind:
     for pat in retryable_patterns:
         if pat in msg_lower:
             return ErrorKind.RETRYABLE
-    return ErrorKind.UNKNOWN
+    # Conservative: unknown errors are fatal — don't retry what we don't understand
+    return ErrorKind.FATAL
+
+
+_CLI_SEMAPHORE = asyncio.Semaphore(3)  # Max 3 concurrent CLI calls to avoid Kraken rate bans
 
 
 async def _run_cli(*args: str, timeout: float = _CLI_TIMEOUT) -> dict | list | str:
     """Run a kraken CLI command with timeout and return parsed JSON output."""
+    async with _CLI_SEMAPHORE:
+        return await _run_cli_inner(*args, timeout=timeout)
+
+
+async def _run_cli_inner(*args: str, timeout: float = _CLI_TIMEOUT) -> dict | list | str:
+    """Inner CLI runner (called under semaphore)."""
     cmd = ["kraken", "-o", "json", *args]
     # Pass API credentials via environment only — never as CLI args
     # (CLI args are visible in process listings via ps/top)
@@ -586,14 +596,32 @@ class KrakenExecutor:
         self._client = client or get_client()
         self._pending_orders: dict[str, OrderStatus] = {}  # intent_id -> status
         self._order_txids: dict[str, str] = {}  # intent_id -> kraken txid
+        self._executed_intents: set[str] = set()  # idempotency guard
         bus.subscribe("exec.simulated", self._on_sim)
         bus.subscribe("market.snapshot", self._on_snap)
+
+    # Minimum order volumes per asset (Kraken minimums)
+    MIN_VOLUMES = {
+        "ETH": 0.001, "BTC": 0.0001, "SOL": 0.02, "XRP": 5.0,
+        "ADA": 5.0, "DOT": 0.1, "LINK": 0.2, "AVAX": 0.1,
+        "DOGE": 20.0, "MATIC": 5.0, "LTC": 0.01,
+    }
 
     async def _on_snap(self, snap: MarketSnapshot):
         self.portfolio.update_prices(snap.prices)
 
     async def _on_sim(self, payload):
         intent, eff_price = payload
+
+        # Idempotency: never execute the same intent twice
+        if intent.id in self._executed_intents:
+            log.warning("BLOCKED double execution: intent %s already executed", intent.id)
+            return
+        self._executed_intents.add(intent.id)
+        # Cap memory: keep last 10000 intent IDs
+        if len(self._executed_intents) > 10000:
+            to_remove = list(self._executed_intents)[:5000]
+            self._executed_intents -= set(to_remove)
 
         if self.kill_switch.active:
             await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0, "kill_switch")
@@ -607,6 +635,17 @@ class KrakenExecutor:
 
         buying = _is_buy(intent)
         asset = _base_asset(intent)
+
+        # Minimum order size validation
+        if buying:
+            volume = intent.amount_in / eff_price
+        else:
+            volume = intent.amount_in
+        min_vol = self.MIN_VOLUMES.get(asset, 0.001)
+        if volume < min_vol:
+            await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0,
+                               f"below_minimum: {volume:.8f} < {min_vol}")
+            return
 
         # Pre-trade validation for sells
         if not buying:

@@ -76,39 +76,42 @@ class PythOracle:
 
         log.info("PythOracle starting: assets=%s interval=%.1fs", self.assets, self.interval)
 
-        while not self._stop:
-            try:
-                prices = await self._fetch_prices(feed_ids)
-                if prices:
-                    # Publish Pyth-specific event
-                    await self.bus.publish("market.pyth", {
-                        "ts": time.time(),
-                        "prices": prices,
-                        "source": "pyth_hermes",
-                    })
+        try:
+            while not self._stop:
+                try:
+                    prices = await self._fetch_prices(feed_ids)
+                    if prices:
+                        # Publish Pyth-specific event
+                        await self.bus.publish("market.pyth", {
+                            "ts": time.time(),
+                            "prices": prices,
+                            "source": "pyth_hermes",
+                        })
 
-                    # Optionally publish as market.snapshot for redundancy
-                    if self.publish_snapshot:
-                        snap = MarketSnapshot(
-                            ts=time.time(),
-                            prices=prices,
-                            gas_gwei=0.0,
-                        )
-                        await self.bus.publish("market.snapshot", snap)
+                        # Optionally publish as market.snapshot for redundancy
+                        if self.publish_snapshot:
+                            snap = MarketSnapshot(
+                                ts=time.time(),
+                                prices=prices,
+                                gas_gwei=0.0,
+                            )
+                            await self.bus.publish("market.snapshot", snap)
 
-                    if self._consecutive_errors > 0:
-                        log.info("PythOracle recovered after %d errors",
-                                 self._consecutive_errors)
-                    self._consecutive_errors = 0
+                        if self._consecutive_errors > 0:
+                            log.info("PythOracle recovered after %d errors",
+                                     self._consecutive_errors)
+                        self._consecutive_errors = 0
 
-                await asyncio.sleep(self.interval)
+                    await asyncio.sleep(self.interval)
 
-            except Exception as e:
-                self._consecutive_errors += 1
-                backoff = min(2.0 * (2 ** self._consecutive_errors), 60.0)
-                log.warning("PythOracle error (attempt %d, backoff %.1fs): %s",
-                            self._consecutive_errors, backoff, e)
-                await asyncio.sleep(backoff)
+                except Exception as e:
+                    self._consecutive_errors += 1
+                    backoff = min(2.0 * (2 ** self._consecutive_errors), 60.0)
+                    log.warning("PythOracle error (attempt %d, backoff %.1fs): %s",
+                                self._consecutive_errors, backoff, e)
+                    await asyncio.sleep(backoff)
+        finally:
+            await self.close()
 
     async def _fetch_prices(self, feed_ids: list[str]) -> dict[str, float]:
         """Fetch latest prices from Pyth Hermes API."""

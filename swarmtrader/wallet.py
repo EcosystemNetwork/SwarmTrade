@@ -150,9 +150,10 @@ class WalletManager:
         if rep.side == "buy" and rep.fill_price and rep.quantity > 0:
             cost = rep.quantity * rep.fill_price + rep.fee_usd
             if cost > self.cash_balance:
-                log.error("WALLET BUY would make cash negative! cost=%.2f cash=%.2f "
-                          "intent=%s — recording anyway (reconciliation needed)",
+                log.error("WALLET BUY BLOCKED — would go negative! cost=%.2f cash=%.2f "
+                          "intent=%s — fill recorded but cash clamped to 0",
                           cost, self.cash_balance, rep.intent_id)
+                cost = self.cash_balance  # Clamp: never go negative
             self.cash_balance -= cost
             self._record_tx("fee", rep.fee_usd, f"trade fee intent={rep.intent_id}")
             log.info("WALLET buy: spent=%.2f fee=%.4f cash=%.2f",

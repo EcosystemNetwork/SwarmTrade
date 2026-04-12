@@ -1,101 +1,151 @@
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
+# SWARM TRADE — Agent Reference
 
-This project is indexed by GitNexus as **swarmtrader** (979 symbols, 3011 relationships, 85 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+50+ cooperative AI agents organized by function. All communicate via the async event `Bus` using pub/sub signals.
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+## Data Scouts
 
-## Always Do
+| Agent | Source | API Key Required |
+|-------|--------|-----------------|
+| `MockScout` | Simulated GBM prices | No |
+| `KrakenScout` | Kraken REST API | No (public) |
+| `KrakenWSScout` | Kraken WebSocket v2 | No (public) |
+| `DemoScout` | Pre-recorded replay | No |
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+## Core Analysts
 
-## When Debugging
+| Agent | Strategy | Signal |
+|-------|----------|--------|
+| `MomentumAnalyst` | Price momentum (rate of change) | `signal.momentum` |
+| `MeanReversionAnalyst` | Z-score reversion to mean | `signal.mean_reversion` |
+| `VolatilityAnalyst` | Volatility regime detection | `signal.volatility` |
 
-1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
-2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
-3. `READ gitnexus://repo/swarmtrader/process/{processName}` — trace the full execution flow step by step
-4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+## Technical Analysis
 
-## When Refactoring
+| Agent | Indicator | Signal |
+|-------|-----------|--------|
+| `RSIAgent` | Relative Strength Index | `signal.rsi` |
+| `MACDAgent` | MACD crossover | `signal.macd` |
+| `BollingerAgent` | Bollinger Band squeeze/breakout | `signal.bollinger` |
+| `VWAPAgent` | Volume-Weighted Average Price | `signal.vwap` |
+| `IchimokuAgent` | Ichimoku Cloud | `signal.ichimoku` |
+| `LiquidationCascadeAgent` | Liquidation cascade detection | `signal.liq_cascade` |
+| `ATRTrailingStopAgent` | ATR-based dynamic stops | `signal.atr_stop` |
 
-- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
-- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
-- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+## Advanced Market
 
-## Never Do
+| Agent | Intelligence | Signal |
+|-------|-------------|--------|
+| `OrderBookAgent` | Order book imbalance | `signal.orderbook` |
+| `FundingRateAgent` | Perpetual funding rates | `signal.funding` |
+| `SpreadAgent` | Bid-ask spread analysis | `signal.spread` |
+| `RegimeAgent` | Market regime classification | `signal.regime` |
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+## Market Intelligence
 
-## Tools Quick Reference
+| Agent | Source | API Key Required |
+|-------|--------|-----------------|
+| `WhaleAgent` | Large transaction tracking | No |
+| `OnChainAgent` | Etherscan on-chain activity | `ETHERSCAN_API_KEY` |
+| `FearGreedAgent` | Alternative.me Fear & Greed | No |
+| `SocialSentimentAgent` | Social media sentiment | No |
+| `LiquidationAgent` | Futures liquidation levels | No |
+| `ArbitrageAgent` | Cross-exchange price diffs | No |
 
-| Tool | When to use | Command |
-|------|-------------|---------|
-| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
-| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
-| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
-| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
-| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
-| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
+## External Signals
 
-## Impact Risk Levels
+| Agent | Source | API Key Required |
+|-------|--------|-----------------|
+| `NewsAgent` | CryptoPanic news sentiment | `NEWS_API_KEY` |
+| `PRISMSignalAgent` | PRISM/Strykr AI signals | `PRISM_API_KEY` |
 
-| Depth | Meaning | Action |
-|-------|---------|--------|
-| d=1 | WILL BREAK — direct callers/importers | MUST update these |
-| d=2 | LIKELY AFFECTED — indirect deps | Should test |
-| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+## Extended Data Feeds (feeds.py)
 
-## Resources
+| Agent | Intelligence | API Key | Interval |
+|-------|-------------|---------|----------|
+| `ExchangeFlowAgent` | Exchange reserve inflow/outflow (CoinGecko) | `COINGECKO_API_KEY` (optional) | 5 min |
+| `StablecoinAgent` | USDT/USDC market cap + depeg monitoring | `COINGECKO_API_KEY` (optional) | 10 min |
+| `MacroCalendarAgent` | Economic events (FOMC, CPI, NFP) | `FRED_API_KEY` (optional) | 30 min |
+| `DeribitOptionsAgent` | Options IV, put/call ratio, max pain | No (Deribit public) | 5 min |
+| `TokenUnlockAgent` | Token vesting unlock schedule (DeFi Llama) | No | 60 min |
+| `GitHubDevAgent` | Protocol commit velocity + releases | `GITHUB_TOKEN` (optional) | 30 min |
+| `RSSNewsAgent` | Multi-source RSS (CoinDesk, CoinTelegraph, Decrypt) | No | 5 min |
 
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/swarmtrader/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/swarmtrader/clusters` | All functional areas |
-| `gitnexus://repo/swarmtrader/processes` | All execution flows |
-| `gitnexus://repo/swarmtrader/process/{name}` | Step-by-step execution trace |
+## Cross-Asset Intelligence
 
-## Self-Check Before Finishing
+| Agent | Function | Signal |
+|-------|----------|--------|
+| `MultiTimeframeMomentum` | Multi-timeframe trend alignment | `signal.mtf` |
+| `CorrelationAgent` | Cross-asset correlation + lead-lag | `signal.correlation` |
+| `ConfluenceDetector` | Multi-group signal agreement scoring | `signal.confluence` |
 
-Before completing any code modification task, verify:
-1. `gitnexus_impact` was run for all modified symbols
-2. No HIGH/CRITICAL risk warnings were ignored
-3. `gitnexus_detect_changes()` confirms changes match expected scope
-4. All d=1 (WILL BREAK) dependents were updated
+## Machine Learning
 
-## Keeping the Index Fresh
+| Agent | Method | Signal |
+|-------|--------|--------|
+| `MLSignalAgent` | Online gradient-boosted decision trees (pure stdlib) | `signal.ml` |
 
-After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
+## Strategy + Coordination
 
-```bash
-npx gitnexus analyze
-```
+| Component | Role |
+|-----------|------|
+| `Strategist` | Regime-aware adaptive signal weighting, Kelly criterion sizing |
+| `RiskAgent` | Quorum risk consensus from all risk layers |
+| `Coordinator` | Converts approved intents into execution orders |
+| `CapitalAllocator` | Agent leaderboard-based capital allocation |
 
-If the index previously included embeddings, preserve them by adding `--embeddings`:
+## Risk Pipeline (15 layers)
 
-```bash
-npx gitnexus analyze --embeddings
-```
+| Layer | Check | Description |
+|-------|-------|-------------|
+| 1 | `size_check` | Position sizing limits |
+| 2 | `allowlist_check` | Asset allowlist validation |
+| 3 | `drawdown_check` | Daily drawdown limits |
+| 4 | `rate_limit_check` | Trade frequency limits |
+| 5 | `max_positions_check` | Open position count limit |
+| 6 | `funds_check` | Sufficient funds verification |
+| 7 | `allocation_check` | Per-asset allocation cap |
+| 8 | `depth_liquidity_check` | Order book depth verification |
+| 9 | `var_check` | Value-at-Risk (historical, parametric, Monte Carlo) |
+| 10 | `stress_check` | 8 historical stress scenarios |
+| 11 | `compliance_check` | Wash trade + margin + data quality |
+| 12 | `factor_exposure_check` | Factor model exposure limits |
+| 13 | `rebalance_check` | Portfolio rebalance triggers |
+| 14 | `sor_venue_check` | Smart order routing venue selection |
+| 15 | `ml_model_check` | ML model confidence threshold |
 
-To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
+## Execution
 
-> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
+| Component | Function |
+|-----------|----------|
+| `Simulator` | Dry-run executor with slippage model |
+| `Executor` | Generic order executor |
+| `KrakenExecutor` | Kraken-specific live execution (REST + CLI) |
+| `UniswapExecutor` | Uniswap Trading API (DEX on Base) |
+| `SmartOrderRouter` | Multi-venue quote comparison (5 venues) |
+| `TWAPExecutor` | Time-weighted average price slicing |
+| `IcebergExecutor` | Hidden large order execution |
+| `ExecutionQualityTracker` | Transaction cost analysis |
 
-## CLI
+## Safety Systems
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| Component | Function |
+|-----------|----------|
+| `KillSwitch` | Emergency halt all trading |
+| `CircuitBreaker` | Auto-halt on drawdown/volatility spike |
+| `PositionFlattener` | Force-close all positions |
+| `PositionManager` | Trailing/hard stop management |
+| `Reconciler` | Balance reconciliation vs exchange |
 
-<!-- gitnexus:end -->
+## Infrastructure
+
+| Component | Function |
+|-----------|----------|
+| `AgentSupervisor` | Health monitoring, auto-restart, heartbeats |
+| `Checkpoint` | State checkpointing for crash recovery |
+| `AgentMemory` | Cross-session learning (SOUL.md) |
+| `Auditor` | SQLite/Postgres trade audit trail |
+| `DataQualityMonitor` | Feed freshness and consistency checks |
+| `TransactionCostAnalyzer` | Post-trade execution quality |
+| `WebDashboard` | Browser UI with WebSocket streaming |
+| `Dashboard` | Terminal TUI dashboard |
+| `AgentGateway` | HTTP/WebSocket bridge for external AI agents |

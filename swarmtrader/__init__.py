@@ -1,8 +1,8 @@
-from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
+from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport, OrderSpec
 from .agents import MockScout, MomentumAnalyst, MeanReversionAnalyst, VolatilityAnalyst
 from .strategy import Strategist, RiskAgent, Coordinator, size_check, allowlist_check, drawdown_check
 from .execution import Simulator, Executor, Auditor
-from .kraken import KrakenScout, KrakenWSScout, KrakenExecutor
+from .kraken import KrakenScout, KrakenWSScout, KrakenExecutor, OrderTracker
 from .signals import PRISMSignalAgent
 from .agents_advanced import OrderBookAgent, FundingRateAgent, SpreadAgent, RegimeAgent
 from .safety import KillSwitch, CircuitBreaker, PositionFlattener
@@ -77,6 +77,15 @@ from .feeds import (
     ExchangeFlowAgent, StablecoinAgent, MacroCalendarAgent,
     DeribitOptionsAgent, TokenUnlockAgent, GitHubDevAgent, RSSNewsAgent,
 )
+# Native Kraken API + WS v2
+from .kraken_api import KrakenRESTClient, KrakenRateLimiter, KrakenAPIConfig
+from .kraken_ws import KrakenWSv2Client, OrderBookSnapshot
+# Competition features
+from .nlp_strategy import parse_strategy, apply_strategy, PRESETS as STRATEGY_PRESETS
+from .pyth_oracle import PythOracle
+from .dex_quotes import DEXQuoteProvider
+from .strategy_privacy import StrategyPrivacyManager
+from .capital_allocator import CapitalAllocator
 
 __all__ = [
     "Bus", "MarketSnapshot", "Signal", "TradeIntent", "RiskVerdict", "ExecutionReport",
@@ -138,4 +147,10 @@ __all__ = [
     # Extended data feeds
     "ExchangeFlowAgent", "StablecoinAgent", "MacroCalendarAgent",
     "DeribitOptionsAgent", "TokenUnlockAgent", "GitHubDevAgent", "RSSNewsAgent",
+    # Native Kraken API + WS v2
+    "KrakenRESTClient", "KrakenRateLimiter", "KrakenAPIConfig",
+    "KrakenWSv2Client", "OrderBookSnapshot", "OrderTracker", "OrderSpec",
+    # Competition features
+    "parse_strategy", "apply_strategy", "STRATEGY_PRESETS",
+    "PythOracle", "DEXQuoteProvider", "StrategyPrivacyManager", "CapitalAllocator",
 ]
