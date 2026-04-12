@@ -58,6 +58,14 @@ from .walkforward import (
 )
 # Agent gateway
 from .gateway import AgentGateway
+# Phase 4: config, reconciliation, structured logging
+from .config import TradingConfig
+from .reconciliation import BalanceReconciler
+from .logging_config import setup_logging
+# Phase 5: checkpoint, rate limiting, demo
+from .checkpoint import Checkpoint
+from .rate_limit import APIRateLimiter, get_api_limiter
+from .demo import DemoScout, MultiAssetDemoScout
 
 __all__ = [
     "Bus", "MarketSnapshot", "Signal", "TradeIntent", "RiskVerdict", "ExecutionReport",
@@ -107,4 +115,9 @@ __all__ = [
     "WalkForwardEngine", "WalkForwardResult", "TransactionCostAnalyzer", "MonteCarloBacktester",
     # Agent gateway
     "AgentGateway",
+    # Config, reconciliation, logging
+    "TradingConfig", "BalanceReconciler", "setup_logging",
+    # Checkpoint, rate limiting, demo
+    "Checkpoint", "APIRateLimiter", "get_api_limiter",
+    "DemoScout", "MultiAssetDemoScout",
 ]

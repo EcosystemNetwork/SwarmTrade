@@ -268,9 +268,10 @@ class WalkForwardEngine:
             all_is_sharpes.append(is_sharpe)
             all_oos_sharpes.append(oos_sharpe)
             cumulative_pnl += fold_pnl
+            running_total = oos_equity[-1] if oos_equity else 0.0
             for p in oos_pnls:
-                cumulative_pnl_at = sum(all_oos_returns[: len(oos_equity) + 1])
-                oos_equity.append(cumulative_pnl_at)
+                running_total += p
+                oos_equity.append(running_total)
 
             log.info(
                 "Fold %d/%d: train=%d test=%d IS_sharpe=%.3f OOS_sharpe=%.3f pnl=%.2f",

@@ -82,6 +82,8 @@ from .safety import KillSwitch
 from .wallet import WalletManager, funds_check, allocation_check
 from .web import WebDashboard
 from .gateway import AgentGateway
+from .checkpoint import Checkpoint
+from .demo import DemoScout, MultiAssetDemoScout
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -165,19 +167,38 @@ def parse_args() -> argparse.Namespace:
                    help="Enable agent gateway for external AI agents (OpenClaw/Hermes)")
     p.add_argument("--gateway-key", type=str, default=None,
                    help="Master key for agent gateway (auto-generated if omitted)")
+    p.add_argument("--demo", action="store_true",
+                   help="Use demo replay mode with pre-recorded market scenario")
+    p.add_argument("--checkpoint", action="store_true",
+                   help="Enable state checkpointing for crash recovery")
+    p.add_argument("--checkpoint-path", type=str, default="swarm_checkpoint.json",
+                   help="Checkpoint file path (default: swarm_checkpoint.json)")
     return p.parse_args()
 
 
 async def run(args: argparse.Namespace):
     load_dotenv()
-    logging.basicConfig(
-        level=logging.WARNING if args.dashboard else logging.INFO,
-        format="%(asctime)s %(name)-16s %(levelname)-5s %(message)s",
+    from .logging_config import setup_logging
+    setup_logging(
+        json_mode=(args.mode != "mock"),
+        level="WARNING" if args.dashboard else "INFO",
+        log_file="trading.log" if args.mode != "mock" else None,
     )
     log = logging.getLogger("swarm")
     log.setLevel(logging.INFO)
     log.info("Swarm Trade starting: mode=%s duration=%.0fs pairs=%s",
              args.mode, args.duration, args.pairs)
+
+    # Pre-flight: validate API keys before entering live/paper mode
+    if args.mode in ("live", "paper"):
+        from .kraken import validate_api_keys
+        ok, msg = await validate_api_keys()
+        if not ok:
+            if args.mode == "live":
+                log.critical("ABORTING: %s", msg)
+                raise SystemExit(f"API key validation failed: {msg}")
+            else:
+                log.warning("API key validation: %s (continuing in paper mode)", msg)
 
     bus = Bus()
     state: dict = {"daily_pnl": 0.0, "trade_count": 0, "total_fees": 0.0}
@@ -200,8 +221,25 @@ async def run(args: argparse.Namespace):
     )
     log.info("Wallet: capital=%.0f max_alloc=%.0f%%", args.capital, args.max_alloc)
 
+    # ── Checkpoint — restore state from previous run ──────────
+    ckpt = None
+    if getattr(args, "checkpoint", False):
+        ckpt = Checkpoint(
+            bus, portfolio, state,
+            path=Path(getattr(args, "checkpoint_path", "swarm_checkpoint.json")),
+            wallet=wallet,
+        )
+        if ckpt.restore():
+            log.info("Resumed from checkpoint")
+
     # ── Data Scouts ─────────────────────────────────────────────
-    if args.mode == "mock":
+    if getattr(args, "demo", False):
+        if len(assets) > 1:
+            scout = MultiAssetDemoScout(bus, assets=assets, interval=0.3)
+        else:
+            scout = DemoScout(bus, symbol=primary_asset, start_price=2200.0, interval=0.3)
+        log.info("DEMO MODE: replaying pre-recorded market scenario")
+    elif args.mode == "mock":
         scout = MockScout(bus, symbol=primary_asset, start=2200.0, interval=0.2)
     elif args.ws:
         ws_pairs = [p.replace("USD", "/USD") for p in args.pairs]
@@ -417,7 +455,7 @@ async def run(args: argparse.Namespace):
         cooldown_seconds=300.0,
     )
     if args.mode != "mock":
-        PositionFlattener(bus, paper=(args.mode == "paper"))
+        PositionFlattener(bus, paper=(args.mode == "paper"), kill_switch=kill_switch)
 
     # ── Execution Pipeline ──────────────────────────────────────
     Simulator(bus)
@@ -446,7 +484,7 @@ async def run(args: argparse.Namespace):
             master_key=master_key,
         )
         log.info("Agent Gateway enabled — external agents can connect")
-        log.info("  master_key=%s...", gateway.master_key[:12])
+        log.info("  master_key=%s...", gateway.master_key[:8])
         if not args.web:
             # Launch standalone gateway server
             from aiohttp import web as aweb
@@ -481,6 +519,13 @@ async def run(args: argparse.Namespace):
         portfolio=portfolio,
         state=state,
     )
+
+    # ── Checkpoint — periodic state saving ───────────────────────
+    if ckpt:
+        ckpt.strategist = strategist
+        supervisor.register("checkpoint", ckpt.run, stale_after=60.0)
+        log.info("Checkpoint enabled: saving every %.0fs to %s",
+                 ckpt.interval, ckpt.path)
 
     # ── Launch all supervised agents + scheduler ─────────────────
     sup_tasks = supervisor.start_all()
@@ -533,8 +578,8 @@ async def run(args: argparse.Namespace):
             )
             if result.returncode == 0:
                 log.info("Paper account: %s", result.stdout.strip())
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Paper account status check failed: %s", e)
 
 
 if __name__ == "__main__":

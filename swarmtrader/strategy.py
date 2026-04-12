@@ -138,7 +138,10 @@ class Strategist:
 
     async def _on_regime(self, sig: Signal):
         old_regime = self.regime
-        self.regime = sig.rationale.split("regime=")[1].split()[0] if "regime=" in sig.rationale else "unknown"
+        try:
+            self.regime = sig.rationale.split("regime=")[1].split()[0]
+        except (IndexError, ValueError):
+            log.warning("Could not parse regime from rationale: %s", sig.rationale[:100])
         if self.regime != old_regime and self.regime in self.REGIME_PROFILES:
             self._apply_regime()
             log.info("REGIME SHIFT: %s -> %s", old_regime, self.regime)
@@ -224,6 +227,8 @@ class Strategist:
             return self.base_size * min(1.0, score)
 
         payoff_ratio = avg_win / avg_loss
+        if payoff_ratio < 1e-6:
+            return self.base_size * min(1.0, score)
         # Kelly: f* = (p * b - q) / b where p=win_rate, q=1-p, b=payoff_ratio
         kelly_f = (win_rate * payoff_ratio - (1 - win_rate)) / payoff_ratio
         # Use quarter-Kelly for crypto safety (fat-tailed distributions)

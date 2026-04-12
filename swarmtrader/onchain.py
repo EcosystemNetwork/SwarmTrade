@@ -185,8 +185,8 @@ class OnChainAgent:
                     data = await resp.json()
                     result = data.get("result", {})
                     return float(result.get("ProposeGasPrice", 0))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Etherscan gas price fetch failed: %s", e)
 
         # Fallback: Blockchair
         try:
@@ -202,7 +202,8 @@ class OnChainAgent:
                 if isinstance(gas_wei, dict):
                     return float(gas_wei.get("standard", 0))
                 return None
-        except Exception:
+        except Exception as e:
+            log.warning("Blockchair gas price fallback failed: %s", e)
             return None
 
 

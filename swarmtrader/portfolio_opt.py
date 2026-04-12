@@ -1,6 +1,7 @@
 """Portfolio optimization engine — Markowitz, Risk Parity, Black-Litterman, and dynamic hedging."""
 from __future__ import annotations
 import asyncio, math, time, logging
+from collections import deque
 from dataclasses import dataclass, field
 from .core import Bus, Signal, MarketSnapshot, TradeIntent, PortfolioTracker
 
@@ -18,15 +19,12 @@ class CovarianceEstimator:
         self.bus = bus
         self.window = window
         self.halflife = halflife
-        self._prices: dict[str, list[float]] = {}   # asset -> list of prices
+        self._prices: dict[str, deque[float]] = {}   # asset -> deque of prices
         bus.subscribe("market.snapshot", self._on_snapshot)
 
     async def _on_snapshot(self, snap: MarketSnapshot) -> None:
         for asset, price in snap.prices.items():
-            self._prices.setdefault(asset, []).append(price)
-            # keep bounded
-            if len(self._prices[asset]) > self.window + 10:
-                self._prices[asset] = self._prices[asset][-(self.window + 1):]
+            self._prices.setdefault(asset, deque(maxlen=self.window + 1)).append(price)
 
     @property
     def assets(self) -> list[str]:
@@ -37,7 +35,7 @@ class CovarianceEstimator:
         """Compute log-returns for each asset over the rolling window."""
         result: dict[str, list[float]] = {}
         for asset in self.assets:
-            prices = self._prices[asset][-(self.window + 1):]
+            prices = list(self._prices[asset])
             rets = []
             for i in range(1, len(prices)):
                 if prices[i - 1] > 0:
@@ -85,9 +83,16 @@ class CovarianceEstimator:
                     weights[k] * (aligned[a][k] - means[a]) * (aligned[b][k] - means[b])
                     for k in range(min_len)
                 )
-                # bias correction for unweighted case
+                # bias correction
                 if self.halflife is None:
                     c *= min_len / (min_len - 1)
+                else:
+                    # Approximate bias correction for weighted case
+                    sum_w = sum(weights)
+                    sum_w2 = sum(w * w for w in weights)
+                    denom = sum_w * sum_w - sum_w2
+                    if denom > 1e-18:
+                        c *= (sum_w * sum_w) / denom
                 cov[a][b] = c
         return cov
 

@@ -39,8 +39,8 @@ class OrderBookAgent:
                         continue
 
                     # Compute volume-weighted imbalance across all levels
-                    bid_vol = sum(float(b[1]) for b in bids)
-                    ask_vol = sum(float(a[1]) for a in asks)
+                    bid_vol = sum(float(b[1]) for b in bids if len(b) >= 2)
+                    ask_vol = sum(float(a[1]) for a in asks if len(a) >= 2)
                     total = bid_vol + ask_vol
                     if total < 1e-9:
                         continue
@@ -69,7 +69,7 @@ class OrderBookAgent:
                         )
                         await self.bus.publish(f"signal.{self.name}", sig)
 
-            except Exception as e:
+            except (OSError, ValueError, KeyError, RuntimeError) as e:
                 log.warning("OrderBookAgent error: %s", e)
 
             await asyncio.sleep(self.interval)
@@ -151,7 +151,7 @@ class FundingRateAgent:
                             await self.bus.publish(f"signal.{self.name}", sig)
                         break
 
-            except Exception as e:
+            except (OSError, ValueError, KeyError, RuntimeError) as e:
                 log.warning("FundingRateAgent error: %s", e)
 
             await asyncio.sleep(self.interval)
@@ -206,7 +206,7 @@ class SpreadAgent:
                     )
                     await self.bus.publish(f"signal.{self.name}", sig)
 
-            except Exception as e:
+            except (OSError, ValueError, KeyError, RuntimeError) as e:
                 log.warning("SpreadAgent error: %s", e)
 
             await asyncio.sleep(self.interval)

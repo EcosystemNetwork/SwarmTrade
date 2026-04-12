@@ -299,11 +299,16 @@ class CircuitBreaker:
 
 
 class PositionFlattener:
-    """Emergency position flattener — closes all positions when triggered."""
+    """Emergency position flattener — closes all positions when triggered.
 
-    def __init__(self, bus: Bus, paper: bool = True):
+    CRITICAL: If the kraken CLI is not found in live mode, the kill switch
+    remains engaged permanently — the system cannot safely flatten positions.
+    """
+
+    def __init__(self, bus: Bus, paper: bool = True, kill_switch: "KillSwitch | None" = None):
         self.bus = bus
         self.paper = paper
+        self.kill_switch = kill_switch
         bus.subscribe("safety.halt", self._on_halt)
 
     async def _on_halt(self, payload: dict):
@@ -335,6 +340,9 @@ class PositionFlattener:
                 proc.kill()
                 log.error("Position flattener timed out after %.0fs", _CLI_TIMEOUT)
         except FileNotFoundError:
-            log.error("Position flattener: 'kraken' CLI not found")
+            log.critical("FATAL: Position flattener cannot run — 'kraken' CLI not found. "
+                         "Kill switch will remain engaged. Manual intervention required.")
+            if self.kill_switch:
+                self.kill_switch.engage("CLI not found — cannot flatten positions")
         except Exception as e:
             log.error("Position flattener failed: %s", e)

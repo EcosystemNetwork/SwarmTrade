@@ -7,6 +7,18 @@ from .core import Bus, Signal
 
 log = logging.getLogger("swarm.whale")
 
+_last_api_call: dict[str, float] = {}
+_MIN_API_INTERVAL = 2.0  # minimum seconds between API calls
+
+
+async def _rate_limit(api_name: str):
+    now = time.time()
+    last = _last_api_call.get(api_name, 0.0)
+    wait = _MIN_API_INTERVAL - (now - last)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_api_call[api_name] = time.time()
+
 # Blockchain.com unconfirmed tx endpoint (no auth needed)
 BLOCKCHAIN_UNCONFIRMED = "https://blockchain.info/unconfirmed-transactions?format=json"
 
@@ -70,6 +82,7 @@ class WhaleAgent:
         try:
             url = f"{BLOCKCHAIR_BASE}/bitcoin/transactions"
             params = {"s": "output_total(desc)", "limit": 10}
+            await _rate_limit("blockchair_btc")
             async with session.get(url, params=params,
                                    timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
@@ -145,6 +158,7 @@ class WhaleAgent:
         try:
             url = f"{BLOCKCHAIR_BASE}/ethereum/transactions"
             params = {"s": "value(desc)", "limit": 10}
+            await _rate_limit("blockchair_eth")
             async with session.get(url, params=params,
                                    timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:

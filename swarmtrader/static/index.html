@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>SWARMTRADER // Command Center</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script>
 tailwind.config = {
@@ -122,9 +123,10 @@ tailwind.config = {
   <!-- CENTER: Charts + Trades -->
   <main class="flex-1 flex flex-col overflow-hidden">
 
-    <!-- Price Area -->
-    <div class="flex-[6] border-b border-white/5 p-4 bg-s-low relative flex flex-col">
-      <div class="flex justify-between items-start mb-3">
+    <!-- Price + PnL Charts Area -->
+    <div class="flex-[6] border-b border-white/5 bg-s-low relative flex flex-col overflow-hidden">
+      <!-- Header -->
+      <div class="flex justify-between items-start p-4 pb-2">
         <div class="font-mono">
           <div class="flex items-center gap-2 text-muted text-[10px] uppercase">
             <span class="material-symbols-outlined text-xs">trending_up</span>
@@ -139,9 +141,27 @@ tailwind.config = {
           <div>Gas: <span class="text-electric" id="stat-gas">--</span></div>
         </div>
       </div>
-      <!-- Price Canvas -->
-      <div class="flex-1 relative min-h-0">
-        <canvas id="price-chart" class="w-full h-full"></canvas>
+      <!-- Charts Row -->
+      <div class="flex-1 flex gap-0 min-h-0 px-4 pb-3">
+        <!-- Price Canvas (left 60%) -->
+        <div class="flex-[6] relative min-h-0">
+          <canvas id="price-chart" class="w-full h-full"></canvas>
+        </div>
+        <!-- PnL + Portfolio (right 40%) -->
+        <div class="flex-[4] flex flex-col gap-2 pl-3 min-h-0">
+          <div class="flex-1 relative bg-surface/50 p-2 min-h-0">
+            <div class="text-[9px] font-mono text-muted uppercase mb-1">Cumulative PnL</div>
+            <canvas id="pnl-chart" class="w-full h-full"></canvas>
+          </div>
+          <div class="h-[120px] relative bg-surface/50 p-2 flex items-center">
+            <div class="w-[100px] h-[100px] shrink-0">
+              <canvas id="portfolio-chart" class="w-full h-full"></canvas>
+            </div>
+            <div id="portfolio-legend" class="flex-1 pl-3 font-mono text-[9px] space-y-1 overflow-y-auto max-h-[100px]">
+              <div class="text-muted">No positions</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -263,7 +283,132 @@ const S = {
   prices: {}, signals: {}, agents: {}, intents: [], reports: [],
   verdicts: {}, dailyPnl: 0, tradeCount: 0, wins: 0, losses: 0,
   uptime: 0, killSwitch: false, priceHistory: [], startPrice: null,
+  pnlHistory: [], portfolioAlloc: {},
 };
+
+// ── Chart.js instances ────────────────────────────────────
+let pnlChartInstance = null;
+let portfolioChartInstance = null;
+
+function initChartJs() {
+  // PnL line chart
+  const pnlCtx = document.getElementById("pnl-chart");
+  pnlChartInstance = new Chart(pnlCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: "#00ff88",
+        backgroundColor: "rgba(0,255,136,0.08)",
+        borderWidth: 1.5,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          grid: { color: "rgba(255,255,255,0.04)" },
+          ticks: { color: "#6b7280", font: { size: 8, family: "JetBrains Mono" },
+                   callback: v => (v >= 0 ? "+" : "") + v.toFixed(2) },
+        }
+      }
+    }
+  });
+
+  // Portfolio donut
+  const portCtx = document.getElementById("portfolio-chart");
+  portfolioChartInstance = new Chart(portCtx, {
+    type: "doughnut",
+    data: {
+      labels: ["Cash"],
+      datasets: [{
+        data: [100],
+        backgroundColor: ["#31353f"],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      cutout: "65%",
+      plugins: { legend: { display: false } },
+    }
+  });
+}
+
+function updatePnlChart() {
+  if (!pnlChartInstance) return;
+  const chart = pnlChartInstance;
+  chart.data.labels = S.pnlHistory.map((_, i) => i);
+  chart.data.datasets[0].data = S.pnlHistory;
+
+  // Color based on current PnL
+  const current = S.pnlHistory[S.pnlHistory.length - 1] || 0;
+  if (current >= 0) {
+    chart.data.datasets[0].borderColor = "#00ff88";
+    chart.data.datasets[0].backgroundColor = "rgba(0,255,136,0.08)";
+  } else {
+    chart.data.datasets[0].borderColor = "#ff3366";
+    chart.data.datasets[0].backgroundColor = "rgba(255,51,102,0.08)";
+  }
+  chart.update();
+}
+
+function updatePortfolioChart(walletData) {
+  if (!portfolioChartInstance || !walletData) return;
+  const colors = ["#00ff88", "#00d4ff", "#ffaa00", "#ff3366", "#a855f7", "#f59e0b", "#06b6d4", "#ec4899"];
+  const labels = [];
+  const data = [];
+
+  // Extract allocations from wallet data
+  const allocs = walletData.allocations || {};
+  let totalUsed = 0;
+  let i = 0;
+  const bgColors = [];
+  for (const [asset, info] of Object.entries(allocs)) {
+    const val = info.current_value || info.value || 0;
+    if (val > 0) {
+      labels.push(asset);
+      data.push(val);
+      bgColors.push(colors[i % colors.length]);
+      totalUsed += val;
+      i++;
+    }
+  }
+
+  const cash = walletData.available_cash || walletData.cash || 0;
+  if (cash > 0 || data.length === 0) {
+    labels.push("Cash");
+    data.push(cash || 100);
+    bgColors.push("#31353f");
+  }
+
+  const chart = portfolioChartInstance;
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = data;
+  chart.data.datasets[0].backgroundColor = bgColors;
+  chart.update();
+
+  // Update legend
+  const legend = document.getElementById("portfolio-legend");
+  let html = "";
+  for (let j = 0; j < labels.length; j++) {
+    const pct = data[j] / data.reduce((a, b) => a + b, 0) * 100;
+    html += `<div class="flex items-center gap-1.5">
+      <div class="w-2 h-2 shrink-0" style="background:${bgColors[j]}"></div>
+      <span class="text-white/70">${labels[j]}</span>
+      <span class="text-muted ml-auto">${pct.toFixed(0)}%</span>
+    </div>`;
+  }
+  legend.innerHTML = html || '<div class="text-muted">No positions</div>';
+}
 
 let ws = null;
 let reconnectTimer = null;
@@ -315,6 +460,9 @@ function handleMessage(msg) {
     case "report":
       handleReport(msg.data);
       break;
+    case "wallet":
+      updatePortfolioChart(msg.data);
+      break;
     case "kill_switch":
       S.killSwitch = msg.data.enabled;
       updateKillSwitch();
@@ -348,6 +496,13 @@ function handleSnapshot(d) {
     if (!S.startPrice) S.startPrice = price;
     S.priceHistory.push({ t: Date.now(), p: price });
   }
+
+  // Init PnL chart with current value
+  S.pnlHistory = [S.dailyPnl];
+  updatePnlChart();
+
+  // Init portfolio chart from wallet snapshot
+  if (d.wallet) updatePortfolioChart(d.wallet);
 }
 
 function handleMarket(d) {
@@ -413,6 +568,11 @@ function handleReport(d) {
   renderIntents();
   updateStats();
   document.getElementById("exec-count").textContent = `[${S.reports.length}]`;
+
+  // Update PnL chart
+  S.pnlHistory.push(S.dailyPnl);
+  if (S.pnlHistory.length > 300) S.pnlHistory = S.pnlHistory.slice(-300);
+  updatePnlChart();
 }
 
 // ── Rendering ─────────────────────────────────────────────────
@@ -859,6 +1019,7 @@ function updateUptime() {
 S.startTime = Date.now() / 1000;
 
 // ── Init ──────────────────────────────────────────────────────
+initChartJs();
 connect();
 setInterval(updateClock, 1000);
 setInterval(updateTicker, 3000);

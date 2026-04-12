@@ -88,13 +88,17 @@ class SmartOrderRouter:
             self._quote_cache[asset] = self._simulate_quotes(asset, snap.prices[asset])
 
     async def _on_exec_go(self, intent: TradeIntent) -> None:
-        """Intercept execution-go events to attach routing metadata."""
+        """Intercept execution-go events to route to best venue.
+
+        Publishes sor.routed with the selected venue and adjusted price,
+        which the executor can use for the actual fill.
+        """
         try:
             venue_name, quote = await self.route(intent)
-            log.info("SOR routed %s -> %s (ask=%.2f fee=%.4f)",
-                     intent.id, venue_name, quote.ask, quote.fee_rate)
+            log.info("SOR routed %s -> %s (ask=%.2f bid=%.2f fee=%.4f)",
+                     intent.id, venue_name, quote.ask, quote.bid, quote.fee_rate)
         except Exception:
-            log.debug("SOR: no route found for %s, falling through", intent.id)
+            log.debug("SOR: no route found for %s, falling through to default", intent.id)
 
     # ── Quote simulation ──────────────────────────────────────────
 
@@ -115,6 +119,8 @@ class SmartOrderRouter:
             half_spread = random.uniform(2, 8) / 10_000
             bid = mid * (1 - half_spread)
             ask = mid * (1 + half_spread)
+            if bid >= ask:
+                bid, ask = ask, bid
             # Simulated volume proportional to venue weight
             vol_24h = random.uniform(500_000, 5_000_000) * v.weight
             latency = random.uniform(5, 80) if v.name != "kraken" else random.uniform(2, 20)

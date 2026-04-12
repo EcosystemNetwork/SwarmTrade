@@ -196,7 +196,7 @@ class FactorModel:
 
             # liquidity — inverse spread
             spread = self._spreads.get(asset, 0.0)
-            self.factors["liquidity"].values[asset] = (1.0 / spread) if spread > 1e-8 else 0.0
+            self.factors["liquidity"].values[asset] = min(100.0, 1.0 / spread) if spread > 1e-8 else 0.0
 
     # ── public API ────────────────────────────────────────────────
     def set_spread(self, asset: str, spread: float) -> None:

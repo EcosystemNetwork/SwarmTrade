@@ -156,6 +156,11 @@ class Auditor:
         self.conn.commit()
 
     async def _on_report(self, rep: ExecutionReport):
+        # Idempotency: skip duplicate reports for the same intent+status
+        dedup_key = f"audit:{rep.intent_id}:{rep.status}"
+        if self.bus.is_duplicate(dedup_key):
+            log.debug("Skipping duplicate report: %s", dedup_key)
+            return
         self.conn.execute(
             "INSERT INTO reports VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (time.time(), rep.intent_id, rep.status, rep.tx_hash,

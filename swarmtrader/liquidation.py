@@ -84,8 +84,8 @@ class LiquidationAgent:
                         t.get("relativeFundingRate", t.get("fundingRate", 0))
                     )
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Liquidation funding rate fetch failed: %s", e)
 
         # --- Estimate entry clusters ---
         # Use recent price levels as likely entry points

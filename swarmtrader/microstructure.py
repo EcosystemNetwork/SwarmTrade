@@ -427,6 +427,8 @@ class ExecutionQualityTracker:
             "fee_usd": rep.fee_usd,
         }
         self._fills.append(fill_record)
+        if len(self._fills) > 10000:
+            self._fills = self._fills[-5000:]
 
         log.info("TCA %s %s: slip=%.1fbps impact=%.1fbps shortfall=%.1fbps fee=%.1fbps",
                  rep.intent_id, rep.side, slippage_bps, impact_bps,

@@ -382,13 +382,19 @@ class WebDashboard:
                 self.kill_switch.disengage()
             await self._broadcast("kill_switch", {"enabled": self.kill_switch.active})
         elif action == "wallet_deposit" and self.wallet:
-            amount = float(cmd.get("amount", 0))
-            if amount > 0:
+            try:
+                amount = float(cmd.get("amount", 0))
+            except (ValueError, TypeError):
+                return
+            if 0 < amount <= 1_000_000:
                 self.wallet.deposit(amount, cmd.get("note", ""))
                 await self._broadcast("wallet", self.wallet.summary())
         elif action == "wallet_withdraw" and self.wallet:
-            amount = float(cmd.get("amount", 0))
-            if amount > 0:
+            try:
+                amount = float(cmd.get("amount", 0))
+            except (ValueError, TypeError):
+                return
+            if 0 < amount <= 1_000_000:
                 result = self.wallet.withdraw(amount, cmd.get("note", ""))
                 resp = self.wallet.summary()
                 if result is None:
@@ -406,7 +412,10 @@ class WebDashboard:
 
     async def _handle_history(self, request: web.Request) -> web.Response:
         """Query trade history from SQLite."""
-        limit = int(request.query.get("limit", "100"))
+        try:
+            limit = min(10000, max(1, int(request.query.get("limit", "100"))))
+        except (ValueError, TypeError):
+            limit = 100
         status = request.query.get("status", None)
         try:
             conn = sqlite3.connect(self.db_path)
@@ -530,7 +539,8 @@ class WebDashboard:
         token = os.environ.get("SWARM_DASHBOARD_TOKEN", "")
         if not token:
             token = _generate_token()
-            log.warning("No SWARM_DASHBOARD_TOKEN set — generated: %s", token)
+            log.warning("No SWARM_DASHBOARD_TOKEN set — generated: %s... (save to env var)",
+                        token[:8])
             log.warning("Set this env var to persist across restarts.")
 
         app = web.Application(middlewares=[auth_middleware])

@@ -49,7 +49,7 @@ class PRISMSignalAgent:
             try:
                 results[name] = await coro
             except Exception as e:
-                log.debug("PRISM %s/%s failed: %s", name, asset, e)
+                log.warning("PRISM %s/%s failed: %s", name, asset, e)
                 results[name] = {}
 
         # --- Main signal ---

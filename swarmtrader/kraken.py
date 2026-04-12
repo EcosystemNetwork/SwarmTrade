@@ -70,13 +70,15 @@ def _classify_error(msg: str) -> ErrorKind:
 async def _run_cli(*args: str, timeout: float = _CLI_TIMEOUT) -> dict | list | str:
     """Run a kraken CLI command with timeout and return parsed JSON output."""
     cmd = ["kraken", "-o", "json", *args]
+    # Pass API credentials via environment only — never as CLI args
+    # (CLI args are visible in process listings via ps/top)
     env = dict(os.environ)
     api_key = os.getenv("KRAKEN_API_KEY")
     api_secret = os.getenv("KRAKEN_PRIVATE_KEY")
     if api_key:
-        cmd.extend(["--api-key", api_key])
+        env["KRAKEN_API_KEY"] = api_key
     if api_secret:
-        cmd.extend(["--api-secret", api_secret])
+        env["KRAKEN_PRIVATE_KEY"] = api_secret
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -100,7 +102,7 @@ async def _run_cli(*args: str, timeout: float = _CLI_TIMEOUT) -> dict | list | s
                     err_msg = str(out_data["error"])
             except (json.JSONDecodeError, KeyError):
                 pass
-        log.error("kraken CLI error: %s (cmd: %s)", err_msg, " ".join(args))
+        log.error("kraken CLI error: %s (cmd: kraken %s)", err_msg, " ".join(args))
         raise RuntimeError(f"kraken CLI failed: {err_msg}")
 
     raw = stdout.decode().strip()
@@ -165,11 +167,20 @@ class KrakenScout:
                 data = await _run_cli("ticker", *self.pairs)
                 prices = {}
                 for pair_key, info in data.items():
-                    ask = float(info["a"][0])
-                    bid = float(info["b"][0])
-                    mid = (ask + bid) / 2.0
-                    symbol = self._normalize_pair(pair_key)
-                    prices[symbol] = mid
+                    try:
+                        a_list = info.get("a", [])
+                        b_list = info.get("b", [])
+                        if not a_list or not b_list:
+                            continue
+                        ask = float(a_list[0])
+                        bid = float(b_list[0])
+                        if ask <= 0 or bid <= 0:
+                            continue
+                        mid = (ask + bid) / 2.0
+                        symbol = self._normalize_pair(pair_key)
+                        prices[symbol] = mid
+                    except (ValueError, TypeError, IndexError) as e:
+                        log.warning("Skipping malformed ticker for %s: %s", pair_key, e)
 
                 snap = MarketSnapshot(
                     ts=time.time(),

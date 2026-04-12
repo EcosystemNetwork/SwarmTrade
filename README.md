@@ -1,218 +1,243 @@
-# SwarmTrader
+# SWARMTRADER
 
-**Multi-Agent Autonomous Trading Platform** -- A swarm of 9 specialized AI agents that collaborate in real-time to analyze markets, generate signals, manage risk, and execute trades autonomously via Kraken CLI.
-
-Built for the [AI Trading Agents Hackathon](https://lablab.ai) (March 30 - April 12, 2026).
-
-## Architecture
+**Multi-agent autonomous trading platform** — 50+ cooperative AI agents performing real-time market analysis, risk management, and execution through an async event-driven architecture.
 
 ```
-                          SWARMTRADER AGENT PIPELINE
- ================================================================
+                         ┌──────────────────────────────────────────────────────────────┐
+                         │                    SWARMTRADER ARCHITECTURE                   │
+                         └──────────────────────────────────────────────────────────────┘
 
- DATA LAYER                    ANALYSIS LAYER
- +----------------+            +-------------------+
- | KrakenScout    |  prices    | Momentum (20w)    |  signal.*
- | (REST / WS)    |----------->| MeanReversion(50w)|----------+
- +----------------+            | Volatility (30w)  |          |
- | OrderBookAgent |            | RegimeAgent       |          |
- | FundingRate    |            | (ADX + Hurst)     |          |
- | SpreadAgent    |            +-------------------+          |
- | PRISM AI       |                                           |
- +----------------+                                           v
-                              STRATEGY LAYER
-                              +------------------------------------+
-                              | STRATEGIST                         |
-                              | - Regime-aware adaptive weights    |
-                              | - Kelly criterion position sizing  |
-                              | - PnL attribution learning         |
-                              +------------------+-----------------+
-                                                 | intent.new
-                              +------------------v-----------------+
-                              | RISK QUORUM (all must approve)     |
-                              | [Size] [Allowlist] [Drawdown] [Rate]|
-                              +------------------+-----------------+
-                                                 | exec.go
-                              EXECUTION LAYER    v
-                              +------------------------------------+
-                              | Simulator -> KrakenExecutor        |
-                              | (slippage)   (paper / live)        |
-                              +------------------------------------+
-                              | CircuitBreaker | PositionFlattener |
-                              | Kill Switch    | Dead Man's Switch |
-                              | Auditor (SQLite append-only)       |
-                              +------------------------------------+
+    ┌─────────────────────────────┐
+    │       DATA LAYER            │     ┌────────────────────────────────────────────────┐
+    │                             │     │              SIGNAL AGENTS (50+)                │
+    │  KrakenScout (REST)         │     │                                                │
+    │  KrakenWSScout (WebSocket)  │────▶│  Core: Momentum, MeanRev, Volatility           │
+    │  MockScout (GBM sim)        │     │  TA:   RSI, MACD, Bollinger, VWAP, Ichimoku    │
+    │                             │     │  Adv:  OrderBook, Funding, Spread, Regime       │
+    └─────────────────────────────┘     │  ML:   GradientBoosted trees (stdlib-only)      │
+                                        │  Intel: Whale, OnChain, FearGreed, Sentiment    │
+                                        │  Ext:  News, PRISM AI, Arbitrage, Liquidation   │
+                                        │  Multi: Correlation, MTF, Confluence            │
+                                        └───────────────────┬────────────────────────────┘
+                                                            │ signals
+                                                            ▼
+    ┌─────────────────────────────────────────────────────────────────────────────────────┐
+    │                               STRATEGIST                                            │
+    │  Regime-aware adaptive weighting │ Kelly criterion sizing │ Quorum risk consensus    │
+    └───────────────────────────────────────────────┬─────────────────────────────────────┘
+                                                    │ trade intents
+                                                    ▼
+    ┌─────────────────────────────────────────────────────────────────────────────────────┐
+    │                          RISK PIPELINE (15 layers)                                   │
+    │  Size │ Allowlist �� Drawdown │ RateLimit │ Positions │ Funds │ Allocation │ Depth    │
+    │  VaR (3 methods) │ Stress Test │ Compliance │ Factor Exposure │ Rebalance │ SOR     │
+    └───────────────────────────────────────────────┬─────────────────────────────────────┘
+                                                    │ approved intents
+                                                    ▼
+    ┌─────────────────────────────────────────────────────────────────────────────────────┐
+    │                          EXECUTION LAYER                                             │
+    │  SmartOrderRouter (5 venues) │ TWAP │ Iceberg │ Almgren-Chriss optimal execution     │
+    │  KrakenExecutor (live) │ Simulator (dry-run) │ TCA tracking                          │
+    └───────────────────────────────────────────────┬─────────────────────────────────────┘
+                                                    │
+                    ┌───────────────────────────────┼───────────────────────────────┐
+                    ▼                               ▼                               ▼
+    ┌───────────────────────┐   ┌───────────────────────────────┐   ┌──────────────────────┐
+    │    SAFETY SYSTEMS     │   │     QUANTITATIVE RISK         │   │    MONITORING        │
+    │  KillSwitch           │   │  VaR Engine (Hist/Para/MC)    │   │  Web Dashboard       │
+    │  CircuitBreaker       │   │  Stress Testing (8 scenarios) │   │  Terminal TUI        │
+    │  PositionFlattener    │   │  Factor Model + PnL Attrib    │   │  Agent Supervisor    │
+    │  PositionManager      │   │  Portfolio Optimization       │   │  SQLite Audit Trail  │
+    │  Reconciliation       │   │  Compliance Suite             │   │  Agent Gateway       │
+    └───────────────────────┘   └───────────────────────────────┘   └──────────────────────┘
 ```
 
 ## Key Features
 
-### 9 Specialized Agents
-
-| Agent | Type | Signal |
-|-------|------|--------|
-| **KrakenScout** | Data | Real-time prices via REST or WebSocket |
-| **OrderBookAgent** | Data | L2 bid/ask imbalance (top-of-book weighted) |
-| **FundingRateAgent** | Data | Futures funding rate contrarian signals |
-| **SpreadAgent** | Data | Bid-ask spread liquidity monitoring |
-| **MomentumAnalyst** | Analysis | 20-period return-based trend detection |
-| **MeanReversionAnalyst** | Analysis | 50-period z-score mean reversion |
-| **VolatilityAnalyst** | Analysis | 30-period vol as confidence damper |
-| **RegimeAgent** | Analysis | ADX + Hurst exponent regime classification |
-| **PRISMSignalAgent** | External | AI signals (sentiment, volume spikes, breakouts) |
-
-### Intelligent Strategy
-
-- **Regime-aware weighting**: Detects trending / mean-reverting / volatile markets and shifts agent weights automatically
-- **Kelly criterion sizing**: Mathematically optimal position sizing based on win rate and payoff ratio (half-Kelly for safety)
-- **Adaptive learning**: Weights evolve toward agents whose signals predict profitable trades (+5% boost / -3% penalty)
-- **Multi-signal fusion**: 6 signal sources with normalized confidence scoring and vol/spread damping
-
-### 8 Layers of Risk Management
-
-1. **Multi-agent risk quorum** -- ALL 4 risk agents (size, allowlist, drawdown, rate limit) must unanimously approve before any trade executes
-2. **Circuit breakers** -- Consecutive loss detection (5), drawdown limits, volatility spike halt with automatic cooldown
-3. **Rate limiter** -- Max trades per hour to prevent overtrading in choppy markets
-4. **Daily drawdown limit** -- Configurable max daily loss with midnight UTC auto-reset
-5. **Kill switch** -- `touch KILL` to instantly halt all trading, or one-click from web dashboard
-6. **Dead man's switch** -- Auto-cancels all orders via Kraken CLI if agent becomes unresponsive
-7. **Position flattener** -- Emergency close of all positions on circuit breaker trigger
-8. **Full audit trail** -- Every intent, verdict, and execution logged to SQLite with per-agent PnL attribution
-
-### Performance Reporting
-
-- **Sharpe ratio**, **Sortino ratio**, **Calmar ratio**
-- **Equity curve** with drawdown visualization
-- **PnL distribution** histogram
-- **Per-trade log** with agent attribution
-- **HTML export**: `python -m swarmtrader.report --html report.html`
-- **JSON API**: `GET /api/report` from web dashboard
-
-### Web Dashboard
-
-Real-time command center served via aiohttp with WebSocket streaming:
-- Live agent activity panel with status indicators
-- Signal strength bars with weighted score display
-- Risk consensus panel with per-intent verdict tracking
-- Candlestick price chart (canvas-rendered)
-- Active intents with TTL countdown + execution log
-- One-click kill switch
-- Performance report at `/report`
-- Presentation slides at `/slides`
-
-### Backtesting Engine
-
-Replay historical Kraken OHLC data through the full agent pipeline:
-```bash
-python -m swarmtrader.backtest --pair ETHUSD --interval 5 --base-size 500
-```
-Computes Sharpe ratio, max drawdown, win rate, and per-trade PnL with simulated clock for accurate cooldown/TTL behavior.
-
-### Multi-Asset Trading
-
-Trade ETH, BTC, SOL, XRP, ADA, DOT, LINK, AVAX, and 650+ pairs simultaneously with independent signal generation per asset.
+- **50+ cooperative agents** — momentum, mean reversion, RSI, MACD, Bollinger, VWAP, Ichimoku, order book imbalance, funding rates, whale tracking, on-chain analytics, social sentiment, news, ML gradient boosting
+- **15-layer risk pipeline** — every trade must pass size, drawdown, VaR, stress test, compliance, factor exposure, and more before execution
+- **Quantitative risk engine** — VaR (historical, parametric, Monte Carlo), stress testing with 8 historical scenarios, factor model with PnL attribution
+- **Portfolio optimization** — Markowitz, risk parity, Black-Litterman, dynamic hedging — all in pure Python (no numpy/scipy)
+- **Smart order routing** — multi-venue quote comparison across Kraken, Binance, Coinbase, OKX, dYdX
+- **ML pipeline** — gradient-boosted decision trees trained online, feature engineering with 15+ indicators — pure stdlib
+- **Production safety** — kill switch, circuit breaker, position flattener, wash trade detection, balance reconciliation
+- **Real-time dashboards** — web UI with WebSocket streaming + terminal TUI
+- **Agent gateway** — HTTP/WebSocket bridge for external AI agents (OpenClaw/Hermes protocols)
+- **ERC-8004 intents** — EIP-712 signed trade intents for trustless on-chain execution
+- **Zero heavy dependencies** — only `aiohttp` + `python-dotenv` at runtime
 
 ## Quick Start
 
 ```bash
-# Install dependencies (just 2 packages!)
-pip install aiohttp python-dotenv
+# Clone
+git clone https://github.com/EcosystemNetwork/swarmtrader.git
+cd swarmtrader
 
-# Install Kraken CLI
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh
+# Install
+pip install -e ".[dev]"
 
-# Set up credentials (optional for paper mode)
+# Copy environment config
 cp .env.example .env
-# Edit .env with your Kraken API key and private key
+# Edit .env with your API keys (optional — mock mode needs none)
 
-# Initialize paper trading
-kraken paper init --balance 10000
+# Run in mock mode (no API keys needed)
+python -m swarmtrader.main mock 120
 
-# Run in mock mode (no keys needed)
-python -m swarmtrader.main mock 60
+# Run with web dashboard
+python -m swarmtrader.main mock 300 --web --dashboard
 
-# Run with real Kraken data + paper trading + web dashboard
-python -m swarmtrader.main paper 300 --pairs ETHUSD --web
+# Run with real Kraken prices (paper trading)
+python -m swarmtrader.main paper 600 --pairs ETHUSD BTCUSD --ws --web
 
-# Multi-asset with terminal dashboard
-python -m swarmtrader.main paper 600 --pairs ETHUSD BTCUSD SOLUSD --dashboard
-
-# Run backtester
-python -m swarmtrader.backtest --pair ETHUSD --interval 5 --base-size 500
-
-# Generate performance report
-python -m swarmtrader.report --db swarm.db --html report.html
+# Run demo replay (pre-recorded market scenario)
+python -m swarmtrader.main mock 180 --web --demo
 
 # Run tests
-python -m pytest tests/
+pytest tests/ -v
 ```
 
-## Modes
+## Docker
 
-| Mode | Data Source | Execution | Keys Required |
-|------|------------|-----------|---------------|
-| `mock` | Simulated (GBM) | Dry-run | None |
-| `paper` | Real Kraken | Paper trades via Kraken CLI | None |
-| `live` | Real Kraken | Real market orders | API key + secret |
+```bash
+# Build and run
+docker compose up --build
+
+# Or run directly
+docker build -t swarmtrader .
+docker run -p 8080:8080 --env-file .env swarmtrader mock 300 --web
+```
+
+## Trading Modes
+
+| Mode | Prices | Execution | API Keys |
+|------|--------|-----------|----------|
+| `mock` | Simulated (GBM) | Dry-run with slippage model | None |
+| `paper` | Real (Kraken) | Paper trading via Kraken CLI | Optional |
+| `live` | Real (Kraken) | Real orders on Kraken | Required |
 
 ## CLI Options
 
 ```
-python -m swarmtrader.main [mock|paper|live] [duration_seconds]
-  --pairs ETHUSD BTCUSD SOLUSD    Trading pairs
-  --base-size 500                  Base trade size in USD
-  --max-size 2000                  Max single trade size
-  --max-drawdown 200               Max daily drawdown (USD)
-  --ws                             Use WebSocket streaming
-  --poll-interval 2.0              REST poll interval (seconds)
-  --dashboard                      Live terminal dashboard
-  --web                            Launch web dashboard (http://localhost:8080)
-  --web-port 8080                  Web dashboard port
-  --no-advanced                    Disable advanced agents
+python -m swarmtrader.main [mode] [duration] [options]
+
+Positional:
+  mode                    mock, paper, or live (default: mock)
+  duration                Run duration in seconds (default: 60)
+
+Options:
+  --pairs PAIR [PAIR ...]  Trading pairs (default: ETHUSD)
+  --base-size USD          Base trade size (default: 500)
+  --max-size USD           Max single trade (default: 2000)
+  --max-drawdown USD       Daily drawdown limit (default: 200)
+  --capital USD            Starting capital (default: 10000)
+  --max-alloc PCT          Max allocation per asset (default: 50%)
+  --max-positions N        Max open positions (default: 5)
+  --hard-stop PCT          Hard stop-loss per position (default: 5%)
+  --trail-stop PCT         Trailing stop (default: 3%)
+  --max-hold SECS          Max hold time (default: 3600)
+  --ws                     Use WebSocket streaming (vs REST polling)
+  --web                    Launch web dashboard on port 8080
+  --web-port PORT          Web dashboard port (default: 8080)
+  --dashboard              Show terminal TUI dashboard
+  --gateway                Enable external agent gateway
+  --demo                   Run demo replay mode with pre-recorded scenario
+  --db PATH                SQLite database path (default: swarm.db)
 ```
 
-## Technology
+## Backtesting
 
-| Component | Technology |
-|-----------|-----------|
-| **Runtime** | Python 3.11+ asyncio |
-| **Market Data** | Kraken CLI (zero-dep Rust binary) |
-| **AI Signals** | PRISM / Strykr API |
-| **Web Dashboard** | aiohttp + WebSocket + Canvas |
-| **Audit Trail** | SQLite (append-only) |
-| **Dependencies** | Just 2: `aiohttp` + `python-dotenv` |
+```bash
+# Walk-forward backtest
+python -m swarmtrader.backtest --pair ETHUSD --walk-forward 5
+
+# Generate HTML report from trade database
+python -m swarmtrader.report --db swarm.db --html report.html
+```
 
 ## Project Structure
 
 ```
 swarmtrader/
-  core.py              # Data types + async pub/sub bus
-  agents.py            # Core analysts (momentum, mean reversion, volatility)
-  agents_advanced.py   # Order book, funding rate, spread, regime detection
-  strategy.py          # Strategist + risk agents + coordinator
-  execution.py         # Simulator + executor + auditor
-  kraken.py            # Kraken CLI integration (scout + executor)
-  signals.py           # PRISM/Strykr AI signal integration
-  safety.py            # Circuit breakers + dead man's switch
-  risk.py              # Rate limiter, position tracker, daily drawdown
-  report.py            # Performance report generator (Sharpe, Sortino, equity curve)
-  backtest.py          # Historical backtesting engine
-  dashboard.py         # Live terminal dashboard
-  web.py               # Web dashboard (aiohttp + WebSocket)
-  static/
-    index.html         # Command center UI
-    slides.html        # Hackathon presentation deck
-tests/
-  test_smoke.py        # Integration tests
+├── core.py              # Bus, MarketSnapshot, Signal, PortfolioTracker
+├── main.py              # Entry point — orchestrates 50+ agents
+├── agents.py            # MockScout, Momentum, MeanRev, Volatility
+├── agents_advanced.py   # OrderBook, FundingRate, Spread, Regime
+├── strategies.py        # RSI, MACD, Bollinger, VWAP, Ichimoku
+├── strategy.py          # Strategist (adaptive weighting) + RiskAgent + Coordinator
+├── execution.py         # Simulator, Executor, Auditor (SQLite)
+├── kraken.py            # KrakenScout, KrakenWSScout, KrakenExecutor
+├── positions.py         # PositionManager with trailing/hard stops
+├── safety.py            # KillSwitch, CircuitBreaker, PositionFlattener
+├── risk.py              # RateLimiter, DrawdownTracker, Concentration, Exposure
+├── var.py               # VaR engine (historical, parametric, Monte Carlo)
+├── stress_test.py       # 8 historical stress scenarios
+├── portfolio_opt.py     # Markowitz, RiskParity, BlackLitterman, DynamicHedger
+├── factor_model.py      # Factor model + PnL attribution
+├── ml_signal.py         # Gradient-boosted decision trees (pure stdlib)
+├── sor.py               # Smart order router (multi-venue)
+├── microstructure.py    # Kyle's lambda, Almgren-Chriss, Iceberg, TCA
+├── twap.py              # TWAP execution (time-weighted slicing)
+├── compliance.py        # WashTrading, MarginMonitor, DataQuality
+├── reconciliation.py    # Balance reconciliation vs exchange
+├── config.py            # Centralized configuration management
+├── logging_config.py    # Structured JSON logging
+├── wallet.py            # WalletManager with allocation tracking
+├── automation.py        # AgentSupervisor, Scheduler, heartbeats
+├── news.py              # CryptoPanic sentiment
+├── signals.py           # PRISM AI signal provider
+├── whale.py             # Large transaction tracking
+├── multitf.py           # Multi-timeframe momentum
+├── correlation.py       # Cross-asset correlation + lead-lag
+├── confluence.py        # Multi-group signal agreement
+├── walkforward.py       # Walk-forward backtesting + Monte Carlo
+├── backtest.py          # Historical replay engine
+├── report.py            # JSON/HTML report generation
+├── dashboard.py         # Terminal TUI dashboard
+├── web.py               # Web dashboard (aiohttp + WebSocket)
+├── gateway.py           # Agent gateway (OpenClaw/Hermes)
+├── erc8004.py           # ERC-8004 intent signing (EIP-712)
+├── checkpoint.py        # State checkpointing for crash recovery
+├── rate_limit.py        # Shared API rate limiter
+└── static/
+    └── index.html       # Web dashboard frontend (Chart.js + Tailwind)
 ```
+
+## Agent Categories
+
+| Category | Count | Examples |
+|----------|-------|---------|
+| Data Scouts | 3 | MockScout, KrakenScout, KrakenWSScout |
+| Core Analysts | 3 | Momentum, MeanReversion, Volatility |
+| Technical Analysis | 7 | RSI, MACD, Bollinger, VWAP, Ichimoku, LiqCascade, ATRStop |
+| Advanced Market | 4 | OrderBook, FundingRate, Spread, Regime |
+| Market Intelligence | 6 | Whale, OnChain, FearGreed, Social, Liquidation, Arbitrage |
+| External Signals | 2 | News (CryptoPanic), PRISM AI |
+| Cross-Asset | 3 | MultiTimeframe, Correlation, Confluence |
+| Machine Learning | 1 | GradientBoosted (online training) |
+| Portfolio | 2 | PortfolioOpt, DynamicHedger |
+| Risk Agents | 14 | Size, Drawdown, VaR, Stress, Compliance, etc. |
+| Execution | 5 | Simulator, Executor, SOR, TWAP, Iceberg |
+| Safety | 3 | KillSwitch, CircuitBreaker, PositionFlattener |
+| Infrastructure | 4 | Supervisor, Reconciler, DataQuality, TCA |
 
 ## Hackathon Prize Targets
 
 | Prize | Our Edge |
 |-------|---------|
-| **Best Risk-Adjusted Return ($5k)** | 8-layer risk management, Kelly criterion sizing, regime-aware adaptive strategy |
-| **Best Compliance & Risk Guardrails** | Multi-agent quorum, circuit breakers, dead man's switch, full audit trail, position flattener |
-| **Kraken Challenge** | Deep Kraken CLI integration: REST + WS data, paper/live execution, orderbook depth, funding rates, emergency cancel-all |
+| **Best Risk-Adjusted Return** | 15-layer risk pipeline, Kelly sizing, regime-aware adaptive strategy, VaR + stress testing |
+| **Best Compliance & Guardrails** | Multi-agent quorum, circuit breakers, wash trade detection, factor exposure limits, reconciliation |
+| **Kraken Challenge** | Deep Kraken CLI integration: REST + WS data, paper/live execution, orderbook, funding rates, ERC-8004 intents |
+
+## Technology
+
+- **Language**: Python 3.11+ (async/await throughout)
+- **Architecture**: Event-driven pub/sub via async `Bus`
+- **Runtime deps**: `aiohttp`, `python-dotenv`
+- **ML/Math**: All implemented from scratch — no numpy, scipy, sklearn, or ta-lib
+- **Exchange**: Kraken (REST + WebSocket + CLI)
+- **Blockchain**: ERC-8004 intents on Ethereum (Sepolia testnet)
+- **Storage**: SQLite for audit trail and trade history
+- **Frontend**: Tailwind CSS + Chart.js + vanilla JS
 
 ## License
 

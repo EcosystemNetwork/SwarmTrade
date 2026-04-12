@@ -17,6 +17,18 @@ from .core import Bus, Signal
 
 log = logging.getLogger("swarm.feargreed")
 
+_last_api_call: dict[str, float] = {}
+_MIN_API_INTERVAL = 2.0  # minimum seconds between API calls
+
+
+async def _rate_limit(api_name: str):
+    now = time.time()
+    last = _last_api_call.get(api_name, 0.0)
+    wait = _MIN_API_INTERVAL - (now - last)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_api_call[api_name] = time.time()
+
 FEAR_GREED_URL = "https://api.alternative.me/fng/"
 
 
@@ -54,6 +66,7 @@ class FearGreedAgent:
         try:
             # Fetch current + historical data
             params = {"limit": "7", "format": "json"}
+            await _rate_limit("fear_greed")
             async with session.get(FEAR_GREED_URL, params=params,
                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:

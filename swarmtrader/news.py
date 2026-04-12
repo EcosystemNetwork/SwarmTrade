@@ -3,13 +3,25 @@
 Pipeline: Raw headlines → keyword urgency scoring → vote sentiment → recency weighting → Signal
 """
 from __future__ import annotations
-import asyncio, logging, os, re
+import asyncio, logging, os, re, time
 from collections import deque
 from dataclasses import dataclass
 import aiohttp
 from .core import Bus, Signal
 
 log = logging.getLogger("swarm.news")
+
+_last_api_call: dict[str, float] = {}
+_MIN_API_INTERVAL = 2.0  # minimum seconds between API calls
+
+
+async def _rate_limit(api_name: str):
+    now = time.time()
+    last = _last_api_call.get(api_name, 0.0)
+    wait = _MIN_API_INTERVAL - (now - last)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_api_call[api_name] = time.time()
 
 CRYPTOPANIC_BASE = "https://cryptopanic.com/api/free/v1"
 
@@ -149,6 +161,7 @@ class NewsAgent:
             "public": "true",
         }
         try:
+            await _rate_limit("cryptopanic")
             async with session.get(url, params=params,
                                    timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:

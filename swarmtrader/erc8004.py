@@ -271,7 +271,9 @@ class ERC8004Agent:
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
             log.info("  Registration tx: %s", tx_hash.hex())
 
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            receipt = await asyncio.to_thread(
+                self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=120
+            )
             if receipt["status"] != 1:
                 raise RuntimeError(f"Registration failed: tx {tx_hash.hex()}")
 
@@ -313,7 +315,9 @@ class ERC8004Agent:
             })
             signed = self.account.sign_transaction(tx)
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-            self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            await asyncio.to_thread(
+                self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
+            )
             log.debug("  Metadata set: %s=%s", key, value)
         except Exception as e:
             log.warning("  Failed to set metadata %s: %s", key, e)
@@ -408,7 +412,9 @@ class ERC8004Agent:
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
 
             # Post the validation response (risk check result)
-            self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            await asyncio.to_thread(
+                self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
+            )
 
             response_score = 0 if not verdict.approve else 100
             nonce = self.w3.eth.get_transaction_count(self.address)

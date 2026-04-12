@@ -191,16 +191,45 @@ class PortfolioTracker:
 
 
 class Bus:
-    """Tiny in-process async pub/sub. Swap for NATS/Redis in prod."""
+    """Tiny in-process async pub/sub. Swap for NATS/Redis in prod.
+
+    Handlers are dispatched sequentially per-topic to avoid race conditions
+    on shared mutable state. Different topics still run concurrently.
+    """
     def __init__(self) -> None:
         self._subs: dict[str, list[Callable[[Any], Awaitable[None]]]] = {}
+        self._topic_locks: dict[str, asyncio.Lock] = {}
+        self._processed_ids: set[str] = set()  # idempotency tracking
 
     def subscribe(self, topic: str, fn: Callable[[Any], Awaitable[None]]) -> None:
         self._subs.setdefault(topic, []).append(fn)
+        if topic not in self._topic_locks:
+            self._topic_locks[topic] = asyncio.Lock()
 
     async def publish(self, topic: str, msg: Any) -> None:
-        for fn in self._subs.get(topic, []):
-            asyncio.create_task(self._safe(fn, msg))
+        lock = self._topic_locks.get(topic)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._topic_locks[topic] = lock
+        asyncio.create_task(self._dispatch(lock, topic, msg))
+
+    async def _dispatch(self, lock: asyncio.Lock, topic: str, msg: Any) -> None:
+        async with lock:
+            for fn in self._subs.get(topic, []):
+                await self._safe(fn, msg)
+
+    def is_duplicate(self, idempotency_key: str) -> bool:
+        """Check and register an idempotency key. Returns True if already seen."""
+        if idempotency_key in self._processed_ids:
+            return True
+        self._processed_ids.add(idempotency_key)
+        # Bound the set
+        if len(self._processed_ids) > 5000:
+            # Keep most recent half (approximate — sets are unordered,
+            # but this prevents unbounded growth)
+            to_remove = list(self._processed_ids)[:2500]
+            self._processed_ids -= set(to_remove)
+        return False
 
     @staticmethod
     async def _safe(fn, msg):

@@ -114,7 +114,8 @@ class VaREngine:
         position_value = pos.quantity * current_price
 
         sorted_rets = sorted(rets)
-        idx = max(0, int((1.0 - confidence) * len(sorted_rets)))
+        import math
+        idx = max(0, min(len(sorted_rets) - 1, math.ceil((1.0 - confidence) * len(sorted_rets)) - 1))
         var_pct = -sorted_rets[idx]  # flip sign: loss is positive
         return max(0.0, position_value * var_pct)
 

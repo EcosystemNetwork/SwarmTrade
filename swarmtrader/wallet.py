@@ -142,6 +142,12 @@ class WalletManager:
             # Order didn't fill — cash was reserved but not spent
             return
 
+        # Idempotency: skip duplicate fill processing
+        dedup_key = f"wallet:{rep.intent_id}:{rep.status}"
+        if self.bus.is_duplicate(dedup_key):
+            log.debug("Skipping duplicate wallet update: %s", dedup_key)
+            return
+
         if rep.side == "buy" and rep.fill_price and rep.quantity > 0:
             cost = rep.quantity * rep.fill_price + rep.fee_usd
             if cost > self.cash_balance:
@@ -386,42 +392,40 @@ class WalletManager:
     def _init_db(self):
         if not self._db_path:
             return
-        conn = sqlite3.connect(self._db_path)
-        conn.execute("""CREATE TABLE IF NOT EXISTS wallet_state(
-            key TEXT PRIMARY KEY, value TEXT)""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS wallet_transactions(
-            ts REAL, tx_type TEXT, amount REAL, note TEXT)""")
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self._db_path) as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS wallet_state(
+                key TEXT PRIMARY KEY, value TEXT)""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS wallet_transactions(
+                ts REAL, tx_type TEXT, amount REAL, note TEXT)""")
+            conn.commit()
 
     def _save_state(self):
         if not self._db_path:
             return
         try:
-            conn = sqlite3.connect(self._db_path)
-            state = json.dumps({
-                "cash_balance": self.cash_balance,
-                "starting_capital": self.starting_capital,
-                "peak_equity": self.peak_equity,
-                "deposits_total": self._deposits_total,
-                "withdrawals_total": self._withdrawals_total,
-                "allocations": {
-                    a: {"target_pct": al.target_pct, "max_pct": al.max_pct}
-                    for a, al in self.allocations.items()
-                },
-            })
-            conn.execute(
-                "INSERT OR REPLACE INTO wallet_state(key, value) VALUES (?, ?)",
-                ("state", state),
-            )
-            # Persist recent transactions
-            for tx in self.transactions[-10:]:
+            with sqlite3.connect(self._db_path) as conn:
+                state = json.dumps({
+                    "cash_balance": self.cash_balance,
+                    "starting_capital": self.starting_capital,
+                    "peak_equity": self.peak_equity,
+                    "deposits_total": self._deposits_total,
+                    "withdrawals_total": self._withdrawals_total,
+                    "allocations": {
+                        a: {"target_pct": al.target_pct, "max_pct": al.max_pct}
+                        for a, al in self.allocations.items()
+                    },
+                })
                 conn.execute(
-                    "INSERT OR IGNORE INTO wallet_transactions VALUES (?, ?, ?, ?)",
-                    (tx.ts, tx.tx_type, tx.amount_usd, tx.note),
+                    "INSERT OR REPLACE INTO wallet_state(key, value) VALUES (?, ?)",
+                    ("state", state),
                 )
-            conn.commit()
-            conn.close()
+                # Persist recent transactions
+                for tx in self.transactions[-10:]:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO wallet_transactions VALUES (?, ?, ?, ?)",
+                        (tx.ts, tx.tx_type, tx.amount_usd, tx.note),
+                    )
+                conn.commit()
         except Exception as e:
             log.warning("WALLET save failed: %s", e)
 
@@ -429,36 +433,40 @@ class WalletManager:
         if not self._db_path:
             return
         try:
-            conn = sqlite3.connect(self._db_path)
-            row = conn.execute(
-                "SELECT value FROM wallet_state WHERE key='state'"
-            ).fetchone()
-            if row:
-                saved = json.loads(row[0])
-                self.cash_balance = saved.get("cash_balance", self.starting_capital)
-                self.starting_capital = saved.get("starting_capital", self.starting_capital)
-                self.peak_equity = saved.get("peak_equity", self.peak_equity)
-                self._deposits_total = saved.get("deposits_total", 0.0)
-                self._withdrawals_total = saved.get("withdrawals_total", 0.0)
-                for asset, cfg in saved.get("allocations", {}).items():
-                    self.allocations[asset] = Allocation(
-                        asset=asset,
-                        target_pct=cfg.get("target_pct", 0.0),
-                        max_pct=cfg.get("max_pct", 50.0),
-                    )
-                log.info("WALLET loaded: cash=%.2f capital=%.2f peak=%.2f",
-                         self.cash_balance, self.starting_capital, self.peak_equity)
+            with sqlite3.connect(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT value FROM wallet_state WHERE key='state'"
+                ).fetchone()
+                if row:
+                    saved = json.loads(row[0])
+                    self.cash_balance = float(saved.get("cash_balance", self.starting_capital))
+                    self.starting_capital = float(saved.get("starting_capital", self.starting_capital))
+                    self.peak_equity = float(saved.get("peak_equity", self.peak_equity))
+                    self._deposits_total = float(saved.get("deposits_total", 0.0))
+                    self._withdrawals_total = float(saved.get("withdrawals_total", 0.0))
+                    # Validate loaded values
+                    if self.cash_balance < 0:
+                        log.warning("WALLET loaded negative cash (%.2f), resetting to 0",
+                                    self.cash_balance)
+                        self.cash_balance = 0.0
+                    for asset, cfg in saved.get("allocations", {}).items():
+                        self.allocations[asset] = Allocation(
+                            asset=asset,
+                            target_pct=cfg.get("target_pct", 0.0),
+                            max_pct=cfg.get("max_pct", 50.0),
+                        )
+                    log.info("WALLET loaded: cash=%.2f capital=%.2f peak=%.2f",
+                             self.cash_balance, self.starting_capital, self.peak_equity)
 
-            # Load transaction history
-            rows = conn.execute(
-                "SELECT ts, tx_type, amount, note FROM wallet_transactions "
-                "ORDER BY ts DESC LIMIT 100"
-            ).fetchall()
-            self.transactions = [
-                WalletTransaction(ts=r[0], tx_type=r[1], amount_usd=r[2], note=r[3])
-                for r in reversed(rows)
-            ]
-            conn.close()
+                # Load transaction history
+                rows = conn.execute(
+                    "SELECT ts, tx_type, amount, note FROM wallet_transactions "
+                    "ORDER BY ts DESC LIMIT 100"
+                ).fetchall()
+                self.transactions = [
+                    WalletTransaction(ts=r[0], tx_type=r[1], amount_usd=float(r[2]), note=r[3])
+                    for r in reversed(rows)
+                ]
         except Exception as e:
             log.warning("WALLET load failed (using defaults): %s", e)
 

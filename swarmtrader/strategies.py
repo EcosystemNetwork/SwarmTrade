@@ -292,6 +292,8 @@ class VWAPAgent:
         vwap = sum(p * w for p, w in zip(prices, weights)) / total_weight
 
         # Deviation from VWAP as fraction of price
+        if vwap < 1e-9:
+            return
         deviation = (price - vwap) / vwap
 
         # Contrarian: overextended above VWAP → short, below → long

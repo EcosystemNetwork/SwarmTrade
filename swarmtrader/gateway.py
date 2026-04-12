@@ -75,7 +75,7 @@ class AgentGateway:
         for topic_suffix in ("external",):
             pass  # dynamic — we subscribe when agents connect
 
-        log.info("Agent Gateway initialized (master_key=%s...)", self.master_key[:8])
+        log.info("Agent Gateway initialized (key configured, length=%d)", len(self.master_key))
 
     # ── Bus event handlers (relay to connected agents) ──────────────
 
@@ -106,7 +106,8 @@ class AgentGateway:
         for agent_id, ws in self._ws_clients.items():
             try:
                 await ws.send_str(payload)
-            except Exception:
+            except Exception as e:
+                log.warning("Agent %s WebSocket send failed, disconnecting: %s", agent_id, e)
                 dead.append(agent_id)
         for agent_id in dead:
             self._ws_clients.pop(agent_id, None)
@@ -232,8 +233,11 @@ class AgentGateway:
         if direction not in ("long", "short", "flat"):
             direction = "flat"
 
-        strength = float(body.get("strength", body.get("score", 0.0)))
-        confidence = float(body.get("confidence", 0.5))
+        try:
+            strength = float(body.get("strength", body.get("score", 0.0)))
+            confidence = float(body.get("confidence", 0.5))
+        except (ValueError, TypeError):
+            strength, confidence = 0.0, 0.5
 
         # Auto-derive strength from direction + confidence if not explicit
         if abs(strength) < 1e-9 and direction != "flat":

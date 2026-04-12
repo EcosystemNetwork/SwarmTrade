@@ -16,6 +16,18 @@ from .core import Bus, Signal
 
 log = logging.getLogger("swarm.social")
 
+_last_api_call: dict[str, float] = {}
+_MIN_API_INTERVAL = 2.0  # minimum seconds between API calls
+
+
+async def _rate_limit(api_name: str):
+    now = time.time()
+    last = _last_api_call.get(api_name, 0.0)
+    wait = _MIN_API_INTERVAL - (now - last)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_api_call[api_name] = time.time()
+
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 REDDIT_SEARCH = "https://www.reddit.com/r/CryptoCurrency/search.json"
 
@@ -172,6 +184,7 @@ class SocialSentimentAgent:
             "sparkline": "false",
         }
         try:
+            await _rate_limit("coingecko")
             async with session.get(url, params=params,
                                    timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
@@ -193,6 +206,7 @@ class SocialSentimentAgent:
             "t": "day",
         }
         try:
+            await _rate_limit("reddit")
             async with session.get(REDDIT_SEARCH, params=params,
                                    headers=headers,
                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:

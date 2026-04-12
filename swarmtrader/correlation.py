@@ -109,7 +109,8 @@ class CorrelationAgent:
 
 
 def _returns(prices: list[float]) -> list[float]:
-    return [(prices[i] / prices[i - 1]) - 1 for i in range(1, len(prices))]
+    import math
+    return [math.log(prices[i] / prices[i - 1]) for i in range(1, len(prices))]
 
 
 def _pearson(x: list[float], y: list[float]) -> float:

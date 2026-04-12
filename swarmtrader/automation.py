@@ -6,7 +6,7 @@ Provides:
 - Lifecycle: ordered startup/shutdown sequencing for the full agent swarm
 """
 from __future__ import annotations
-import asyncio, logging, time
+import asyncio, datetime, logging, time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable
 
@@ -295,7 +295,7 @@ def build_scheduler(
 
 def _today_ordinal() -> int:
     import datetime
-    return datetime.datetime.utcnow().toordinal()
+    return datetime.datetime.now(datetime.timezone.utc).toordinal()
 
 
 # ---------------------------------------------------------------------------
