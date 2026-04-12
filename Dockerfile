@@ -12,7 +12,7 @@ COPY pyproject.toml .
 COPY swarmtrader/ swarmtrader/
 
 # Install package
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir .
 
 # Railway injects $PORT at runtime
 EXPOSE ${PORT:-8080}

@@ -400,11 +400,13 @@ async def run(args: argparse.Namespace):
     ConfluenceDetector(bus, min_groups=2)
 
     # ── News Sentiment ──────────────────────────────────────────
+    # RSSNewsAgent is the primary free news source (no key needed).
+    # If NEWS_API_KEY is set, CryptoPanic NewsAgent runs alongside.
     if os.getenv("NEWS_API_KEY"):
         news_agent = NewsAgent(bus, assets=assets, interval=60.0)
-        supervisor.register("news", news_agent.run,
+        supervisor.register("news_cryptopanic", news_agent.run,
                             stale_after=120.0, stoppable=news_agent)
-        log.info("News sentiment enabled for: %s", assets)
+        log.info("CryptoPanic news sentiment enabled for: %s", assets)
 
     # ── Whale Tracking ──────────────────────────────────────────
     whale = WhaleAgent(bus, assets=assets, interval=120.0)

@@ -310,7 +310,12 @@ class RiskAgent:
         bus.subscribe("intent.new", self._on)
 
     async def _on(self, intent: TradeIntent):
-        ok, reason = self.check(intent)
+        import inspect
+        result = self.check(intent)
+        if inspect.isawaitable(result):
+            ok, reason = await result
+        else:
+            ok, reason = result
         await self.bus.publish("risk.verdict",
                                RiskVerdict(intent.id, self.name, ok, reason))
 

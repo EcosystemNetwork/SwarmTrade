@@ -843,16 +843,18 @@ class GitHubDevAgent:
 class RSSNewsAgent:
     """Aggregates crypto news from free RSS/Atom feeds.
 
-    Sources: CoinDesk, CoinTelegraph, The Block, Decrypt, Bitcoin Magazine.
+    Sources: CoinDesk, CoinTelegraph, The Block, Decrypt, Bitcoin Magazine,
+    The Defiant, plus Blockworks and DL News.
     No API keys required — uses public RSS feeds.
 
-    Performs keyword sentiment analysis on headlines, similar to NewsAgent
-    but without CryptoPanic dependency.
+    Uses the same regex-based urgency and keyword scoring pipeline as
+    NewsAgent (CryptoPanic) so it can fully replace it at zero cost.
 
-    Publishes signal.rss_news per asset.
+    Publishes signal.news (same topic as NewsAgent for Strategist compat)
+    and signal.rss_news for downstream consumers that want to distinguish.
     """
 
-    name = "rss_news"
+    name = "news"  # same agent_id as NewsAgent so Strategist picks it up
 
     FEEDS = [
         "https://www.coindesk.com/arc/outboundfeeds/rss/",
@@ -860,20 +862,63 @@ class RSSNewsAgent:
         "https://decrypt.co/feed",
         "https://bitcoinmagazine.com/.rss/full/",
         "https://thedefiant.io/feed",
+        "https://blockworks.co/feed",
+        "https://www.dlnews.com/arc/outboundfeeds/rss/",
     ]
 
-    BULLISH_WORDS = {
-        "etf", "approved", "approval", "institutional", "adoption",
-        "partnership", "launch", "bullish", "rally", "surge", "soar",
-        "record", "milestone", "breakout", "upgrade", "integration",
-        "accumulate", "inflow", "staking",
+    # ── Regex keyword tables (ported from NewsAgent for full parity) ──
+    # (direction_bias, magnitude_boost)
+    _BULLISH_PATTERNS_RAW: dict[str, tuple[float, float]] = {
+        r"\betf\b.*approv":       (+1.0, 2.5),
+        r"\betf\b.*launch":       (+1.0, 2.0),
+        r"\betf\b.*fil":          (+1.0, 2.0),
+        r"institutional.*buy":    (+1.0, 1.8),
+        r"mass\s*adoption":       (+1.0, 1.5),
+        r"partnershi":            (+1.0, 1.3),
+        r"integrat":              (+1.0, 1.2),
+        r"halving":               (+1.0, 1.5),
+        r"supply\s*shock":        (+1.0, 1.8),
+        r"token\s*burn":          (+1.0, 1.4),
+        r"legal\s*tender":        (+1.0, 2.0),
+        r"regulat.*clar":         (+1.0, 1.5),
+        r"regulat.*framework":    (+1.0, 1.3),
+        r"all.time.high":         (+1.0, 1.6),
+        r"\bath\b":               (+1.0, 1.6),
+        r"breakout":              (+1.0, 1.3),
+        r"rally":                 (+1.0, 1.2),
+        r"surge[sd]?":            (+1.0, 1.3),
+        r"soar":                  (+1.0, 1.3),
+        r"accumulate":            (+1.0, 1.2),
+        r"inflow":                (+1.0, 1.2),
+        r"staking":               (+1.0, 1.1),
+        r"upgrade":               (+1.0, 1.2),
+        r"milestone":             (+1.0, 1.2),
     }
 
-    BEARISH_WORDS = {
-        "hack", "exploit", "breach", "vulnerability", "ban",
-        "crackdown", "lawsuit", "sec", "fine", "crash", "plunge",
-        "dump", "liquidation", "bankruptcy", "fraud", "scam",
-        "rug", "delist", "outflow", "selloff", "sell-off",
+    _BEARISH_PATTERNS_RAW: dict[str, tuple[float, float]] = {
+        r"hack(ed|s|ing)?":       (-1.0, 2.5),
+        r"exploit(ed|s)?":        (-1.0, 2.5),
+        r"rug\s*pull":            (-1.0, 2.5),
+        r"drain(ed)?":            (-1.0, 2.0),
+        r"vulnerabilit":          (-1.0, 1.8),
+        r"breach":                (-1.0, 2.0),
+        r"\bban(ned|s)?\b":       (-1.0, 2.2),
+        r"crackdown":             (-1.0, 2.0),
+        r"lawsuit":               (-1.0, 1.8),
+        r"sec\s*(su|charg|fine)": (-1.0, 2.0),
+        r"sanction":              (-1.0, 1.8),
+        r"fraud":                 (-1.0, 2.0),
+        r"crash(ed|es|ing)?":     (-1.0, 2.0),
+        r"plunge[sd]?":           (-1.0, 1.8),
+        r"dump(ed|ing)?":         (-1.0, 1.5),
+        r"liquidat":              (-1.0, 1.8),
+        r"insolvency|insolvent":  (-1.0, 2.2),
+        r"bankrupt":              (-1.0, 2.2),
+        r"delisted?":             (-1.0, 1.8),
+        r"ponzi":                 (-1.0, 2.0),
+        r"selloff|sell-off":      (-1.0, 1.5),
+        r"outflow":               (-1.0, 1.2),
+        r"scam":                  (-1.0, 2.0),
     }
 
     def __init__(self, bus: Bus, assets: list[str] | None = None,
@@ -893,6 +938,16 @@ class RSSNewsAgent:
             "LINK": {"chainlink", "link"},
             "AVAX": {"avalanche", "avax"},
         }
+        # Compile regex patterns once
+        import re
+        self._bull_patterns = [
+            (re.compile(p, re.IGNORECASE), v)
+            for p, v in self._BULLISH_PATTERNS_RAW.items()
+        ]
+        self._bear_patterns = [
+            (re.compile(p, re.IGNORECASE), v)
+            for p, v in self._BEARISH_PATTERNS_RAW.items()
+        ]
 
     def stop(self):
         self._stop = True
@@ -964,31 +1019,70 @@ class RSSNewsAgent:
 
         return items[:10]  # limit per feed
 
+    def _keyword_analysis(self, title: str) -> tuple[float, float, float, list[str]]:
+        """Regex keyword scoring — same pipeline as NewsAgent.
+
+        Returns (direction_bias, magnitude_boost, urgency, keywords_hit).
+        """
+        if not title:
+            return 0.0, 1.0, 0.0, []
+
+        bull_score = 0.0
+        bear_score = 0.0
+        max_boost = 1.0
+        hits: list[str] = []
+
+        for pat, (bias, boost) in self._bull_patterns:
+            if pat.search(title):
+                bull_score += bias * boost
+                max_boost = max(max_boost, boost)
+                hits.append(pat.pattern[:20])
+
+        for pat, (bias, boost) in self._bear_patterns:
+            if pat.search(title):
+                bear_score += abs(bias) * boost
+                max_boost = max(max_boost, boost)
+                hits.append(pat.pattern[:20])
+
+        net = bull_score - bear_score
+        if abs(net) < 0.01:
+            return 0.0, 1.0, 0.0, hits
+
+        direction = 1.0 if net > 0 else -1.0
+        urgency = min(1.0, max(0.0, (max_boost - 1.0) / 1.5))
+        return direction, max_boost, urgency, hits
+
     def _score_for_asset(self, articles: list[dict], asset: str) -> list[dict]:
         """Filter and score articles relevant to an asset."""
         aliases = self._asset_aliases.get(asset, {asset.lower()})
         relevant = []
 
-        for art in articles:
+        for i, art in enumerate(articles):
             text = (art["title"] + " " + art.get("desc", "")).lower()
             # Check if article mentions this asset
-            if not any(alias in text for alias in aliases):
-                # Also check for generic "crypto" / "market" articles
+            direct_mention = any(alias in text for alias in aliases)
+            if not direct_mention:
                 if not any(w in text for w in ("crypto", "market", "defi", "blockchain")):
                     continue
 
-            # Score sentiment
-            bull_hits = sum(1 for w in self.BULLISH_WORDS if w in text)
-            bear_hits = sum(1 for w in self.BEARISH_WORDS if w in text)
-            sentiment = (bull_hits - bear_hits) / max(1, bull_hits + bear_hits)
-            relevance = 1.0 if any(alias in text for alias in aliases) else 0.5
+            # Regex keyword scoring
+            kw_bias, kw_boost, urgency, kw_hits = self._keyword_analysis(
+                art["title"] + " " + art.get("desc", ""))
+
+            sentiment = kw_bias * min(1.0, kw_boost * 0.4) if abs(kw_bias) > 0.01 else 0.0
+            sentiment = max(-1.0, min(1.0, sentiment))
+
+            relevance = 1.0 if direct_mention else 0.5
+            recency_w = 1.0 / (1 + i * 0.2)
+            urgency_w = 1.0 + urgency * 1.5
 
             relevant.append({
                 "title": art["title"],
                 "sentiment": sentiment,
                 "relevance": relevance,
-                "bull": bull_hits,
-                "bear": bear_hits,
+                "weight": relevance * recency_w * urgency_w,
+                "urgency": urgency,
+                "keywords": kw_hits,
             })
 
         return relevant[:15]
@@ -997,23 +1091,38 @@ class RSSNewsAgent:
         if not scored:
             return
 
-        total_weight = sum(a["relevance"] for a in scored)
+        total_weight = sum(a["weight"] for a in scored)
         if total_weight < 0.01:
             return
 
-        weighted_sent = sum(a["sentiment"] * a["relevance"] for a in scored) / total_weight
+        weighted_sent = sum(a["sentiment"] * a["weight"] for a in scored) / total_weight
         strength = max(-1.0, min(1.0, weighted_sent))
 
         if abs(strength) < 0.05:
             return
 
-        confidence = min(0.7, 0.2 + len(scored) * 0.04)
-        top = [s["title"][:50] for s in scored[:3]]
+        max_urgency = max((a["urgency"] for a in scored), default=0.0)
+        confidence = min(1.0, 0.3 + len(scored) * 0.04 + max_urgency * 0.2)
+        top = [s["title"][:60] for s in scored[:3]]
+        all_kw: list[str] = []
+        for a in scored:
+            all_kw.extend(a.get("keywords", []))
+        kw_summary = ",".join(dict.fromkeys(all_kw))[:80]
+
+        parts = [f"news={strength:+.3f}", f"n={len(scored)}"]
+        if kw_summary:
+            parts.append(f"kw=[{kw_summary}]")
+        if max_urgency >= 0.5:
+            parts.append(f"URGENT({max_urgency:.1f})")
+        parts.append("|")
+        parts.append("; ".join(top))
 
         sig = Signal(self.name, asset,
                      "long" if strength > 0 else "short",
                      strength, confidence,
-                     f"rss n={len(scored)} | {'; '.join(top)}")
+                     " ".join(parts))
+        # Publish on both topics: signal.news for Strategist, signal.rss_news for filtering
+        await self.bus.publish("signal.news", sig)
         await self.bus.publish("signal.rss_news", sig)
 
 
