@@ -128,11 +128,33 @@ from .whale_mirror import WhaleMirrorAgent
 from .intent_solver import IntentSolverNetwork
 from .liquidation_shield import LiquidationShield
 from .governance import GovernanceDAO
+# Phase 21-30
+from .telegram_bot import TelegramTradingBot
+from .voice_trading import VoiceTradingEngine
+from .agent_factory import AgentFactory
+from .options_engine import OptionsEngine
+from .social_alpha_v2 import SocialAlphaScanner
+from .backtesting_arena import BacktestingArena
+from .observability import ObservabilityDashboard
+from .federated import FederatedCoordinator
+from .rwa_bridge import RWABridge
+from .treasury import AutonomousTreasury
+# Phase 31-40
+from .mev_engine import MEVEngine
+from .agent_memory_v2 import AgentMemoryDAG
+from .sentiment_derivatives import SentimentDerivativesEngine
+from .grid_trading import GridTradingEngine
+from .token_sniper import TokenSniper
+from .regime_v2 import CorrelationRegimeDetector
+from .gas_optimizer import GasOptimizer
+from .portfolio_insurance import PortfolioInsurance
+from .agent_protocol import AgentCommunicationProtocol
+from .swarm_consensus import SwarmConsensus
 from .agent_registry import AgentRegistry
 from .arb_executor import ArbScanner, ArbExecutor
 from .dex_quotes import DEXQuoteProvider
 from .dex_multi import MultiDEXScanner
-from .hermes_brain import HermesBrain
+from .hermes_brain import HermesBrain, CommanderGate
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -344,6 +366,12 @@ async def run(args: argparse.Namespace):
     await db.connect()
     backend = "Postgres (Neon)" if db.is_postgres else f"SQLite ({args.db})"
     log.info("Database: %s", backend)
+
+    # Run database migrations
+    from .migrations import run_migrations
+    n_migrations = await run_migrations(db)
+    if n_migrations:
+        log.info("Applied %d database migration(s)", n_migrations)
 
     # ── Supervisor — monitors agent health, auto-restarts crashes ──
     supervisor = AgentSupervisor(bus, check_interval=5.0, max_restarts=3)
@@ -818,6 +846,119 @@ async def run(args: argparse.Namespace):
     log.info("Governance DAO: ELO-weighted voting, %.0f%% quorum, %.0f%% approval",
              30.0, 60.0)
 
+    # ── Phase 21: Telegram Trading Bot ───────────────────────
+    tg_bot = TelegramTradingBot(
+        bus, token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        authorized_chats=[c for c in os.getenv("TELEGRAM_CHAT_ID", "").split(",") if c],
+    )
+    if tg_bot.token:
+        supervisor.register("telegram_bot", tg_bot.run, stale_after=60.0, stoppable=tg_bot)
+    log.info("Telegram bot: %s", "active" if tg_bot.token else "no token (disabled)")
+
+    # ── Phase 22: Voice-Activated Trading ────────────────────
+    voice = VoiceTradingEngine(bus, provider=os.getenv("VOICE_PROVIDER", "browser"))
+    log.info("Voice trading: provider=%s", voice.provider)
+
+    # ── Phase 23: Agent Factory ──────────────────────────────
+    agent_factory = AgentFactory(
+        bus, max_concurrent=int(os.getenv("FACTORY_MAX_CONCURRENT", "10")),
+    )
+    log.info("Agent factory: %d blueprints, max %d concurrent spawns",
+             len(agent_factory._blueprints), agent_factory.max_concurrent)
+
+    # ── Phase 24: Options Strategy Automation ────────────────
+    options_engine = OptionsEngine(bus)
+    log.info("Options engine: covered calls, protective puts, straddles, iron condors")
+
+    # ── Phase 25: Social Alpha Scanner v2 ────────────────────
+    social_alpha = SocialAlphaScanner(
+        bus, window_s=600.0, min_mentions=3,
+        min_velocity=float(os.getenv("SOCIAL_ALPHA_MIN_VELOCITY", "0.5")),
+    )
+    log.info("Social alpha v2: cross-platform trending token detection")
+
+    # ── Phase 26: Backtesting Arena ──────────────────────────
+    arena = BacktestingArena(bus, max_entries=50)
+    log.info("Backtesting arena: competitive strategy tournaments (max %d entries)", 50)
+
+    # ── Phase 27: Agent Observability Dashboard ──────────────
+    observability = ObservabilityDashboard(bus)
+    log.info("Observability: monitoring all agents for health, performance, anomalies")
+
+    # ── Phase 28: Federated Learning ─────────────────────────
+    federated = FederatedCoordinator(
+        bus, min_contributors=3, clip_norm=1.0, noise_sigma=0.01,
+    )
+    log.info("Federated learning: privacy-preserving model sharing (min %d contributors)", 3)
+
+    # ── Phase 29: RWA Bridge ─────────────────────────────────
+    rwa = RWABridge(bus)
+    log.info("RWA bridge: %d tokenized real-world assets monitored", len(rwa._assets))
+
+    # ── Phase 30: Autonomous Treasury ────────────────────────
+    treasury_mgr = AutonomousTreasury(bus, initial_capital=args.capital)
+    log.info("Treasury: $%.0f initial, targets: %s",
+             args.capital, ", ".join(f"{k}={v}%%" for k, v in treasury_mgr._targets.items()))
+
+    # ── Phase 31: MEV Auction Engine ─────────────────────────
+    mev = MEVEngine(bus, protection_mode=os.getenv("MEV_PROTECTION", "flashbots"))
+    log.info("MEV engine: detection + protection (%s mode)", mev.protection_mode)
+
+    # ── Phase 32: Agent Memory DAG v2 ────────────────────────
+    memory_dag = AgentMemoryDAG(bus, max_memories_per_agent=500)
+    log.info("Memory DAG v2: long-term learning with semantic retrieval + decay")
+
+    # ── Phase 33: Sentiment Derivatives ──────────────────────
+    sent_deriv = SentimentDerivativesEngine(bus, divergence_threshold=0.3)
+    log.info("Sentiment derivatives: trading sentiment as a quantifiable asset")
+
+    # ── Phase 34: Grid Trading Engine ────────────────────────
+    grid = GridTradingEngine(bus)
+    log.info("Grid trading: arithmetic, geometric, and exponential grid strategies")
+
+    # ── Phase 35: Token Launch Sniper ────────────────────────
+    sniper = TokenSniper(
+        bus, max_entry_usd=float(os.getenv("SNIPER_MAX_ENTRY", "100")),
+        min_liquidity_usd=float(os.getenv("SNIPER_MIN_LIQ", "5000")),
+    )
+    log.info("Token sniper: early detection + safe entry (max=$%.0f)", sniper.max_entry_usd)
+
+    # ── Phase 36: Correlation Regime Detector v2 ─────────────
+    regime_v2 = CorrelationRegimeDetector(bus, lookback=50, transition_threshold=0.15)
+    log.info("Regime v2: cross-asset correlation matrix + regime transitions")
+
+    # ── Phase 37: Gas Optimization Engine ────────────────────
+    gas_opt = GasOptimizer(bus)
+    log.info("Gas optimizer: forecasting + batching + priority fee optimization")
+
+    # ── Phase 38: Portfolio Insurance ────────────────────────
+    insurance = PortfolioInsurance(
+        bus, portfolio_usd=args.capital,
+        max_hedge_cost_pct=float(os.getenv("INSURANCE_MAX_COST_PCT", "2.0")),
+    )
+    log.info("Portfolio insurance: automated hedging (max cost=%.1f%% annually)",
+             insurance.max_hedge_cost_pct)
+
+    # ── Phase 39: Agent Communication Protocol ───────────────
+    agent_comms = AgentCommunicationProtocol(bus)
+    # Register core agent capabilities for discovery
+    for agent_name, caps in [
+        ("momentum", ["analyze_momentum", "trend_detection"]),
+        ("rsi", ["analyze_rsi", "overbought_oversold"]),
+        ("whale", ["track_whales", "smart_money_detection"]),
+        ("ml", ["predict_price", "feature_analysis"]),
+        ("debate_engine", ["adversarial_analysis", "conviction_scoring"]),
+        ("fusion", ["convergence_scoring", "multi_source_analysis"]),
+    ]:
+        agent_comms.register_agent(agent_name, caps, ["ETH", "BTC"])
+    log.info("Agent protocol: %d agents registered with capabilities",
+             len(agent_comms._capabilities))
+
+    # ── Phase 40: Swarm Consensus Engine ─────────────────────
+    consensus = SwarmConsensus(bus, elo_tracker=elo_tracker,
+                               default_quorum=30.0, default_approval=60.0)
+    log.info("Swarm consensus: multi-agent weighted voting on trade decisions")
+
     # ── Agent Registry (Unstoppable Domains identity) ─────────
     agent_registry = AgentRegistry(
         bus, owner_address=os.getenv("WALLET_ADDRESS", ""),
@@ -903,6 +1044,7 @@ async def run(args: argparse.Namespace):
     # ── Strategy ────────────────────────────────────────────────
     tokens = set(assets) | {"USD", "USDC", "USDT"}
     hermes = None
+    commander = None
     if getattr(args, "hermes", False):
         hermes = HermesBrain(
             bus, portfolio=portfolio, assets=assets,
@@ -910,13 +1052,31 @@ async def run(args: argparse.Namespace):
             capital=args.capital,
         )
         supervisor.register("hermes_brain", hermes.run, stale_after=60.0, stoppable=hermes)
-        log.info("HERMES BRAIN enabled — LLM controls all agents (model=%s)", hermes.model)
-        # Still create Strategist so its signal subscriptions populate the bus,
-        # but Hermes will be the primary intent emitter
+
+        # ── COMMANDER MODE: HermesBrain is the sole trading authority ──
+        # Every intent from every source (Strategist, alpha swarm, debate,
+        # consensus, external agents) MUST be approved by the commander.
+        # No trade happens without the AI robot's explicit say.
+        fallback = os.getenv("COMMANDER_FALLBACK", "conservative")
+        commander = CommanderGate(
+            bus, brain=hermes, fallback_mode=fallback,
+            approval_timeout_s=float(os.getenv("COMMANDER_TIMEOUT", "30")),
+        )
+        log.info(
+            "COMMANDER MODE ACTIVE — AI trading robot controls ALL execution\n"
+            "  Provider: %s\n"
+            "  Fallback: %s\n"
+            "  Every intent.new is intercepted. Zero trades without approval.",
+            hermes.provider.describe(), fallback,
+        )
+
+        # Strategist still runs to produce signal aggregation and intents,
+        # but CommanderGate intercepts them before execution
         strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
-        log.info("Rule-based Strategist running as backup alongside Hermes")
+        log.info("Strategist produces intents -> CommanderGate reviews -> only approved trades execute")
     else:
         strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
+        log.info("Strategist in autonomous mode (no AI commander — rule-based decisions)")
 
     # ── Position Management ───────────────────────────────────────
     pos_mgr = PositionManager(
@@ -1146,13 +1306,17 @@ async def run(args: argparse.Namespace):
         from .swarm_network import SwarmNetwork
         network = SwarmNetwork(bus)
 
+        # Prometheus metrics collector
+        from .metrics import MetricsCollector
+        metrics = MetricsCollector(bus)
+
         web_dash = WebDashboard(
             bus, state, db=db,
             kill_switch=kill_switch, host=args.web_host, port=args.web_port,
             wallet=wallet, gateway=gateway,
             strategist=strategist, capital_allocator=cap_alloc,
             memory=memory, erc8004=erc8004, uniswap=uniswap,
-            social=social, network=network,
+            social=social, network=network, metrics=metrics,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)

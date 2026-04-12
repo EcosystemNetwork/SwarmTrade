@@ -13,6 +13,7 @@ from .report import load_from_db, generate_html_report
 from .gateway import AgentGateway, ConnectedAgent
 from .social_trading import SocialTradingEngine
 from .swarm_network import SwarmNetwork
+from .metrics import MetricsCollector
 
 log = logging.getLogger("swarm.web")
 
@@ -182,7 +183,7 @@ class WebDashboard:
                  wallet=None, gateway: AgentGateway | None = None,
                  strategist=None, capital_allocator=None,
                  memory=None, erc8004=None, uniswap=None,
-                 social=None, network=None):
+                 social=None, network=None, metrics=None):
         self.bus = bus
         self.state = state
         self.db = db  # Database instance
@@ -198,6 +199,7 @@ class WebDashboard:
         self.capital_allocator = capital_allocator  # CapitalAllocator (leaderboard)
         self.social = social  # SocialTradingEngine instance (optional)
         self.network = network  # SwarmNetwork instance (optional)
+        self.metrics = metrics  # MetricsCollector instance (optional)
         self._privacy_mgr = None  # lazy init
         self._pyth_oracle = None  # lazy init
         self._clients: set[web.WebSocketResponse] = set()
@@ -983,6 +985,24 @@ class WebDashboard:
             {"status": status, **checks},
             status=status_code,
         )
+
+    async def _handle_metrics(self, request: web.Request) -> web.Response:
+        """GET /metrics — Prometheus text exposition format."""
+        if not self.metrics:
+            return web.Response(text="# No metrics collector configured\n",
+                                content_type="text/plain")
+        # Update WS connection count from live state
+        self.metrics.ws_connections = len(self._clients)
+        body = self.metrics.render()
+        return web.Response(text=body, content_type="text/plain; version=0.0.4; charset=utf-8")
+
+    async def _handle_migration_status(self, request: web.Request) -> web.Response:
+        """GET /api/migrations — current migration state."""
+        if not self.db:
+            return web.json_response({"error": "no database"}, status=404)
+        from .migrations import get_migration_status
+        status = await get_migration_status(self.db)
+        return web.json_response(status)
 
     async def _handle_thoughts(self, request: web.Request) -> web.Response:
         """GET /api/thoughts — recent agent thought stream."""
@@ -1919,6 +1939,7 @@ class WebDashboard:
         ])
         app["_dashboard_token"] = token
         app.router.add_get("/health", self._handle_health)
+        app.router.add_get("/metrics", self._handle_metrics)
         app.router.add_get("/", self._handle_index)
         app.router.add_get("/ws", self._handle_ws)
         app.router.add_get("/api/history", self._handle_history)
@@ -1996,9 +2017,38 @@ class WebDashboard:
         app.router.add_get("/api/network/dm/{agent_id}/{other_id}", self._handle_network_dm_thread)
         app.router.add_get("/api/network/search", self._handle_network_search)
         app.router.add_get("/api/network/stats", self._handle_network_stats)
+        # ── Operational endpoints ──────────────────────────────────
+        app.router.add_get("/api/migrations", self._handle_migration_status)
         # ── Agent Gateway routes (external agent API) ──────────────
         if self.gateway:
             self.gateway.register_routes(app)
+
+        # ── API v1 aliases ─────────────────────────────────────────
+        # All /api/* routes are also available under /api/v1/* for
+        # forward compatibility. External agents should use /api/v1/.
+        _v1_redirect = {}
+        for resource in list(app.router.resources()):
+            info = resource.get_info()
+            fmt = info.get("formatter", info.get("path", ""))
+            if isinstance(fmt, str) and fmt.startswith("/api/") and not fmt.startswith("/api/v1/"):
+                v1_path = fmt.replace("/api/", "/api/v1/", 1)
+                _v1_redirect[fmt] = v1_path
+        for resource in list(app.router.resources()):
+            info = resource.get_info()
+            fmt = info.get("formatter", info.get("path", ""))
+            if fmt in _v1_redirect:
+                v1_path = _v1_redirect[fmt]
+                for route in resource:
+                    method = route.method
+                    handler = route.handler
+                    if method == "GET":
+                        app.router.add_get(v1_path, handler)
+                    elif method == "POST":
+                        app.router.add_post(v1_path, handler)
+                    elif method == "DELETE":
+                        app.router.add_delete(v1_path, handler)
+                    elif method == "PATCH":
+                        app.router.add_patch(v1_path, handler)
 
         app.router.add_static("/static/",
                               Path(__file__).parent / "static",

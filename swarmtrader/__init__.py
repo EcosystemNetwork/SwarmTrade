@@ -60,6 +60,9 @@ from .walkforward import (
 from .gateway import AgentGateway
 # Agent social network
 from .swarm_network import SwarmNetwork
+# Migrations + metrics
+from .migrations import run_migrations, get_migration_status
+from .metrics import MetricsCollector
 # Agent memory
 from .memory import AgentMemory
 # ERC-8004 on-chain identity + reputation
@@ -117,6 +120,39 @@ from .strategy_nft import StrategyNFTManager, StrategyConfig, StrategyNFT
 from .v4_hooks import V4HookManager, V4PoolState, V4Position
 from .cross_chain import CrossChainCoordinator
 from .zk_trading import CommitRevealEngine, PrivatePositionManager
+# Phase 11-20
+from .rugpull_detector import RugpullDetector, rugpull_check
+from .prediction_trader import PredictionTrader
+from .agent_payments import AgentPaymentProtocol
+from .strategy_evolution import StrategyEvolution, StrategyGenome
+from .ai_brain import AIBrain
+from .narrative import NarrativeEngine
+from .whale_mirror import WhaleMirrorAgent
+from .intent_solver import IntentSolverNetwork, Solver
+from .liquidation_shield import LiquidationShield
+from .governance import GovernanceDAO
+# Phase 21-30
+from .telegram_bot import TelegramTradingBot
+from .voice_trading import VoiceTradingEngine
+from .agent_factory import AgentFactory
+from .options_engine import OptionsEngine
+from .social_alpha_v2 import SocialAlphaScanner
+from .backtesting_arena import BacktestingArena
+from .observability import ObservabilityDashboard
+from .federated import FederatedCoordinator
+from .rwa_bridge import RWABridge
+from .treasury import AutonomousTreasury
+# Phase 31-40
+from .mev_engine import MEVEngine
+from .agent_memory_v2 import AgentMemoryDAG
+from .sentiment_derivatives import SentimentDerivativesEngine
+from .grid_trading import GridTradingEngine
+from .token_sniper import TokenSniper
+from .regime_v2 import CorrelationRegimeDetector
+from .gas_optimizer import GasOptimizer
+from .portfolio_insurance import PortfolioInsurance
+from .agent_protocol import AgentCommunicationProtocol
+from .swarm_consensus import SwarmConsensus
 from .agent_registry import AgentRegistry, AgentIdentity
 # Multi-exchange + arbitrage
 from .exchanges import (
@@ -143,7 +179,7 @@ from .social_agents import (
     XMonitorAgent, DiscordAgent, TelegramAgent, SocialAggregator,
 )
 from .agent_learning import LearningCoordinator
-from .hermes_brain import HermesBrain
+from .hermes_brain import HermesBrain, CommanderGate
 from .dex_multi import (
     MultiDEXScanner, SushiSwapQuoter, AerodromeQuoter, CurveQuoter,
     PancakeSwapQuoter, RaydiumQuoter, OrcaQuoter, DEXQuote,

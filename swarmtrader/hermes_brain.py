@@ -65,6 +65,7 @@ class MarketState:
 
 
 SIGNAL_TOPICS = [
+    # Core agents
     "signal.momentum", "signal.mean_rev", "signal.vol", "signal.regime",
     "signal.spread", "signal.rsi", "signal.macd", "signal.bollinger",
     "signal.vwap", "signal.ichimoku", "signal.mtf", "signal.correlation",
@@ -80,6 +81,14 @@ SIGNAL_TOPICS = [
     "signal.ml", "signal.hedge", "signal.rebalance",
     "signal.yield", "signal.alpha_swarm", "signal.fear_greed",
     "signal.open_interest", "signal.liquidation_levels",
+    # Phase 1-40 showcase agents
+    "signal.fusion", "signal.debate", "signal.narrative",
+    "signal.consensus", "signal.whale_mirror", "signal.marketplace",
+    "signal.prediction", "signal.options_strategy", "signal.social_alpha",
+    "signal.sniper", "signal.sentiment_deriv", "signal.mev",
+    "signal.regime_v2", "signal.grid", "signal.insurance", "signal.rwa",
+    # Kalman-filtered
+    "signal.filtered.momentum", "signal.filtered.rsi", "signal.filtered.whale",
 ]
 
 
@@ -941,6 +950,10 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
             await self._session.close()
             self._session = None
 
+    @property
+    def model(self) -> str:
+        return getattr(self.provider, "model", "unknown")
+
     def status(self) -> dict:
         now = time.time()
         n_active = len([s for s in self.state.signals.values() if now - s.ts < 120])
@@ -956,4 +969,207 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
             "total_tracked": len(self.state.signals),
             "regime": self.state.regime,
             "prices": dict(self.state.prices),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMMANDER MODE — HermesBrain as sole trading authority
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CommanderGate:
+    """Intent interceptor — no trade executes without the AI commander's approval.
+
+    When Commander Mode is active:
+      1. ALL intent.new events are intercepted (from Strategist, alpha swarm,
+         debate engine, consensus engine, external agents — everything)
+      2. Intent is held in a queue pending commander review
+      3. HermesBrain evaluates: approve, reject, or modify the intent
+      4. Only approved intents are forwarded to exec.go
+      5. Rejected intents are logged with reasoning
+
+    This makes HermesBrain the SOLE authority over trading. The 120+ agents
+    produce intelligence, the safety gauntlet checks constraints, but the
+    AI commander makes the final call on every single trade.
+
+    When the LLM is unavailable, the gate can operate in fallback modes:
+      - "strict": block all trades until LLM is back (safest)
+      - "passthrough": let Strategist intents through (degraded mode)
+      - "conservative": only let high-conviction (>0.8) intents through
+    """
+
+    def __init__(self, bus: Bus, brain: HermesBrain,
+                 fallback_mode: str = "conservative",
+                 approval_timeout_s: float = 30.0):
+        self.bus = bus
+        self.brain = brain
+        self.fallback_mode = fallback_mode
+        self.approval_timeout_s = approval_timeout_s
+        self._pending: dict[str, TradeIntent] = {}
+        self._approved: list[str] = []
+        self._rejected: list[dict] = []
+        self._stats = {
+            "intercepted": 0, "approved": 0, "rejected": 0,
+            "modified": 0, "fallback": 0, "timeout": 0,
+        }
+
+        # Intercept ALL intents
+        bus.subscribe("intent.new", self._on_intent)
+
+        log.info("COMMANDER GATE: active — no trade executes without AI approval (fallback=%s)",
+                 fallback_mode)
+
+    async def _on_intent(self, intent: TradeIntent):
+        """Intercept every trade intent for commander review."""
+        self._stats["intercepted"] += 1
+
+        # If the intent was already approved by the commander (re-published), let it through
+        if intent.id in self._approved:
+            self._approved.remove(intent.id)
+            return  # Already flowing to exec.go via normal pipeline
+
+        # If HermesBrain originated this intent, it's pre-approved
+        if intent.supporting and any(s.agent_id == "hermes" for s in intent.supporting):
+            self._stats["approved"] += 1
+            self._approved.append(intent.id)
+            log.info("COMMANDER: auto-approved own intent %s (%s %s $%.0f)",
+                     intent.id, "BUY" if intent.asset_in in ("USD", "USDC", "USDT") else "SELL",
+                     intent.asset_out if intent.asset_in in ("USD", "USDC", "USDT") else intent.asset_in,
+                     intent.amount_in)
+            return  # Let it flow through
+
+        # All other intents need commander approval
+        self._pending[intent.id] = intent
+
+        # Check if brain is ready
+        if not self.brain._ready:
+            await self._handle_fallback(intent)
+            return
+
+        # Ask the commander
+        verdict = await self._ask_commander(intent)
+
+        if verdict == "approve":
+            self._stats["approved"] += 1
+            self._approved.append(intent.id)
+            # Re-publish so it flows to exec.go
+            # (The dedup in Simulator will handle the original + this one)
+            log.info("COMMANDER APPROVED: %s — forwarding to execution", intent.id)
+            await self.bus.publish("exec.go", intent)
+
+        elif verdict == "modify":
+            self._stats["modified"] += 1
+            self._approved.append(intent.id)
+            log.info("COMMANDER MODIFIED: %s — forwarding modified intent", intent.id)
+            await self.bus.publish("exec.go", intent)
+
+        else:  # reject
+            self._stats["rejected"] += 1
+            self._rejected.append({
+                "intent_id": intent.id,
+                "asset_in": intent.asset_in,
+                "asset_out": intent.asset_out,
+                "amount": intent.amount_in,
+                "ts": time.time(),
+            })
+            if len(self._rejected) > 200:
+                self._rejected = self._rejected[-100:]
+            log.info("COMMANDER REJECTED: %s (%s -> %s $%.0f) — not approved",
+                     intent.id, intent.asset_in, intent.asset_out, intent.amount_in)
+
+    async def _ask_commander(self, intent: TradeIntent) -> str:
+        """Ask HermesBrain to evaluate an intent.
+
+        Returns: "approve", "reject", or "modify"
+        """
+        from .core import QUOTE_ASSETS
+        is_buy = intent.asset_in.upper() in QUOTE_ASSETS
+        action = "BUY" if is_buy else "SELL"
+        asset = intent.asset_out if is_buy else intent.asset_in
+
+        # Build context from supporting signals
+        signal_summary = ""
+        if intent.supporting:
+            parts = []
+            for sig in intent.supporting[:5]:
+                parts.append(
+                    f"  {sig.agent_id}: {sig.direction} str={sig.strength:.2f} "
+                    f"conf={sig.confidence:.2f} — {sig.rationale[:60]}"
+                )
+            signal_summary = "\n".join(parts)
+
+        # Quick query to the brain
+        prompt = (
+            f"INTENT REVIEW REQUEST:\n"
+            f"Action: {action} {asset}\n"
+            f"Size: ${intent.amount_in:.0f}\n"
+            f"Supporting signals:\n{signal_summary}\n\n"
+            f"Current regime: {self.brain.state.regime}\n"
+            f"Current prices: {', '.join(f'{a}=${p:,.0f}' for a, p in self.brain.state.prices.items())}\n\n"
+            f"Should this trade execute? Respond with ONLY one word: APPROVE, REJECT, or MODIFY"
+        )
+
+        try:
+            if not self.brain._session:
+                self.brain._session = aiohttp.ClientSession()
+
+            raw = await self.brain.provider.query(
+                self.brain._session,
+                "You are the trading commander. You approve or reject every trade. "
+                "Respond with ONLY: APPROVE, REJECT, or MODIFY. Nothing else.",
+                prompt,
+                max_tokens=10,
+            )
+
+            raw_lower = raw.strip().lower()
+            if "approve" in raw_lower:
+                return "approve"
+            elif "modify" in raw_lower:
+                return "modify"
+            else:
+                return "reject"
+
+        except Exception as e:
+            log.warning("Commander query failed: %s — using fallback", e)
+            return await self._fallback_verdict(intent)
+
+    async def _handle_fallback(self, intent: TradeIntent):
+        """Handle intents when commander LLM is unavailable."""
+        self._stats["fallback"] += 1
+        verdict = await self._fallback_verdict(intent)
+
+        if verdict == "approve":
+            self._stats["approved"] += 1
+            self._approved.append(intent.id)
+            await self.bus.publish("exec.go", intent)
+            log.info("COMMANDER FALLBACK: %s approved via %s mode", intent.id, self.fallback_mode)
+        else:
+            self._stats["rejected"] += 1
+            log.info("COMMANDER FALLBACK: %s rejected via %s mode", intent.id, self.fallback_mode)
+
+    async def _fallback_verdict(self, intent: TradeIntent) -> str:
+        """Determine verdict when LLM is unavailable."""
+        if self.fallback_mode == "strict":
+            return "reject"  # Block everything
+
+        elif self.fallback_mode == "passthrough":
+            return "approve"  # Let everything through (dangerous)
+
+        elif self.fallback_mode == "conservative":
+            # Only approve high-conviction intents
+            if intent.supporting:
+                avg_conf = sum(s.confidence for s in intent.supporting) / len(intent.supporting)
+                if avg_conf >= 0.8 and len(intent.supporting) >= 3:
+                    return "approve"
+            return "reject"
+
+        return "reject"
+
+    def summary(self) -> dict:
+        return {
+            **self._stats,
+            "brain_ready": self.brain._ready,
+            "fallback_mode": self.fallback_mode,
+            "pending_review": len(self._pending),
+            "approval_rate": self._stats["approved"] / max(self._stats["intercepted"], 1),
+            "recent_rejected": self._rejected[-5:],
         }

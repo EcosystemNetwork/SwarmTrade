@@ -52,6 +52,27 @@ class Strategist:
         "ml": 0.12,
         "hedge": 0.05,
         "rebalance": 0.04,
+        # ETHGlobal showcase intelligence agents (Phases 1-40)
+        "fusion": 0.10,             # cross-source convergence scoring
+        "debate": 0.08,             # adversarial bull/bear debate winner
+        "alpha_swarm": 0.10,        # multi-agent alpha discovery
+        "narrative": 0.06,          # event correlation market stories
+        "whale_mirror": 0.05,       # smart money copy signals
+        "marketplace": 0.04,        # competitive auction winners
+        "prediction": 0.04,         # prediction market edge
+        "options_strategy": 0.05,   # options engine recommendations
+        "social_alpha": 0.05,       # trending token virality
+        "sniper": 0.03,             # early token launch entries
+        "sentiment_deriv": 0.06,    # sentiment RSI/divergence
+        "mev": 0.03,                # MEV opportunity signals
+        "regime_v2": 0.06,          # cross-asset regime transitions
+        "grid": 0.03,               # grid trading fills
+        "insurance": 0.02,          # portfolio hedge signals
+        "consensus": 0.08,          # swarm consensus outcomes
+        "rwa": 0.03,                # real-world asset opportunities
+        "kalman_momentum": 0.07,    # Kalman-filtered momentum
+        "kalman_rsi": 0.06,         # Kalman-filtered RSI
+        "kalman_whale": 0.05,       # Kalman-filtered whale signals
     }
 
     # Regime-specific weight overrides (applied as multipliers)
@@ -66,6 +87,13 @@ class Strategist:
             "open_interest": 1.5, "fear_greed": 0.5, "social": 0.5,
             "liquidation_levels": 0.5, "onchain": 0.8, "arbitrage": 1.0,
             "ml": 1.8, "hedge": 0.5, "rebalance": 0.3,
+            "fusion": 1.5, "debate": 1.2, "alpha_swarm": 1.5,
+            "narrative": 1.0, "whale_mirror": 1.2, "marketplace": 1.0,
+            "prediction": 0.5, "options_strategy": 0.5, "social_alpha": 0.8,
+            "sniper": 0.5, "sentiment_deriv": 0.5, "mev": 1.0,
+            "regime_v2": 1.5, "grid": 0.3, "insurance": 0.3,
+            "consensus": 1.5, "rwa": 0.3,
+            "kalman_momentum": 1.8, "kalman_rsi": 0.5, "kalman_whale": 1.0,
         },
         "mean_reverting": {
             "momentum": 0.3, "mean_rev": 2.5, "prism": 1.0,
@@ -77,6 +105,13 @@ class Strategist:
             "open_interest": 1.2, "fear_greed": 2.0, "social": 1.5,
             "liquidation_levels": 2.0, "onchain": 1.2, "arbitrage": 1.5,
             "ml": 1.5, "hedge": 1.5, "rebalance": 2.0,
+            "fusion": 1.5, "debate": 1.5, "alpha_swarm": 1.0,
+            "narrative": 1.2, "whale_mirror": 1.5, "marketplace": 1.2,
+            "prediction": 1.0, "options_strategy": 1.0, "social_alpha": 1.0,
+            "sniper": 0.3, "sentiment_deriv": 2.0, "mev": 0.5,
+            "regime_v2": 1.0, "grid": 1.5, "insurance": 1.0,
+            "consensus": 1.2, "rwa": 1.0,
+            "kalman_momentum": 0.3, "kalman_rsi": 2.0, "kalman_whale": 1.5,
         },
         "volatile": {
             "momentum": 0.5, "mean_rev": 0.5, "prism": 1.5,
@@ -88,6 +123,13 @@ class Strategist:
             "open_interest": 2.0, "fear_greed": 1.5, "social": 1.0,
             "liquidation_levels": 2.5, "onchain": 0.8, "arbitrage": 2.0,
             "ml": 1.2, "hedge": 2.0, "rebalance": 1.5,
+            "fusion": 1.2, "debate": 2.0, "alpha_swarm": 0.8,
+            "narrative": 1.5, "whale_mirror": 2.0, "marketplace": 0.8,
+            "prediction": 0.5, "options_strategy": 2.0, "social_alpha": 0.5,
+            "sniper": 0.2, "sentiment_deriv": 1.5, "mev": 2.0,
+            "regime_v2": 2.0, "grid": 0.5, "insurance": 2.5,
+            "consensus": 2.0, "rwa": 1.5,
+            "kalman_momentum": 0.5, "kalman_rsi": 1.2, "kalman_whale": 2.0,
         },
     }
 
@@ -121,7 +163,28 @@ class Strategist:
                        "signal.news", "signal.whale",
                        "signal.confluence", "signal.position",
                        "signal.liquidation", "signal.atr_stop",
-                       "signal.ml", "signal.hedge", "signal.rebalance"):
+                       "signal.ml", "signal.hedge", "signal.rebalance",
+                       # ETHGlobal showcase agents (Phases 1-40)
+                       "signal.fusion", "signal.debate", "signal.alpha_swarm",
+                       "signal.narrative", "signal.whale_mirror",
+                       "signal.marketplace", "signal.prediction",
+                       "signal.options_strategy", "signal.social_alpha",
+                       "signal.sniper", "signal.sentiment_deriv",
+                       "signal.mev", "signal.regime_v2", "signal.grid",
+                       "signal.insurance", "signal.consensus", "signal.rwa",
+                       # Kalman-filtered signals
+                       "signal.filtered.momentum", "signal.filtered.rsi",
+                       "signal.filtered.whale",
+                       # Signals that publish under variant names
+                       "signal.mean_reversion", "signal.volatility",
+                       "signal.polymarket", "signal.smart_money",
+                       "signal.exchange_flow", "signal.stablecoin",
+                       "signal.macro", "signal.options",
+                       "signal.open_interest", "signal.social",
+                       "signal.liquidation_cascade",
+                       "signal.correlation", "signal.multitf",
+                       "signal.arbitrage",
+                       ):
             bus.subscribe(topic, self._on_signal)
         bus.subscribe("signal.vol", self._on_vol)
         bus.subscribe("signal.spread", self._on_spread)
