@@ -75,6 +75,9 @@ from . import (
     Reconciler, DataQualityMonitor, compliance_check,
     # Walk-forward + TCA
     TransactionCostAnalyzer,
+    # Extended data feeds
+    ExchangeFlowAgent, StablecoinAgent, MacroCalendarAgent,
+    DeribitOptionsAgent, TokenUnlockAgent, GitHubDevAgent, RSSNewsAgent,
 )
 from .automation import AgentSupervisor, build_scheduler
 from .core import PortfolioTracker
@@ -87,6 +90,7 @@ from .database import Database
 from .demo import DemoScout, MultiAssetDemoScout
 from .memory import AgentMemory
 from .erc8004 import ERC8004Pipeline
+from .uniswap import UniswapExecutor, uniswap_venue_config
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -562,6 +566,28 @@ async def run(args: argparse.Namespace):
         else:
             log.warning("--erc8004 enabled but PRIVATE_KEY not set; skipping on-chain integration")
 
+    # ── Uniswap DEX Execution (Base) ──────────────────────────────
+    uniswap = None
+    uniswap_api_key = os.getenv("UNISWAP_API_KEY", "")
+    if private_key and uniswap_api_key:
+        uniswap = UniswapExecutor(
+            bus, private_key=private_key,
+            api_key=uniswap_api_key,
+            chain_id=int(os.getenv("UNISWAP_CHAIN_ID", "8453")),
+        )
+        # Add Uniswap as a real venue in the SOR
+        from .sor import VenueConfig as _VC
+        sor.venues.append(_VC(
+            name="uniswap_base",
+            base_url="https://trade-api.gateway.uniswap.org/v1",
+            fee_rate=0.003,
+            weight=0.95,
+        ))
+        log.info("Uniswap DEX executor ONLINE: chain=%d address=%s",
+                 uniswap._chain_id, uniswap._address)
+    elif uniswap_api_key:
+        log.info("Uniswap API key set but no PRIVATE_KEY — DEX execution disabled")
+
     # ── Web Dashboard ──────────────────────────────────────────
     if args.web:
         # Capital allocator for agent leaderboard
@@ -573,7 +599,7 @@ async def run(args: argparse.Namespace):
             kill_switch=kill_switch, port=args.web_port,
             wallet=wallet, gateway=gateway,
             strategist=strategist, capital_allocator=cap_alloc,
-            memory=memory, erc8004=erc8004,
+            memory=memory, erc8004=erc8004, uniswap=uniswap,
         )
         await web_dash.start()
         log.info("Web dashboard: http://localhost:%d", args.web_port)
@@ -648,6 +674,8 @@ async def run(args: argparse.Namespace):
     log.info("WALLET %s", _json.dumps(wallet.summary(), indent=2))
     if erc8004:
         log.info("ERC-8004 %s", _json.dumps(erc8004.status(), indent=2))
+    if uniswap:
+        log.info("UNISWAP %s", _json.dumps(uniswap.status(), indent=2))
 
     # Print paper account summary
     if args.mode == "paper":

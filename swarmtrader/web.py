@@ -99,7 +99,7 @@ class WebDashboard:
                  kill_switch=None, host: str = "0.0.0.0", port: int = 8080,
                  wallet=None, gateway: AgentGateway | None = None,
                  strategist=None, capital_allocator=None,
-                 memory=None, erc8004=None):
+                 memory=None, erc8004=None, uniswap=None):
         self.bus = bus
         self.state = state
         self.db = db  # Database instance
@@ -110,6 +110,7 @@ class WebDashboard:
         self.gateway = gateway  # AgentGateway instance (optional)
         self.memory = memory  # AgentMemory instance (optional)
         self.erc8004 = erc8004  # ERC8004Pipeline instance (optional)
+        self.uniswap = uniswap  # UniswapExecutor instance (optional)
         self.strategist = strategist  # Strategist instance (for NLP config)
         self.capital_allocator = capital_allocator  # CapitalAllocator (leaderboard)
         self._privacy_mgr = None  # lazy init
@@ -488,6 +489,7 @@ class WebDashboard:
                 "thoughts": self.memory.get_thoughts(30) if self.memory else [],
                 "gateway": self._gateway_snapshot(),
                 "erc8004": self.erc8004.status() if self.erc8004 else {"enabled": False},
+                "uniswap": self.uniswap.status() if self.uniswap else {"enabled": False},
             },
         }
         await ws.send_str(json.dumps(snapshot))
@@ -1065,6 +1067,12 @@ class WebDashboard:
         status = self.erc8004.status()
         return web.json_response({"enabled": True, **status})
 
+    async def _handle_uniswap_status(self, request: web.Request) -> web.Response:
+        """GET /api/uniswap — Uniswap DEX execution status."""
+        if not self.uniswap:
+            return web.json_response({"enabled": False})
+        return web.json_response(self.uniswap.status())
+
     # ── Gateway Management (frontend-facing) ───────────────────────
 
     async def _handle_gateway_status(self, request: web.Request) -> web.Response:
@@ -1187,6 +1195,7 @@ class WebDashboard:
         app.router.add_post("/api/pause", self._handle_pause)
         # ── ERC-8004 on-chain status ──────────────────────────────
         app.router.add_get("/api/erc8004", self._handle_erc8004_status)
+        app.router.add_get("/api/uniswap", self._handle_uniswap_status)
         # ── Gateway management (frontend-facing) ───────────────────
         app.router.add_get("/api/gateway/status", self._handle_gateway_status)
         app.router.add_post("/api/gateway/ui/connect", self._handle_gateway_connect_agent)

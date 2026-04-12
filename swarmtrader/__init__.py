@@ -62,6 +62,8 @@ from .gateway import AgentGateway
 from .memory import AgentMemory
 # ERC-8004 on-chain identity + reputation
 from .erc8004 import ERC8004Agent, TradeIntentSigner, ERC8004Pipeline
+# Uniswap DEX execution on Base
+from .uniswap import UniswapExecutor, UniswapClient, uniswap_venue_config
 # Phase 4: config, reconciliation, structured logging
 from .config import TradingConfig
 from .reconciliation import BalanceReconciler
@@ -70,6 +72,11 @@ from .logging_config import setup_logging
 from .checkpoint import Checkpoint
 from .rate_limit import APIRateLimiter, get_api_limiter
 from .demo import DemoScout, MultiAssetDemoScout
+# Extended data feeds
+from .feeds import (
+    ExchangeFlowAgent, StablecoinAgent, MacroCalendarAgent,
+    DeribitOptionsAgent, TokenUnlockAgent, GitHubDevAgent, RSSNewsAgent,
+)
 
 __all__ = [
     "Bus", "MarketSnapshot", "Signal", "TradeIntent", "RiskVerdict", "ExecutionReport",
@@ -126,4 +133,9 @@ __all__ = [
     "DemoScout", "MultiAssetDemoScout",
     # ERC-8004 on-chain identity + reputation
     "ERC8004Agent", "TradeIntentSigner", "ERC8004Pipeline",
+    # Uniswap DEX execution
+    "UniswapExecutor", "UniswapClient", "uniswap_venue_config",
+    # Extended data feeds
+    "ExchangeFlowAgent", "StablecoinAgent", "MacroCalendarAgent",
+    "DeribitOptionsAgent", "TokenUnlockAgent", "GitHubDevAgent", "RSSNewsAgent",
 ]
