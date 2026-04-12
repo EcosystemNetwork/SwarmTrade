@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "swarmtrader"
+version = "0.1.0"
+description = "Multi-agent autonomous trading platform using Kraken CLI"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.setuptools.packages.find]
+include = ["swarmtrader*"]
