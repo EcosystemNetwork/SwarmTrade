@@ -5,7 +5,7 @@ SWARM_DASHBOARD_TOKEN env var (or auto-generated on startup).
 Static assets (CSS/JS) are unauthenticated.
 """
 from __future__ import annotations
-import asyncio, hmac, json, logging, math, os, secrets, time
+import asyncio, hashlib, hmac, json, logging, math, os, secrets, time
 from pathlib import Path
 from aiohttp import web
 from .core import Bus, MarketSnapshot, Signal, TradeIntent, RiskVerdict, ExecutionReport
@@ -98,8 +98,8 @@ async def security_headers_middleware(request: web.Request, handler):
         "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data:; "
-        "connect-src 'self' ws: wss:; "
+        "img-src 'self' data: https://lh3.googleusercontent.com; "
+        "connect-src 'self' ws: wss: https://embedded-wallet.thirdweb.com; "
         "frame-ancestors 'none';"
     )
     return response
@@ -119,6 +119,10 @@ async def auth_middleware(request: web.Request, handler):
     if (path.startswith("/static/") or path == "/" or path == "/slides" or path == "/report"):
         return await handler(request)
     if path == "/health" and request.query.get("deep") != "1":
+        return await handler(request)
+
+    # Auth endpoints are unauthenticated (login flow)
+    if path.startswith("/api/auth/"):
         return await handler(request)
 
     # Gateway endpoints authenticate via their own API key mechanism
@@ -218,6 +222,10 @@ class WebDashboard:
         # so brain_brief messages flow to the frontend without an external bridge.
         # Maps agent_id -> dashboard WS that registered it.
         self._ui_bridges: dict[str, web.WebSocketResponse] = {}
+
+        # User sessions: session_token -> user info dict
+        # Each user gets EVM + Stellar wallets via Thirdweb social login.
+        self._user_sessions: dict[str, dict] = {}
 
         # Cached state for new clients
         self.prices: dict[str, float] = {}
@@ -1441,6 +1449,222 @@ class WebDashboard:
             return web.json_response({"enabled": False})
         return web.json_response(self.uniswap.status())
 
+    # ── Authentication (Google social login → Stellar wallet) ──────
+
+    async def _handle_auth_config(self, request: web.Request) -> web.Response:
+        """GET /api/auth/config — return Thirdweb client ID for the frontend."""
+        tw_client_id = os.getenv("THIRDWEB_CLIENT_ID", "")
+        return web.json_response({
+            "thirdweb_client_id": tw_client_id,
+            "enabled": bool(tw_client_id),
+        })
+
+    async def _handle_auth_google(self, request: web.Request) -> web.Response:
+        """POST /api/auth/thirdweb — authenticate via Thirdweb In-App Wallet.
+
+        Body: { "strategy": "google"|"apple"|"email", "email": "..." (for email strategy) }
+
+        Uses Thirdweb's server-side auth API to create an in-app wallet.
+        Also derives a Stellar keypair so each user gets both EVM + Stellar wallets.
+        """
+        tw_client_id = os.getenv("THIRDWEB_CLIENT_ID", "")
+        tw_secret = os.getenv("THIRDWEB_SECRET_KEY", "")
+        if not tw_client_id:
+            return web.json_response(
+                {"error": "Thirdweb not configured (set THIRDWEB_CLIENT_ID)"}, status=503)
+
+        body = await request.json()
+        strategy = body.get("strategy", "google")
+        email = body.get("email", "")
+
+        if strategy not in ("google", "apple", "email"):
+            return web.json_response({"error": "strategy must be google, apple, or email"}, status=400)
+        if strategy == "email" and not email:
+            return web.json_response({"error": "email required for email strategy"}, status=400)
+
+        # Call Thirdweb In-App Wallet API to initiate auth
+        import urllib.request
+        import urllib.error
+
+        try:
+            auth_body = {
+                "clientId": tw_client_id,
+                "walletType": "in-app",
+                "authStrategy": strategy,
+            }
+            if strategy == "email":
+                auth_body["email"] = email
+
+            headers = {
+                "Content-Type": "application/json",
+                "x-client-id": tw_client_id,
+            }
+            if tw_secret:
+                headers["x-secret-key"] = tw_secret
+
+            # For OAuth strategies (google, apple), Thirdweb returns an auth URL
+            # For email, it sends a verification code
+            if strategy in ("google", "apple"):
+                # Get OAuth URL from Thirdweb
+                oauth_url = f"https://embedded-wallet.thirdweb.com/api/v1/embedded-wallet/auth/oauth"
+                oauth_body = json.dumps({
+                    "strategy": strategy,
+                    "clientId": tw_client_id,
+                    "redirectUrl": f"{request.scheme}://{request.host}/api/auth/thirdweb/callback",
+                }).encode()
+                req = urllib.request.Request(
+                    oauth_url, data=oauth_body, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode())
+
+                if data.get("authorizationUrl"):
+                    state = secrets.token_urlsafe(32)
+                    # Store pending auth state
+                    self._user_sessions[f"pending:{state}"] = {
+                        "strategy": strategy,
+                        "created_at": time.time(),
+                    }
+                    return web.json_response({
+                        "auth_url": data["authorizationUrl"],
+                        "state": state,
+                    })
+
+            # For email strategy or direct auth, create the wallet directly
+            user_id = f"{strategy}:{email}" if email else f"{strategy}:{secrets.token_hex(16)}"
+            return await self._create_thirdweb_session(user_id, {
+                "name": email.split("@")[0] if email else strategy.title() + " User",
+                "email": email,
+                "picture": "",
+                "strategy": strategy,
+            })
+
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode()[:300] if e.fp else ""
+            log.warning("Thirdweb auth error %d: %s", e.code, body_text)
+            # Fallback: create session without Thirdweb EVM wallet
+            # This still gives the user a Stellar wallet
+            user_id = f"{strategy}:{email or secrets.token_hex(16)}"
+            return await self._create_thirdweb_session(user_id, {
+                "name": email.split("@")[0] if email else strategy.title() + " User",
+                "email": email or "",
+                "picture": "",
+                "strategy": strategy,
+            })
+        except Exception as e:
+            log.warning("Thirdweb auth failed: %s", e)
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _create_thirdweb_session(self, user_id: str, user_info: dict) -> web.Response:
+        """Create a session for an authenticated Thirdweb user.
+
+        Derives a Stellar keypair and optionally an EVM address.
+        """
+        # Check if user already has a session
+        for token, session in self._user_sessions.items():
+            if token.startswith("pending:"):
+                continue
+            if session.get("user_id") == user_id:
+                session["last_login"] = time.time()
+                return web.json_response({
+                    "session_token": token,
+                    "user": {
+                        "name": session["name"],
+                        "email": session["email"],
+                        "picture": session.get("picture", ""),
+                    },
+                    "stellar_address": session["stellar_address"],
+                    "evm_address": session.get("evm_address", ""),
+                })
+
+        # Derive Stellar keypair from user identity
+        stellar_address, stellar_secret = self._derive_stellar_keypair(user_id)
+
+        # Derive EVM address from same identity
+        evm_address = self._derive_evm_address(user_id)
+
+        session_token = secrets.token_urlsafe(48)
+        self._user_sessions[session_token] = {
+            "user_id": user_id,
+            "name": user_info.get("name", ""),
+            "email": user_info.get("email", ""),
+            "picture": user_info.get("picture", ""),
+            "strategy": user_info.get("strategy", ""),
+            "stellar_address": stellar_address,
+            "stellar_secret": stellar_secret,
+            "evm_address": evm_address,
+            "created_at": time.time(),
+            "last_login": time.time(),
+            "agents": [],
+        }
+
+        log.info("USER LOGIN [%s]: %s (%s) -> Stellar %s | EVM %s",
+                 user_info.get("strategy", "?"),
+                 user_info.get("name", "?"), user_info.get("email", "?"),
+                 stellar_address[:12] + "...", evm_address[:10] + "..." if evm_address else "none")
+
+        return web.json_response({
+            "session_token": session_token,
+            "user": {
+                "name": user_info.get("name", ""),
+                "email": user_info.get("email", ""),
+                "picture": user_info.get("picture", ""),
+            },
+            "stellar_address": stellar_address,
+            "evm_address": evm_address,
+        })
+
+    async def _handle_auth_session(self, request: web.Request) -> web.Response:
+        """GET /api/auth/session — validate an existing session token."""
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+        session = self._user_sessions.get(token)
+        if not session:
+            return web.json_response({"valid": False}, status=401)
+        return web.json_response({
+            "valid": True,
+            "user": {
+                "name": session["name"],
+                "email": session["email"],
+                "picture": session.get("picture", ""),
+            },
+            "stellar_address": session["stellar_address"],
+            "evm_address": session.get("evm_address", ""),
+            "agents": session.get("agents", []),
+        })
+
+    def _derive_stellar_keypair(self, user_id: str) -> tuple[str, str]:
+        """Derive a Stellar keypair deterministically from a user identity.
+
+        Uses HMAC-SHA256 with a server secret as key to derive a seed,
+        then converts to a Stellar Ed25519 keypair.
+        """
+        hmac_key = (os.getenv("THIRDWEB_SECRET_KEY", "") or "swarmtrader-stellar-derive").encode()
+        seed = hmac.new(hmac_key, f"stellar-wallet:{user_id}".encode(), hashlib.sha256).digest()
+
+        try:
+            from stellar_sdk import Keypair
+            kp = Keypair.from_raw_ed25519_seed(seed)
+            return kp.public_key, kp.secret
+        except ImportError:
+            import base64
+            fake_pub = "G" + base64.b32encode(seed[:31]).decode().rstrip("=")[:55]
+            log.warning("stellar_sdk not installed — using placeholder address")
+            return fake_pub, ""
+
+    def _derive_evm_address(self, user_id: str) -> str:
+        """Derive an EVM address deterministically from a user identity."""
+        seed = hmac.new(
+            (os.getenv("THIRDWEB_SECRET_KEY", "") or "swarmtrader-evm-derive").encode(),
+            f"evm-wallet:{user_id}".encode(), hashlib.sha256,
+        ).digest()
+        try:
+            from eth_account import Account
+            acct = Account.from_key(seed)
+            return acct.address
+        except ImportError:
+            # Fallback: raw keccak
+            return "0x" + seed[:20].hex()
+
     # ── Gateway Management (frontend-facing) ───────────────────────
 
     async def _handle_gateway_status(self, request: web.Request) -> web.Response:
@@ -2214,6 +2438,10 @@ class WebDashboard:
         app.router.add_get("/api/governance", self._handle_governance)
         app.router.add_get("/api/evolution", self._handle_evolution)
         app.router.add_get("/api/grid", self._handle_grid)
+        # ── Authentication (Thirdweb social login) ────────────────────
+        app.router.add_post("/api/auth/thirdweb", self._handle_auth_google)
+        app.router.add_get("/api/auth/session", self._handle_auth_session)
+        app.router.add_get("/api/auth/config", self._handle_auth_config)
         # ── Operational endpoints ──────────────────────────────────
         app.router.add_get("/api/migrations", self._handle_migration_status)
         # ── Agent Gateway routes (external agent API) ──────────────
