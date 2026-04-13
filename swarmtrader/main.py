@@ -1056,6 +1056,7 @@ async def run(args: argparse.Namespace):
             base_size=args.base_size, max_size=args.max_size,
             capital=args.capital,
         )
+        hermes.kill_switch = kill_switch
         supervisor.register("hermes_brain", hermes.run, stale_after=60.0, stoppable=hermes)
 
         # ── COMMANDER MODE: HermesBrain is the sole trading authority ──
@@ -1077,10 +1078,10 @@ async def run(args: argparse.Namespace):
 
         # Strategist still runs to produce signal aggregation and intents,
         # but CommanderGate intercepts them before execution
-        strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
+        strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio, kill_switch=kill_switch)
         log.info("Strategist produces intents -> CommanderGate reviews -> only approved trades execute")
     else:
-        strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio)
+        strategist = Strategist(bus, base_size=args.base_size, portfolio=portfolio, kill_switch=kill_switch)
         log.info("Strategist in autonomous mode (no AI commander — rule-based decisions)")
 
     # ── Position Management ───────────────────────────────────────

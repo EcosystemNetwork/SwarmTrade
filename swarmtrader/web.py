@@ -114,9 +114,11 @@ async def auth_middleware(request: web.Request, handler):
     """
     path = request.path
 
-    # Allow static assets, health check, and HTML pages without auth
-    if (path.startswith("/static/") or path == "/health"
-            or path == "/" or path == "/slides" or path == "/report"):
+    # Allow static assets and HTML pages without auth.
+    # Shallow health check (/health) is unauthenticated; deep check (?deep=1) requires auth.
+    if (path.startswith("/static/") or path == "/" or path == "/slides" or path == "/report"):
+        return await handler(request)
+    if path == "/health" and request.query.get("deep") != "1":
         return await handler(request)
 
     # Gateway endpoints authenticate via their own API key mechanism

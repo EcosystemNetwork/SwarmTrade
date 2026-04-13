@@ -822,7 +822,9 @@ class AgentGateway:
         ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=1024 * 1024)
         await ws.prepare(request)
 
-        api_key = request.query.get("api_key", "")
+        # Auth via Sec-WebSocket-Protocol or X-API-Key header (no query params — leak risk)
+        api_key = (request.headers.get("Sec-WebSocket-Protocol", "")
+                   or request.headers.get("X-API-Key", ""))
         agent = self._verify_key(api_key)
         if not agent:
             await ws.send_json({"type": "error", "message": "invalid api_key"})
@@ -963,7 +965,11 @@ class AgentGateway:
 
         Body: {"agent_id": "ext_my_agent", "message": "What do you think about ETH?"}
         The agent receives {"type": "chat", "message": "..."} on its WS.
+        Requires master_key or valid agent API key.
         """
+        api_key = self._extract_key(request)
+        if not api_key or not self._verify_key(api_key):
+            return web.json_response({"error": "authentication required"}, status=401)
         body = await request.json()
         agent_id = body.get("agent_id", "")
         message = body.get("message", "")

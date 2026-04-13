@@ -139,8 +139,10 @@ class Strategist:
 
     def __init__(self, bus: Bus, base_size: float = 500.0, ttl_s: float = 8.0,
                  cooldown_s: float = 2.0,
-                 portfolio: "PortfolioTracker | None" = None):
+                 portfolio: "PortfolioTracker | None" = None,
+                 kill_switch=None):
         self.bus = bus
+        self.kill_switch = kill_switch
         self.base_size = base_size
         self.ttl_s = ttl_s
         self.cooldown_s = cooldown_s
@@ -240,6 +242,10 @@ class Strategist:
         await self._maybe_emit()
 
     async def _maybe_emit(self):
+        # Kill switch — do not emit any intents when halted
+        if self.kill_switch and self.kill_switch.active:
+            return
+
         now = time.time()
 
         # Expire stale pending orders (exec.report never arrived)

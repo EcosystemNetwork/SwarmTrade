@@ -141,6 +141,12 @@ class WalletManager:
             # Order didn't fill — cash was reserved but not spent
             return
 
+        # If reserve already expired (TTL race), the fill still happened —
+        # we must apply the cash impact even without the reservation.
+        if reserve is None and rep.fill_price and rep.quantity > 0:
+            log.warning("WALLET: fill arrived after reserve expired for %s — applying retroactively",
+                        rep.intent_id)
+
         # Idempotency: skip duplicate fill processing
         dedup_key = f"wallet:{rep.intent_id}:{rep.status}"
         if self.bus.is_duplicate(dedup_key):

@@ -485,6 +485,7 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
         self.gateway = gateway  # AgentGateway — push briefs to connected agents
         self.capital = capital
         self.cooldown_s = cooldown_s
+        self.kill_switch = None  # Set externally after construction
 
         self.provider = provider or _detect_provider()
         self.interval = interval or float(os.getenv("HERMES_INTERVAL", "15"))
@@ -924,6 +925,10 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
                     log.info("BRAIN: HOLD (no trades)")
                 else:
                     for dec in decisions:
+                        # Kill switch — do not emit intents when halted
+                        if self.kill_switch and self.kill_switch.active:
+                            log.warning("BRAIN: kill switch active, dropping decision")
+                            break
                         intent = self._decision_to_intent(dec)
                         if intent:
                             await self.bus.publish("intent.new", intent)
