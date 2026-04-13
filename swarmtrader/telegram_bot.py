@@ -341,8 +341,12 @@ class TelegramTradingBot:
                     if not chat_id or not text:
                         continue
 
-                    # Auth check
-                    if self.authorized_chats and chat_id not in self.authorized_chats:
+                    # Auth check — ALWAYS enforce. If no chats configured, reject all.
+                    if not self.authorized_chats:
+                        log.warning("Telegram: rejecting command from %s — no authorized chats configured", chat_id)
+                        continue
+                    if chat_id not in self.authorized_chats:
+                        log.warning("Telegram: rejecting command from unauthorized chat %s", chat_id)
                         continue
 
                     response = await self.process_command(chat_id, text)

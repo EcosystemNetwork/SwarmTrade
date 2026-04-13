@@ -1165,7 +1165,7 @@ async def run(args: argparse.Namespace):
         RiskAgent(bus, "sor_venues", sor_venue_check(sor, min_venues=2)),
         RiskAgent(bus, "agent_policy", policy_check(policy_engine)),
     ]
-    Coordinator(bus, n_risk_agents=len(risks))
+    Coordinator(bus, n_risk_agents=len(risks), sandbox=sandbox)
 
     # ── Alert Routing (PagerDuty / Opsgenie / Slack / Telegram) ──
     alert_router = AlertRouter()
@@ -1231,9 +1231,10 @@ async def run(args: argparse.Namespace):
         supervisor.register("dashboard", dash.run, stale_after=5.0, stoppable=dash)
 
     # ── Agent Gateway ──────────────────────────────────────────
-    # Auto-enable gateway when --web is used so it's accessible from the UI
+    # Gateway requires explicit --gateway flag. It is NOT auto-enabled by --web
+    # to avoid expanding the attack surface when only the dashboard is needed.
     gateway = None
-    if args.gateway or args.web or os.getenv("SWARM_GATEWAY"):
+    if args.gateway or os.getenv("SWARM_GATEWAY"):
         master_key = args.gateway_key or os.getenv("SWARM_GATEWAY_KEY")
         gateway = AgentGateway(
             bus, strategist=strategist, portfolio=portfolio,

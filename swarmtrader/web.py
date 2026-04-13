@@ -112,8 +112,7 @@ async def auth_middleware(request: web.Request, handler):
 
     # Allow static assets, health check, and HTML pages without auth
     if (path.startswith("/static/") or path == "/health"
-            or path == "/" or path == "/slides" or path == "/report"
-            or (path.startswith("/api/social/") and request.method == "GET")):
+            or path == "/" or path == "/slides" or path == "/report"):
         return await handler(request)
 
     # Gateway endpoints authenticate via their own API key mechanism
@@ -873,7 +872,7 @@ class WebDashboard:
         if not self.wallet:
             return web.json_response({"error": "wallet not configured"}, status=404)
         body = await request.json()
-        amount = _safe_float(body.get("amount", 0), min_val=0.01)
+        amount = _safe_float(body.get("amount", 0), min_val=0.01, max_val=1_000_000)
         if amount is None:
             return web.json_response({"error": "amount must be a positive finite number"}, status=400)
         result = self.wallet.withdraw(amount, body.get("note", ""))

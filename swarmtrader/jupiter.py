@@ -284,7 +284,7 @@ class JupiterExecutor:
         # Get quote
         quote = await self.client.get_quote(input_mint, output_mint, amount, slippage)
         if not quote:
-            await self.bus.publish("execution.report", {
+            await self.bus.publish("exec.report", {
                 "executor": "jupiter",
                 "status": "error",
                 "msg": "no quote available",
@@ -297,7 +297,7 @@ class JupiterExecutor:
         if quote.price_impact_pct > 1.0:
             log.warning("Jupiter price impact %.2f%% for %s→%s, skipping",
                         quote.price_impact_pct, input_token, output_token)
-            await self.bus.publish("execution.report", {
+            await self.bus.publish("exec.report", {
                 "executor": "jupiter",
                 "status": "rejected",
                 "msg": f"price impact too high: {quote.price_impact_pct:.2f}%",
@@ -315,7 +315,7 @@ class JupiterExecutor:
                 price=quote.output_amount / quote.input_amount if quote.input_amount else 0,
                 tx_signature=result.get("txid", ""),
             )
-            await self.bus.publish("execution.report", {
+            await self.bus.publish("exec.report", {
                 "executor": "jupiter",
                 "status": "filled",
                 "input": input_token,

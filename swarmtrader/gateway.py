@@ -169,6 +169,12 @@ AGENT_TYPE_REGISTRY: dict[str, dict] = {
         "description": "Aggregates signals from multiple sub-agents",
         "tags": ["aggregator", "ensemble", "meta"],
     },
+    "meta-brain": {
+        "label": "Trading Brain (LLM)",
+        "category": "meta-orchestration",
+        "description": "LLM-based trading brain that synthesizes signals and makes autonomous trade decisions",
+        "tags": ["brain", "llm", "decision-making", "orchestration"],
+    },
 }
 
 AGENT_CATEGORIES = {
@@ -544,10 +550,27 @@ class AgentGateway:
         import re
         safe_name = re.sub(r'[^a-z0-9_]', '_', name.lower())[:48]
         agent_id = f"ext_{safe_name}"
+
+        # Hard limits on external agent registration
+        MAX_EXTERNAL_AGENTS = 10
+        MAX_AGENT_WEIGHT = 0.20   # No single external agent can dominate signals
+        MAX_TOTAL_EXT_WEIGHT = 0.50  # All external agents combined capped at 50%
+
+        ext_count = sum(1 for aid in self.agents if aid.startswith("ext_"))
+        if ext_count >= MAX_EXTERNAL_AGENTS:
+            return web.json_response(
+                {"error": f"max external agents ({MAX_EXTERNAL_AGENTS}) reached"}, status=429)
+
+        weight = min(MAX_AGENT_WEIGHT, float(body.get("weight", EXTERNAL_AGENT_DEFAULT_WEIGHT)))
+        current_ext_weight = sum(a.weight for aid, a in self.agents.items() if aid.startswith("ext_"))
+        if current_ext_weight + weight > MAX_TOTAL_EXT_WEIGHT:
+            weight = max(0.0, MAX_TOTAL_EXT_WEIGHT - current_ext_weight)
+            if weight < 0.01:
+                return web.json_response(
+                    {"error": f"total external agent weight cap ({MAX_TOTAL_EXT_WEIGHT}) reached"}, status=429)
+
         api_key = secrets.token_hex(32)
         asn = generate_asn()
-        MAX_AGENT_WEIGHT = 0.20  # No single external agent can dominate signals
-        weight = min(MAX_AGENT_WEIGHT, float(body.get("weight", EXTERNAL_AGENT_DEFAULT_WEIGHT)))
 
         agent = ConnectedAgent(
             agent_id=agent_id,
@@ -657,8 +680,8 @@ class AgentGateway:
             rationale=f"[{agent.name}] {parsed['rationale']}"[:500],
         )
 
-        # Publish to bus — use ext. prefix to avoid collisions with internal signal topics
-        await self.bus.publish(f"signal.ext.{agent.agent_id}", signal)
+        # Publish to bus — must match the topic strategist subscribes to at registration
+        await self.bus.publish(f"signal.{agent.agent_id}", signal)
 
         agent.last_signal_at = time.time()
         agent.signal_count += 1
@@ -726,9 +749,9 @@ class AgentGateway:
         # Require either a valid agent API key or the master key
         api_key = self._extract_key(request)
         if api_key:
-            if not self._verify_key(api_key) and api_key != self._master_key:
+            if not self._verify_key(api_key) and api_key != self.master_key:
                 return web.json_response({"error": "invalid api_key"}, status=401)
-        elif self._master_key:
+        elif self.master_key:
             return web.json_response({"error": "authentication required"}, status=401)
 
         agents = []
@@ -921,9 +944,9 @@ class AgentGateway:
         """GET /api/gateway/registry — agent type registry + capabilities (requires auth)."""
         api_key = self._extract_key(request)
         if api_key:
-            if not self._verify_key(api_key) and api_key != self._master_key:
+            if not self._verify_key(api_key) and api_key != self.master_key:
                 return web.json_response({"error": "invalid api_key"}, status=401)
-        elif self._master_key:
+        elif self.master_key:
             return web.json_response({"error": "authentication required"}, status=401)
 
         return web.json_response({

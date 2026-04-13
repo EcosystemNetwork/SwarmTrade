@@ -76,7 +76,7 @@ def register_agent(http_url: str, master_key: str) -> dict:
     result = _post(url, {
         "name": "hermes-agent",
         "protocol": "hermes",
-        "agent_type": "brain",
+        "agent_type": "meta-brain",
         "capabilities": ["real-time-streaming", "multi-asset", "self-improving"],
         "description": "Nous Research Hermes Agent — autonomous trading brain",
         "master_key": master_key,

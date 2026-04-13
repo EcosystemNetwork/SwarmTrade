@@ -2480,8 +2480,8 @@ let activeSocialTab = "feed";
 
 function toggleSocialPanel() {
   socialPanelOpen = !socialPanelOpen;
-  document.getElementById("social-overlay").style.display = socialPanelOpen ? "block" : "none";
-  document.getElementById("social-panel").classList.toggle("gw-panel-open", socialPanelOpen);
+  document.getElementById("social-overlay").classList.toggle("open", socialPanelOpen);
+  document.getElementById("social-panel").classList.toggle("open", socialPanelOpen);
   if (socialPanelOpen) {
     loadSocialFeed();
     loadSocialLeaderboard();

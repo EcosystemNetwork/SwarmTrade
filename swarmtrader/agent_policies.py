@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -187,10 +188,11 @@ class AgentPolicyEngine:
         self._daily_trades: dict[str, int] = {}
         self._hourly_trades: dict[str, list[float]] = {}
         self._violations: list[PolicyViolation] = []
+        self._intent_agents: OrderedDict[str, list[str]] = OrderedDict()  # intent_id -> agent_ids
         self._day_start: float = _day_start()
 
         # Subscribe to execution reports to track spending
-        bus.subscribe("execution.report", self._on_execution)
+        bus.subscribe("exec.report", self._on_execution)
 
     def set_policy(self, agent_id: str, policy: AgentPolicy):
         """Set or update policy for an agent."""
@@ -223,6 +225,12 @@ class AgentPolicyEngine:
             if self.strict:
                 return False, "no originating agent identified (strict mode)"
             return True, "ok (no agent attribution)"
+
+        # Track intent -> agents for attribution when execution reports arrive
+        self._intent_agents[intent.id] = agent_ids
+        if len(self._intent_agents) > 5000:
+            while len(self._intent_agents) > 2500:
+                self._intent_agents.popitem(last=False)
 
         # Check against each supporting agent's policy
         for agent_id in agent_ids:
@@ -284,13 +292,24 @@ class AgentPolicyEngine:
         """Track actual spending from execution reports."""
         if not hasattr(report, "status") or report.status != "filled":
             return
-        # Attribute spend to the agent
-        agent_id = getattr(report, "asset", "unknown")
         trade_usd = getattr(report, "quantity", 0) * (getattr(report, "fill_price", 0) or 0)
-        if trade_usd > 0:
-            self._daily_spend[agent_id] = self._daily_spend.get(agent_id, 0) + trade_usd
+        if trade_usd <= 0:
+            return
+
+        # Attribute spend to the originating agent(s) via intent_id lookup
+        intent_id = getattr(report, "intent_id", "")
+        agent_ids = self._intent_agents.get(intent_id, [])
+        if not agent_ids:
+            log.debug("Policy engine: no agent attribution for intent %s", intent_id)
+            return
+
+        # Split spend evenly across contributing agents
+        per_agent_usd = trade_usd / len(agent_ids)
+        now = time.time()
+        for agent_id in agent_ids:
+            self._daily_spend[agent_id] = self._daily_spend.get(agent_id, 0) + per_agent_usd
             self._daily_trades[agent_id] = self._daily_trades.get(agent_id, 0) + 1
-            self._hourly_trades.setdefault(agent_id, []).append(time.time())
+            self._hourly_trades.setdefault(agent_id, []).append(now)
 
     def _record_violation(self, agent_id: str, rule: str, detail: str,
                           intent_id: str, severity: str):

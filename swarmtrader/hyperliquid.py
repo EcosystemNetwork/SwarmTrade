@@ -650,7 +650,7 @@ class HyperliquidExecutor:
                 order_type=order_type, limit_price=limit_price,
                 leverage=leverage, reduce_only=reduce_only,
             )
-            await self.bus.publish("execution.report", {
+            await self.bus.publish("exec.report", {
                 "executor": "hyperliquid",
                 "asset": asset,
                 "side": side,

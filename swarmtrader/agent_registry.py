@@ -109,7 +109,7 @@ class AgentRegistry:
         self._domain_base = "swarmtrader.crypto"  # Unstoppable Domains TLD
 
         # Subscribe to execution reports for reputation tracking
-        bus.subscribe("execution.report", self._on_execution)
+        bus.subscribe("exec.report", self._on_execution)
         bus.subscribe("signal.alpha_swarm", self._on_alpha_signal)
 
     def register_agent(

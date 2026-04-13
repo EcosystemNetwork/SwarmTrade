@@ -313,12 +313,13 @@ class TestCommanderGate:
         assert len(executed) == 0
 
     @pytest.mark.asyncio
-    async def test_hermes_own_intents_pass(self):
+    async def test_hermes_intents_reviewed_by_commander(self):
+        """Hermes intents go through full commander review (no self-approval bypass)."""
         from swarmtrader.hermes_brain import HermesBrain, CommanderGate
         class MockProv:
             name = "mock"; model = "test"
             async def setup(self, s): return False
-            async def query(self, s, sy, p, m): return "[]"
+            async def query(self, session, system, prompt, **kwargs): return "APPROVE"
             def describe(self): return "mock"
 
         bus = make_bus()
@@ -328,7 +329,7 @@ class TestCommanderGate:
 
         intent = make_intent(supporting=[make_signal(agent="hermes")])
         await bus.publish("intent.new", intent)
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
         assert gate._stats["approved"] == 1
 
     @pytest.mark.asyncio

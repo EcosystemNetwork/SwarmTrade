@@ -292,6 +292,15 @@ class UniswapExecutor:
         w3 = Web3(Web3.HTTPProvider(rpc_url))
         using_private_mempool = bool(flashbots_rpc)
 
+        # Cap gas price to prevent runaway costs during spikes
+        MAX_GAS_GWEI = int(os.getenv("MAX_GAS_PRICE_GWEI", "100"))
+        max_gas_wei = MAX_GAS_GWEI * 10**9
+        current_gas = w3.eth.gas_price
+        if current_gas > max_gas_wei:
+            raise ValueError(
+                f"Gas price {current_gas / 10**9:.0f} gwei exceeds cap {MAX_GAS_GWEI} gwei — trade aborted"
+            )
+
         nonce = w3.eth.get_transaction_count(self._address)
         tx = {
             "to": Web3.to_checksum_address(tx_to),
@@ -299,8 +308,8 @@ class UniswapExecutor:
             "value": int(tx_value),
             "nonce": nonce,
             "gas": 300_000,
-            "maxFeePerGas": w3.eth.gas_price * 2,
-            "maxPriorityFeePerGas": w3.eth.max_priority_fee,
+            "maxFeePerGas": min(current_gas * 2, max_gas_wei),
+            "maxPriorityFeePerGas": min(w3.eth.max_priority_fee, max_gas_wei // 10),
             "chainId": self._chain_id,
             "type": 2,  # EIP-1559
         }

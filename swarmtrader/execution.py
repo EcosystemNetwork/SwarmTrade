@@ -40,10 +40,10 @@ class Simulator:
         self._last_price_ts: float = 0.0  # track staleness
         self._stale_threshold: float = 60.0  # reject prices older than 60s
         bus.subscribe("market.snapshot", self._on_snap)
-        # PriceValidationGate intercepts exec.cleared -> validates -> publishes exec.validated
-        # Simulator listens to exec.validated (gate present) or exec.cleared (no gate)
+        # PriceValidationGate intercepts exec.cleared -> validates -> publishes exec.validated.
+        # Simulator listens ONLY to exec.validated to avoid double-execution race.
+        # If no PriceValidationGate is configured, wire exec.cleared -> exec.validated.
         bus.subscribe("exec.validated", self._on_go)
-        bus.subscribe("exec.cleared", self._on_go)
         self._seen_intents: OrderedDict[str, None] = OrderedDict()
 
     def _dedup(self, intent_id: str) -> bool:
@@ -96,6 +96,8 @@ class Executor:
     """Dry-run executor with real position tracking via PortfolioTracker.
     PnL comes from actual price deltas, not signal proxies."""
 
+    MAX_SLIPPAGE_BPS = 100  # Reject fills with >1% slippage vs mid price
+
     def __init__(self, bus: Bus, kill_switch: "KillSwitch", dry_run: bool = True,
                  portfolio: PortfolioTracker | None = None):
         self.bus = bus
@@ -122,6 +124,17 @@ class Executor:
         if self.dry_run:
             buying = _is_buy(intent)
             asset = _base_asset(intent)
+
+            # Reject fills with excessive slippage vs current mid price
+            mid = self.portfolio.last_prices.get(asset, 0)
+            if mid > 0:
+                slip_bps = abs(eff_price - mid) / mid * 10_000
+                if slip_bps > self.MAX_SLIPPAGE_BPS:
+                    log.warning("EXECUTOR: rejecting %s — slippage %.0f bps > max %d bps",
+                                intent.id, slip_bps, self.MAX_SLIPPAGE_BPS)
+                    await self._report(intent, "rejected", None, None, 0.0, 0.0, 0.0,
+                                       f"slippage {slip_bps:.0f}bps > {self.MAX_SLIPPAGE_BPS}bps")
+                    return
 
             if buying:
                 quantity = intent.amount_in / eff_price

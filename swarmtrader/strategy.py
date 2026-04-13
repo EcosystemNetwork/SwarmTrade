@@ -133,6 +133,10 @@ class Strategist:
         },
     }
 
+    # Hard exposure limits — prevent all-in on a single asset
+    MAX_SINGLE_ASSET_PCT = 0.30  # Max 30% of portfolio in one asset
+    MAX_GROSS_EXPOSURE_PCT = 1.0  # Max 100% gross notional
+
     def __init__(self, bus: Bus, base_size: float = 500.0, ttl_s: float = 8.0,
                  cooldown_s: float = 2.0,
                  portfolio: "PortfolioTracker | None" = None):
@@ -261,6 +265,30 @@ class Strategist:
 
         # Determine assets from the signal context
         asset = next((s.asset for s in self.latest.values()), "ETH")
+
+        # Exposure limits — prevent concentration risk
+        if going_long and self.portfolio:
+            total_equity = self.portfolio.total_equity()
+            if total_equity > 0:
+                # Single-asset limit
+                current_value = self.portfolio.position_value(asset)
+                max_for_asset = total_equity * self.MAX_SINGLE_ASSET_PCT
+                headroom = max(0, max_for_asset - current_value)
+                if headroom < 10:
+                    log.info("EXPOSURE LIMIT: %s already at %.0f%% — skipping buy",
+                             asset, current_value / total_equity * 100)
+                    return
+                size = min(size, headroom)
+
+                # Gross exposure limit
+                gross = self.portfolio.position_market_value()
+                max_gross = total_equity * self.MAX_GROSS_EXPOSURE_PCT
+                gross_headroom = max(0, max_gross - gross)
+                if gross_headroom < 10:
+                    log.info("GROSS EXPOSURE LIMIT: %.0f%% — skipping buy",
+                             gross / total_equity * 100)
+                    return
+                size = min(size, gross_headroom)
 
         # Phase 10: Regime-adaptive order type selection
         order_spec = self._select_order_spec(abs(score), going_long)
@@ -411,12 +439,15 @@ class Coordinator:
     - Unanimous consensus: ALL risk agents must approve
     - Verdict timeout: auto-rejects if not all verdicts arrive within timeout_s
     - Stale intent cleanup: purges old entries to prevent memory leaks
+    - Sandbox enforcement: checks agent permissions before execution
     """
 
-    def __init__(self, bus: Bus, n_risk_agents: int, timeout_s: float = 5.0):
+    def __init__(self, bus: Bus, n_risk_agents: int, timeout_s: float = 5.0,
+                 sandbox: "ExecutionSandbox | None" = None):
         self.bus = bus
         self.n = n_risk_agents
         self.timeout_s = timeout_s
+        self.sandbox = sandbox
         self.intents: dict[str, TradeIntent] = {}
         self.verdicts: dict[str, list[RiskVerdict]] = {}
         self._timers: dict[str, asyncio.Task] = {}
@@ -455,7 +486,17 @@ class Coordinator:
         if timer and not timer.done():
             timer.cancel()
         if all(x.approve for x in bucket):
-            await self.bus.publish("exec.go", self.intents[v.intent_id])
+            intent = self.intents[v.intent_id]
+            # Sandbox enforcement: verify originating agents have place_order permission
+            if self.sandbox and intent.supporting:
+                for sig in intent.supporting:
+                    allowed, reason = self.sandbox.check_action(sig.agent_id, "place_order")
+                    if not allowed:
+                        log.info("SANDBOX VETO %s: agent %s — %s",
+                                 v.intent_id, sig.agent_id, reason)
+                        self._cleanup(v.intent_id)
+                        return
+            await self.bus.publish("exec.go", intent)
         else:
             vetoes = "; ".join(f"{x.agent_id}:{x.reason}" for x in bucket if not x.approve)
             log.info("VETO %s %s", v.intent_id, vetoes)

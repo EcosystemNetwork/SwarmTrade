@@ -186,6 +186,13 @@ class PortfolioTracker:
             if pos.quantity > 1e-9
         )
 
+    def position_value(self, asset: str) -> float:
+        """Market value of a single asset position."""
+        pos = self.positions.get(asset)
+        if not pos or pos.quantity < 1e-9:
+            return 0.0
+        return pos.quantity * self.last_prices.get(asset, pos.avg_entry)
+
     def position_market_value(self) -> float:
         """Sum of (quantity * current_price) for all open positions.
 

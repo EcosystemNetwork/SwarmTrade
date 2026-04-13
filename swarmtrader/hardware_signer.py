@@ -183,18 +183,24 @@ class LedgerSigner:
 class TransactionSimulator:
     """Simulates transactions before signing to prevent loss.
 
-    Runs the transaction through a local simulation to verify:
-    - Expected output matches intent
-    - No unexpected token transfers
+    Runs the transaction through eth_call to verify:
+    - Transaction does not revert
     - Gas estimate is reasonable
-    - No reverts
+    - No unexpected failures
+
+    Falls back to explicit rejection (not silent success) when no
+    RPC is configured or the call fails.
     """
 
+    # Approximate gas price in ETH and ETH/USD for cost estimation
+    _DEFAULT_GAS_GWEI = 0.01   # Base L2 typical
+    _ETH_USD_FALLBACK = 3000.0
+
     def __init__(self, rpc_url: str = ""):
-        self.rpc_url = rpc_url or os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+        self.rpc_url = rpc_url or os.getenv("BASE_RPC_URL", "")
 
     async def simulate(self, tx_data: dict) -> dict:
-        """Simulate a transaction and return analysis.
+        """Simulate a transaction via eth_call and eth_estimateGas.
 
         Returns dict with:
           - success: bool
@@ -203,14 +209,107 @@ class TransactionSimulator:
           - warnings: list[str]
           - estimated_cost_usd: float
         """
-        # In production, use eth_call or Tenderly/Alchemy simulation API
-        return {
-            "success": True,
-            "gas_used": tx_data.get("gas", 200_000),
-            "output": "0x",
-            "warnings": [],
-            "estimated_cost_usd": 0.05,  # Base chain gas
-        }
+        warnings: list[str] = []
+
+        if not tx_data or not tx_data.get("to"):
+            return {
+                "success": False,
+                "gas_used": 0,
+                "output": "0x",
+                "warnings": ["no transaction data provided"],
+                "estimated_cost_usd": 0.0,
+            }
+
+        if not self.rpc_url:
+            return {
+                "success": False,
+                "gas_used": 0,
+                "output": "0x",
+                "warnings": ["no RPC URL configured — cannot simulate, rejecting for safety"],
+                "estimated_cost_usd": 0.0,
+            }
+
+        try:
+            import aiohttp
+
+            call_params = {
+                "from": tx_data.get("from", "0x" + "0" * 40),
+                "to": tx_data["to"],
+            }
+            if tx_data.get("data"):
+                call_params["data"] = tx_data["data"]
+            if tx_data.get("value"):
+                call_params["value"] = (
+                    hex(tx_data["value"]) if isinstance(tx_data["value"], int)
+                    else tx_data["value"]
+                )
+
+            async with aiohttp.ClientSession() as session:
+                # 1. eth_call — check for revert
+                payload = {
+                    "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                    "params": [call_params, "latest"],
+                }
+                async with session.post(
+                    self.rpc_url, json=payload,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    result = await resp.json()
+
+                if "error" in result:
+                    err_msg = result["error"].get("message", str(result["error"]))
+                    return {
+                        "success": False,
+                        "gas_used": 0,
+                        "output": "0x",
+                        "warnings": [f"eth_call reverted: {err_msg}"],
+                        "estimated_cost_usd": 0.0,
+                    }
+
+                output = result.get("result", "0x")
+
+                # 2. eth_estimateGas — get real gas usage
+                gas_payload = {
+                    "jsonrpc": "2.0", "id": 2, "method": "eth_estimateGas",
+                    "params": [call_params],
+                }
+                async with session.post(
+                    self.rpc_url, json=gas_payload,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    gas_result = await resp.json()
+
+                if "error" in gas_result:
+                    gas_used = tx_data.get("gas", 200_000)
+                    warnings.append("eth_estimateGas failed, using fallback")
+                else:
+                    gas_used = int(gas_result.get("result", "0x0"), 16)
+
+                # Cost estimate
+                gas_cost_eth = gas_used * self._DEFAULT_GAS_GWEI * 1e-9
+                estimated_cost_usd = gas_cost_eth * self._ETH_USD_FALLBACK
+
+                # Sanity warnings
+                if gas_used > 1_000_000:
+                    warnings.append(f"high gas usage: {gas_used:,}")
+
+                return {
+                    "success": True,
+                    "gas_used": gas_used,
+                    "output": output,
+                    "warnings": warnings,
+                    "estimated_cost_usd": round(estimated_cost_usd, 4),
+                }
+
+        except Exception as e:
+            log.warning("Transaction simulation failed: %s", e)
+            return {
+                "success": False,
+                "gas_used": 0,
+                "output": "0x",
+                "warnings": [f"simulation error: {e}"],
+                "estimated_cost_usd": 0.0,
+            }
 
 
 class HardwareSigningPipeline:
@@ -251,14 +350,37 @@ class HardwareSigningPipeline:
         self._history: list[SigningRequest] = []
         self._max_history = 500
 
-        # Subscribe to signing requests
+        # Subscribe to signing requests (explicit) and exec.go (automatic gate)
         bus.subscribe("signing.request", self._on_signing_request)
+        bus.subscribe("exec.go", self._on_exec_go)
 
     @property
     def address(self) -> str:
         if self.signer_mode == "ledger_usb" and self.ledger.address:
             return self.ledger.address
         return self.hot_wallet.address
+
+    async def _on_exec_go(self, intent: TradeIntent):
+        """Gate on-chain execution through the signing pipeline.
+
+        For intents that target on-chain venues (DeFi swaps, perp DEXs),
+        publish a signing.request so the pipeline can simulate and sign
+        before the executor submits.  CEX intents (Kraken API key auth)
+        pass through without signing.
+        """
+        # Only gate intents that carry on-chain metadata
+        meta = getattr(intent, "metadata", None) or {}
+        venue = meta.get("venue", "")
+        onchain_venues = {"jupiter", "uniswap", "hyperliquid", "base", "solana"}
+        if venue.lower() not in onchain_venues:
+            return  # CEX trade — no wallet signing needed
+
+        estimated_usd = intent.amount_in
+        await self.bus.publish("signing.request", {
+            "intent": intent,
+            "tx_data": meta.get("tx_data", {}),
+            "estimated_usd": estimated_usd,
+        })
 
     async def _on_signing_request(self, msg: dict):
         """Handle incoming signing request."""

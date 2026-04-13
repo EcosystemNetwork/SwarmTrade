@@ -183,6 +183,20 @@ class BacktestResult:
         return "\n".join(lines)
 
 
+def _bridge_exec(bus: Bus) -> None:
+    """Forward exec.go → exec.cleared → exec.validated for backtests.
+
+    In production: exec.go → MEVEngine → exec.cleared → PriceGate → exec.validated → Simulator
+    In backtests (no MEV engine or PriceGate): this bridge chains the full path.
+    """
+    async def _forward_to_cleared(intent):
+        await bus.publish("exec.cleared", intent)
+    async def _forward_to_validated(intent):
+        await bus.publish("exec.validated", intent)
+    bus.subscribe("exec.go", _forward_to_cleared)
+    bus.subscribe("exec.cleared", _forward_to_validated)
+
+
 class _SimulatedClock:
     """Overrides time.time() for backtesting so cooldowns and TTLs work."""
     def __init__(self):
@@ -228,8 +242,18 @@ class HistoricalScout:
             snap = MarketSnapshot(ts=ts, prices={self.symbol: price}, gas_gwei=0.0)
             await self.bus.publish("market.snapshot", snap)
             self.candles_emitted += 1
-            # Tiny yield to let event handlers run
-            await asyncio.sleep(0)
+            # Drain all pending bus tasks before advancing clock to next candle.
+            # Without this, the intent pipeline (signal → strategy → risk →
+            # exec.go → exec.cleared → simulator) may not finish before the
+            # clock jumps to the next candle, causing stale-price rejections.
+            # Each publish creates cascading tasks, so we need multiple rounds.
+            for _ in range(50):
+                await asyncio.sleep(0)
+                if not self.bus._pending_tasks:
+                    break
+            # Final gather of any still-running tasks
+            if self.bus._pending_tasks:
+                await asyncio.gather(*list(self.bus._pending_tasks), return_exceptions=True)
 
 
 class BacktestExecutor:
@@ -425,6 +449,7 @@ async def run_backtest(
             RiskAgent(bus, "drawdown", drawdown_check(state, max_dd=max_drawdown)),
         ]
         Coordinator(bus, n_risk_agents=len(risks))
+        _bridge_exec(bus)
 
         Simulator(bus)
         BacktestExecutor(bus, result, portfolio, starting_capital=starting_capital)
@@ -520,6 +545,7 @@ async def run_walk_forward(
                 RiskAgent(bus, "drawdown", drawdown_check(state, max_dd=max_drawdown)),
             ]
             Coordinator(bus, n_risk_agents=len(risks))
+            _bridge_exec(bus)
             Simulator(bus)
             BacktestExecutor(bus, result, portfolio, starting_capital=starting_capital)
 
@@ -581,16 +607,22 @@ async def run_backtest_from_file(
 
         MomentumAnalyst(bus, asset=symbol)
         MeanReversionAnalyst(bus, asset=symbol)
-        VolatilityAnalyst(bus, asset=symbol)
+        # Only include VolatilityAnalyst for intraday data — coarse intervals
+        # produce extreme vol readings that damp all signals below threshold
+        if interval_min < 1440:
+            VolatilityAnalyst(bus, asset=symbol)
 
         tokens = {symbol, "USD", "USDC", "USDT"}
-        Strategist(bus, base_size=base_size)
+        # Scale cooldown to data interval (no point cooling down between 4-day candles)
+        cooldown = min(2.0, interval_min * 60 * 0.5)
+        Strategist(bus, base_size=base_size, cooldown_s=cooldown, portfolio=portfolio)
         risks = [
             RiskAgent(bus, "size", size_check(max_size=max_size)),
             RiskAgent(bus, "allowlist", allowlist_check(tokens)),
             RiskAgent(bus, "drawdown", drawdown_check(state, max_dd=max_drawdown)),
         ]
         Coordinator(bus, n_risk_agents=len(risks))
+        _bridge_exec(bus)
 
         Simulator(bus)
         BacktestExecutor(bus, result, portfolio, starting_capital=starting_capital)

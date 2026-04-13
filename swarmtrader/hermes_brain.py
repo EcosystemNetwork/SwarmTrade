@@ -1031,17 +1031,12 @@ class CommanderGate:
             self._approved.remove(intent.id)
             return  # Already flowing to exec.go via normal pipeline
 
-        # If HermesBrain originated this intent, it's pre-approved
-        if intent.supporting and any(s.agent_id == "hermes" for s in intent.supporting):
-            self._stats["approved"] += 1
-            self._approved.append(intent.id)
-            log.info("COMMANDER: auto-approved own intent %s (%s %s $%.0f)",
-                     intent.id, "BUY" if intent.asset_in in ("USD", "USDC", "USDT") else "SELL",
-                     intent.asset_out if intent.asset_in in ("USD", "USDC", "USDT") else intent.asset_in,
-                     intent.amount_in)
-            return  # Let it flow through
+        # Hermes-originated intents are NOT auto-approved — they go through
+        # the same review path as all other intents to prevent self-approval.
+        # The commander LLM evaluates them with full context, providing a
+        # genuine second-opinion check.
 
-        # All other intents need commander approval
+        # All intents need commander approval
         self._pending[intent.id] = intent
 
         # Check if brain is ready
