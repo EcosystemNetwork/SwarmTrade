@@ -189,7 +189,8 @@ class SocialSentimentAgent:
                                    timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
                     return {}
-                return await resp.json()
+                from .core import safe_json
+                return await safe_json(resp) or {}
         except Exception as e:
             log.debug("CoinGecko %s failed: %s", asset, e)
             return {}

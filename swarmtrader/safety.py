@@ -75,6 +75,8 @@ class CircuitBreaker:
     - Price division-by-zero protection
     """
 
+    _STATE_FILE = ".circuit_breaker_state.json"
+
     def __init__(self, bus: Bus, kill_switch: KillSwitch,
                  max_consecutive_losses: int = 5,
                  max_drawdown_usd: float = 200.0,
@@ -91,9 +93,11 @@ class CircuitBreaker:
         self._alert_hook = alert_hook
         self._ws_client = ws_client  # KrakenWSv2Client for fast cancel
 
+        # Recover state from disk (survives crash/restart)
         self.consecutive_losses = 0
         self.cumulative_pnl = 0.0
         self.peak_pnl = 0.0
+        self._recover_state()
         self.prices: deque[float] = deque(maxlen=20)
         self._vol_spike_count = 0     # require sustained spikes
         self._vol_spike_threshold = 2  # need 2+ ticks above threshold
@@ -111,6 +115,42 @@ class CircuitBreaker:
         bus.subscribe("market.snapshot", self._on_snap)
         bus.subscribe("intent.new", self._on_intent)
 
+    def _recover_state(self):
+        """Recover cumulative PnL and peak from disk on startup."""
+        import json
+        from pathlib import Path
+        path = Path(self._STATE_FILE)
+        if not path.exists():
+            return
+        try:
+            state = json.loads(path.read_text())
+            self.cumulative_pnl = float(state.get("cumulative_pnl", 0))
+            self.peak_pnl = float(state.get("peak_pnl", 0))
+            self.consecutive_losses = int(state.get("consecutive_losses", 0))
+            log.warning("Circuit breaker state recovered: pnl=$%.2f peak=$%.2f losses=%d",
+                        self.cumulative_pnl, self.peak_pnl, self.consecutive_losses)
+        except Exception as e:
+            log.error("Failed to recover circuit breaker state: %s", e)
+
+    def _persist_state(self):
+        """Save circuit breaker state to disk atomically (write tmp + rename)."""
+        import json
+        from pathlib import Path
+        path = Path(self._STATE_FILE)
+        tmp = path.with_suffix(".tmp")
+        try:
+            data = json.dumps({
+                "cumulative_pnl": self.cumulative_pnl,
+                "peak_pnl": self.peak_pnl,
+                "consecutive_losses": self.consecutive_losses,
+                "ts": time.time(),
+            })
+            tmp.write_text(data)
+            tmp.replace(path)  # atomic on POSIX
+        except OSError as e:
+            log.error("Failed to persist circuit breaker state: %s", e)
+            tmp.unlink(missing_ok=True)
+
     async def _alert(self, level: str, message: str):
         """Send alert via hook (if configured) and always log."""
         log.critical("ALERT [%s]: %s", level, message)
@@ -124,6 +164,10 @@ class CircuitBreaker:
         if rep.status != "filled":
             return
         pnl = rep.pnl_estimate or 0.0
+        # Guard against NaN/Inf from upstream
+        if not isinstance(pnl, (int, float)) or pnl != pnl or abs(pnl) == float('inf'):
+            log.error("Circuit breaker: ignoring non-finite PnL: %s", pnl)
+            return
         self.cumulative_pnl += pnl
         self.peak_pnl = max(self.peak_pnl, self.cumulative_pnl)
 
@@ -133,6 +177,8 @@ class CircuitBreaker:
             self.consecutive_losses = 0
             if self.halted:
                 self._wins_since_halt += 1
+
+        self._persist_state()
 
         # Check consecutive losses
         if self.consecutive_losses >= self.max_consecutive_losses:
@@ -149,8 +195,9 @@ class CircuitBreaker:
 
     async def _on_snap(self, snap: MarketSnapshot):
         for price in snap.prices.values():
-            if price <= 0:
-                continue  # skip zero/negative prices (data error)
+            # Reject non-finite, zero, or negative prices
+            if not isinstance(price, (int, float)) or price != price or price <= 0 or price == float('inf'):
+                continue
             self.prices.append(price)
             break
 
@@ -161,8 +208,10 @@ class CircuitBreaker:
         recent = list(self.prices)
         returns = []
         for i in range(1, len(recent)):
-            if recent[i - 1] > 0:  # protect against div-by-zero
-                returns.append(abs(recent[i] / recent[i - 1] - 1))
+            if recent[i - 1] > 0:
+                r = abs(recent[i] / recent[i - 1] - 1)
+                if r == r and r != float('inf'):  # skip NaN/Inf
+                    returns.append(r)
         if not returns:
             return
         max_move = max(returns)

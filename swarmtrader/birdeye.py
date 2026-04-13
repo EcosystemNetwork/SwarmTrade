@@ -122,7 +122,8 @@ class BirdEyeClient:
             async with session.get(f"{BIRDEYE_BASE_URL}{endpoint}",
                                    params=params) as resp:
                 if resp.status == 200:
-                    return await resp.json()
+                    from .core import safe_json
+                    return await safe_json(resp)
                 log.warning("BirdEye %s %d", endpoint, resp.status)
         except Exception as e:
             log.warning("BirdEye error %s: %s", endpoint, e)

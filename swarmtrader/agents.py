@@ -37,7 +37,11 @@ class _WindowAnalyst:
 
     async def _on(self, snap: MarketSnapshot):
         if self.asset not in snap.prices: return
-        self.buf.append(snap.prices[self.asset])
+        price = snap.prices[self.asset]
+        # Reject non-finite or non-positive prices
+        if not isinstance(price, (int, float)) or price != price or price <= 0 or price == float('inf'):
+            return
+        self.buf.append(price)
         if len(self.buf) < self.window: return
         sig = self.compute()
         if sig is not None:

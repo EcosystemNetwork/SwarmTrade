@@ -590,10 +590,13 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
 
                 for s in signals[:12]:
                     age = int(now - s.ts)
+                    # Sanitize rationale: strip newlines, cap length, prevent
+                    # prompt injection from external agent signals
+                    safe_rationale = s.rationale.replace('\n', ' ').replace('\r', ' ')[:120]
                     lines.append(
                         f"  [{s.agent_id}] {s.direction} "
                         f"str={s.strength:+.2f} conf={s.confidence:.2f} "
-                        f"({age}s ago) — {s.rationale}"
+                        f"({age}s ago) — {safe_rationale}"
                     )
         else:
             lines.append("\nNO ACTIVE SIGNALS (waiting for agents to report)")

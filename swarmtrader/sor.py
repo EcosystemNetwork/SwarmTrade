@@ -84,8 +84,9 @@ class SmartOrderRouter:
     """
 
     def __init__(self, bus: Bus, venues: list[VenueConfig] | None = None,
-                 ws_client=None):
+                 ws_client=None, kill_switch=None):
         self.bus = bus
+        self.kill_switch = kill_switch
         self.venues = venues or list(DEFAULT_VENUES)
         self._kraken_prices: dict[str, float] = {}
         self._quote_cache: dict[str, list[ExchangeQuote]] = {}  # asset -> quotes
@@ -122,6 +123,8 @@ class SmartOrderRouter:
         Publishes sor.routed with the selected venue and adjusted price,
         which the executor can use for the actual fill.
         """
+        if self.kill_switch and self.kill_switch.active:
+            return  # Kill switch engaged — do not route
         try:
             venue_name, quote = await self.route(intent)
             log.info("SOR routed %s -> %s (ask=%.2f bid=%.2f fee=%.4f)",

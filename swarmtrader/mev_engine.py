@@ -81,15 +81,17 @@ class MEVEngine:
     # If recent price volatility exceeds this, flag as high-MEV-risk
     HIGH_VOL_THRESHOLD = 0.01  # 1% move in recent window
 
-    def __init__(self, bus: Bus, protection_mode: str = "flashbots"):
+    def __init__(self, bus: Bus, protection_mode: str = "flashbots",
+                 kill_switch=None):
         if protection_mode not in self._ALLOWED_MODES:
             log.warning("MEV: invalid protection_mode '%s' — defaulting to 'flashbots'", protection_mode)
             protection_mode = "flashbots"
         self.bus = bus
+        self.kill_switch = kill_switch
         self.protection_mode = protection_mode
         self._flashbots_configured = bool(os.getenv("FLASHBOTS_RPC", ""))
         self._opportunities: deque[MEVOpportunity] = deque(maxlen=500)
-        self._protections: list[MEVProtection] = []
+        self._protections: deque[MEVProtection] = deque(maxlen=1000)
         self._opp_counter = 0
         self._captured_usd = 0.0
         self._protected_usd = 0.0
@@ -192,6 +194,11 @@ class MEVEngine:
         (not ``exec.go``), so trades only reach them after MEV screening.
         In ``cautious`` mode, high-risk trades are blocked entirely.
         """
+        # Kill switch check — do not forward ANY trades when halted
+        if self.kill_switch and self.kill_switch.active:
+            log.warning("MEV: kill switch active, dropping intent %s", intent.id)
+            return
+
         asset = self._resolve_asset(intent)
         high_risk = self._is_high_mev_risk(asset)
 
@@ -221,8 +228,7 @@ class MEVEngine:
             estimated_savings=intent.amount_in * savings_bps / 10_000,
         )
         self._protections.append(protection)
-        if len(self._protections) > 1000:
-            self._protections = self._protections[-500:]
+        # deque(maxlen=1000) handles eviction automatically
 
         self._stats["protected"] += 1
         self._stats["total_protected_usd"] += protection.estimated_savings

@@ -341,7 +341,7 @@ class AgentGateway:
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             return auth[7:]
-        return request.headers.get("X-API-Key") or request.query.get("api_key")
+        return request.headers.get("X-API-Key") or None
 
     # ── Rate limiting ───────────────────────────────────────────────
 
@@ -535,9 +535,12 @@ class AgentGateway:
         if not hmac.compare_digest(master, self.master_key):
             return web.json_response({"error": "invalid master_key"}, status=401)
 
-        name = str(body.get("name", f"external_{len(self.agents)}")).strip()[:64]
+        import re
+        raw_name = str(body.get("name", f"external_{len(self.agents)}")).strip()[:64]
+        # Sanitize: alphanumeric, spaces, hyphens, underscores only
+        name = re.sub(r'[^\w\s\-]', '', raw_name).strip()
         if not name:
-            return web.json_response({"error": "name is required"}, status=400)
+            return web.json_response({"error": "name is required (alphanumeric only)"}, status=400)
         protocol = body.get("protocol", "raw")
         if protocol not in ("openclaw", "hermes", "ironclaw", "raw"):
             return web.json_response({"error": "protocol must be openclaw, hermes, ironclaw, or raw"}, status=400)
@@ -677,7 +680,7 @@ class AgentGateway:
             direction=parsed["direction"],
             strength=clamped_strength,
             confidence=clamped_confidence,
-            rationale=f"[{agent.name}] {parsed['rationale']}"[:500],
+            rationale=f"[{agent.name}] {parsed['rationale'][:150].replace(chr(10), ' ').replace(chr(13), ' ')}",
         )
 
         # Publish to bus — must match the topic strategist subscribes to at registration
@@ -921,7 +924,7 @@ class AgentGateway:
                 direction=parsed["direction"],
                 strength=parsed["strength"],
                 confidence=parsed["confidence"],
-                rationale=f"[{agent.name}] {parsed['rationale']}"[:500],
+                rationale=f"[{agent.name}] {parsed['rationale'][:150].replace(chr(10), ' ').replace(chr(13), ' ')}",
             )
             await self.bus.publish(f"signal.{agent.agent_id}", signal)
 

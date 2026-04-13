@@ -151,6 +151,11 @@ class Strategist:
         self.regime: str = "unknown"
         self._cooldown_until: float = 0.0
 
+        # Pending order tracking — prevents concurrent intents bypassing exposure limits
+        self._pending_usd: dict[str, float] = {}  # asset -> pending buy USD
+        self._pending_ts: dict[str, float] = {}   # asset -> timestamp of last pending add
+        self._PENDING_TTL = 30.0  # seconds before stale pending orders are cleaned
+
         # Kelly criterion state
         self.wins = 0
         self.losses = 0
@@ -194,6 +199,12 @@ class Strategist:
         bus.subscribe("signal.spread", self._on_spread)
         bus.subscribe("signal.regime", self._on_regime)
         bus.subscribe("audit.attribution", self._on_attribution)
+        bus.subscribe("exec.report", self._on_exec_report)
+
+    async def _on_exec_report(self, rep):
+        """Clear pending order tracking when intents complete."""
+        if hasattr(rep, 'asset') and rep.asset:
+            self._pending_usd.pop(rep.asset, None)
 
     async def _on_vol(self, sig: Signal):
         self.vol_damp = max(0.3, 1.0 - sig.confidence * 0.7)
@@ -230,6 +241,13 @@ class Strategist:
 
     async def _maybe_emit(self):
         now = time.time()
+
+        # Expire stale pending orders (exec.report never arrived)
+        stale = [a for a, ts in self._pending_ts.items() if now - ts > self._PENDING_TTL]
+        for a in stale:
+            self._pending_usd.pop(a, None)
+            self._pending_ts.pop(a, None)
+
         if now < self._cooldown_until:
             return
 
@@ -266,26 +284,28 @@ class Strategist:
         # Determine assets from the signal context
         asset = next((s.asset for s in self.latest.values()), "ETH")
 
-        # Exposure limits — prevent concentration risk
+        # Exposure limits — prevent concentration risk (includes pending orders)
         if going_long and self.portfolio:
             total_equity = self.portfolio.total_equity()
             if total_equity > 0:
-                # Single-asset limit
-                current_value = self.portfolio.position_value(asset)
+                pending_for_asset = self._pending_usd.get(asset, 0)
+                # Single-asset limit (current + pending)
+                current_value = self.portfolio.position_value(asset) + pending_for_asset
                 max_for_asset = total_equity * self.MAX_SINGLE_ASSET_PCT
                 headroom = max(0, max_for_asset - current_value)
                 if headroom < 10:
-                    log.info("EXPOSURE LIMIT: %s already at %.0f%% — skipping buy",
-                             asset, current_value / total_equity * 100)
+                    log.info("EXPOSURE LIMIT: %s at %.0f%% (incl pending $%.0f) — skipping",
+                             asset, current_value / total_equity * 100, pending_for_asset)
                     return
                 size = min(size, headroom)
 
-                # Gross exposure limit
-                gross = self.portfolio.position_market_value()
+                # Gross exposure limit (current + all pending)
+                total_pending = sum(self._pending_usd.values())
+                gross = self.portfolio.position_market_value() + total_pending
                 max_gross = total_equity * self.MAX_GROSS_EXPOSURE_PCT
                 gross_headroom = max(0, max_gross - gross)
                 if gross_headroom < 10:
-                    log.info("GROSS EXPOSURE LIMIT: %.0f%% — skipping buy",
+                    log.info("GROSS EXPOSURE LIMIT: %.0f%% (incl pending) — skipping",
                              gross / total_equity * 100)
                     return
                 size = min(size, gross_headroom)
@@ -303,6 +323,11 @@ class Strategist:
             order_spec=order_spec,
         )
         self._cooldown_until = now + self.cooldown_s
+
+        # Track pending order to prevent concurrent bypass of exposure limits
+        if going_long:
+            self._pending_usd[asset] = self._pending_usd.get(asset, 0) + size
+            self._pending_ts[asset] = now
 
         log.info("INTENT %s score=%+.3f damp=%.2f regime=%s kelly=%.2f type=%s %s->%s",
                  intent.id, score, self.vol_damp, self.regime,

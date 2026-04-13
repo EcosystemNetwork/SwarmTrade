@@ -22,7 +22,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from typing import Awaitable, Callable
 
@@ -98,8 +98,8 @@ class ObservabilityDashboard:
         self._system_signals: list[float] = []
         self._trades_today: int = 0
         self._pnl_today: float = 0.0
-        self._alerts: list[dict] = []
-        self._reports: list[SystemHealthReport] = []
+        self._alerts: deque[dict] = deque(maxlen=500)
+        self._reports: deque[SystemHealthReport] = deque(maxlen=100)
 
         # Subscribe to everything
         signal_topics = [
@@ -242,8 +242,6 @@ class ObservabilityDashboard:
             issues=issues[:10],
         )
         self._reports.append(report)
-        if len(self._reports) > 100:
-            self._reports = self._reports[-50:]
 
         # Fire external alerts in background if hook configured
         if self.alert_hook:

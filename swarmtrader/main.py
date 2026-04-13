@@ -905,7 +905,8 @@ async def run(args: argparse.Namespace):
              args.capital, ", ".join(f"{k}={v}%%" for k, v in treasury_mgr._targets.items()))
 
     # ── Phase 31: MEV Auction Engine ─────────────────────────
-    mev = MEVEngine(bus, protection_mode=os.getenv("MEV_PROTECTION", "flashbots"))
+    mev = MEVEngine(bus, protection_mode=os.getenv("MEV_PROTECTION", "flashbots"),
+                    kill_switch=kill_switch)
     log.info("MEV engine: detection + protection (%s mode)", mev.protection_mode)
 
     # ── Phase 32: Agent Memory DAG v2 ────────────────────────
@@ -1117,13 +1118,13 @@ async def run(args: argparse.Namespace):
     log.info("Portfolio optimization (risk parity) + dynamic hedger enabled")
 
     # ── Smart Order Router ─────────────────────────────────────
-    sor = SmartOrderRouter(bus, ws_client=ws_v2_client)
+    sor = SmartOrderRouter(bus, ws_client=ws_v2_client, kill_switch=kill_switch)
     supervisor.register("sor", sor.run, stale_after=15.0)
     log.info("Smart order router: 5 venues (Kraken, Binance, Coinbase, OKX, dYdX)%s",
              " + real L2 book" if ws_v2_client else "")
 
     # ── Microstructure — Iceberg + TCA ─────────────────────────
-    iceberg = IcebergExecutor(bus, threshold_usd=args.max_size * 0.75)
+    iceberg = IcebergExecutor(bus, threshold_usd=args.max_size * 0.75, kill_switch=kill_switch)
     tca = ExecutionQualityTracker(bus)
     supervisor.register("tca", tca.run, stale_after=60.0)
     log.info("Iceberg executor + TCA tracker enabled")
@@ -1186,7 +1187,7 @@ async def run(args: argparse.Namespace):
                           kill_switch=kill_switch, ws_client=ws_v2_client)
 
     # ── Price Validation Gate (multi-source price check) ───────
-    price_gate = PriceValidationGate(bus, safe_bps=50, warn_bps=200)
+    price_gate = PriceValidationGate(bus, safe_bps=50, warn_bps=200, kill_switch=kill_switch)
     log.info("Price gate: SAFE<%dbps WARN<%dbps HALT>=200bps", 50, 200)
 
     # ── Execution Pipeline ──────────────────────────────────────
@@ -1450,6 +1451,10 @@ async def run(args: argparse.Namespace):
             log.info("Kraken REST client closed")
         except Exception as e:
             log.debug("Kraken REST close: %s", e)
+
+        # Close message bus (Redis connections if any)
+        await bus.close()
+        log.info("Message bus closed")
 
         # Close database connection pool
         await db.close()

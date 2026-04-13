@@ -256,7 +256,7 @@ class AuthManager:
     @staticmethod
     def _hash_password(password: str, salt: str) -> str:
         return hashlib.pbkdf2_hmac(
-            "sha256", password.encode(), salt.encode(), 100_000
+            "sha256", password.encode(), salt.encode(), 600_000
         ).hex()
 
     @staticmethod

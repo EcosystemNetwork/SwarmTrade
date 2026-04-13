@@ -53,6 +53,10 @@ class _APIRateLimiter:
     def check(self, ip: str) -> bool:
         """Returns True if request is allowed, False if rate-limited."""
         now = time.time()
+        # Periodic cleanup of stale IPs (every 60s)
+        if now - getattr(self, '_last_cleanup', 0) > 60.0:
+            self.cleanup()
+            self._last_cleanup = now
         window = self._buckets.setdefault(ip, [])
         # Prune old entries
         cutoff = now - 60.0
@@ -132,17 +136,18 @@ async def auth_middleware(request: web.Request, handler):
         # No token configured — auth disabled (dev mode)
         return await handler(request)
 
-    # Check Authorization header
+    # Check Authorization header only — no query params (leak via Referer header)
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         provided = auth_header[7:]
         if hmac.compare_digest(provided, token):
             return await handler(request)
 
-    # Check query param (for WebSocket connections from browsers)
-    provided = request.query.get("token", "")
-    if provided and hmac.compare_digest(provided, token):
-        return await handler(request)
+    # WebSocket upgrade: check Sec-WebSocket-Protocol header for token
+    if request.headers.get("Upgrade", "").lower() == "websocket":
+        ws_protocol = request.headers.get("Sec-WebSocket-Protocol", "")
+        if ws_protocol and hmac.compare_digest(ws_protocol, token):
+            return await handler(request)
 
     return web.json_response(
         {"error": "unauthorized", "hint": "Set Authorization: Bearer <token> header"},

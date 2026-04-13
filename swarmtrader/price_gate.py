@@ -70,8 +70,9 @@ class PriceValidationGate:
     """
 
     def __init__(self, bus: Bus, safe_bps: int = SAFE_BPS,
-                 warn_bps: int = WARN_BPS):
+                 warn_bps: int = WARN_BPS, kill_switch=None):
         self.bus = bus
+        self.kill_switch = kill_switch
         self.safe_bps = safe_bps
         self.warn_bps = warn_bps
         self._prices: dict[str, dict[str, tuple[float, float]]] = {}  # asset -> {source: (price, timestamp)}
@@ -194,6 +195,8 @@ class PriceValidationGate:
 
     async def _on_exec_go(self, intent: TradeIntent):
         """Intercept execution and validate prices first."""
+        if self.kill_switch and self.kill_switch.active:
+            return  # Kill switch engaged — do not validate or forward
         self._stats["total"] += 1
         asset = self._extract_asset(intent)
         check = self.validate_price(asset)

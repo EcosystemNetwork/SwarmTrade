@@ -1,10 +1,37 @@
 """Core data types, position management, and async pub/sub bus."""
 from __future__ import annotations
-import asyncio, time, uuid
+import asyncio, logging, time, uuid
 from dataclasses import dataclass, field
 from typing import Literal, Callable, Awaitable, Any
 
 Direction = Literal["long", "short", "flat"]
+
+_MAX_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+async def safe_json(resp, max_bytes: int = _MAX_RESPONSE_BYTES,
+                    read_timeout: float = 10.0) -> dict | list | None:
+    """Read and parse JSON from an aiohttp response with size and timeout guard.
+
+    Returns None if response is too large, too slow, or unparseable.
+    """
+    if resp.content_length and resp.content_length > max_bytes:
+        logging.getLogger("swarm.http").warning(
+            "Response too large (%d bytes > %d), skipping", resp.content_length, max_bytes)
+        return None
+    try:
+        body = await asyncio.wait_for(resp.read(), timeout=read_timeout)
+        if len(body) > max_bytes:
+            logging.getLogger("swarm.http").warning(
+                "Response body too large (%d bytes), skipping", len(body))
+            return None
+        import json as _json
+        return _json.loads(body)
+    except asyncio.TimeoutError:
+        logging.getLogger("swarm.http").warning("Response read timed out after %.0fs", read_timeout)
+        return None
+    except Exception:
+        return None
 
 # Kraken fee tiers (taker fees for market orders)
 KRAKEN_TAKER_FEE = 0.0026   # 0.26%

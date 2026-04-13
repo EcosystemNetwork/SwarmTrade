@@ -167,7 +167,10 @@ class NewsAgent:
                 if resp.status != 200:
                     log.debug("CryptoPanic %s returned %d", asset, resp.status)
                     return []
-                data = await resp.json()
+                from .core import safe_json
+                data = await safe_json(resp)
+                if data is None:
+                    return []
         except Exception as e:
             log.debug("CryptoPanic fetch failed for %s: %s", asset, e)
             return []

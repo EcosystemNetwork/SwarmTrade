@@ -204,8 +204,10 @@ class IcebergExecutor:
 
     def __init__(self, bus: Bus, threshold_usd: float = 1500.0,
                  show_ratio: float = 0.2,
-                 impact_model: MarketImpactModel | None = None):
+                 impact_model: MarketImpactModel | None = None,
+                 kill_switch=None):
         self.bus = bus
+        self.kill_switch = kill_switch
         self.threshold_usd = threshold_usd
         self.show_ratio = max(0.01, min(1.0, show_ratio))
         self.impact = impact_model or MarketImpactModel()
@@ -221,6 +223,8 @@ class IcebergExecutor:
 
     async def _on_exec_go(self, intent: TradeIntent) -> None:
         """Intercept large orders and break them into iceberg slices."""
+        if self.kill_switch and self.kill_switch.active:
+            return  # Kill switch engaged — do not slice or execute
         if intent.amount_in < self.threshold_usd:
             return  # small order, let it pass through normally
 
