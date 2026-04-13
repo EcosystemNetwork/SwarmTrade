@@ -67,6 +67,16 @@ CHAIN_CONFIG = {
         "gas_token": "ETH",
         "avg_gas_usd": 5.0,
     },
+    # Stellar (non-EVM — bridged via HTLC atomic swaps, not CCTP)
+    "stellar": {
+        "name": "Stellar",
+        "rpc": "https://horizon-testnet.stellar.org",
+        "usdc": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+        "cctp_domain": None,  # No CCTP — uses HTLC bridge
+        "gas_token": "XLM",
+        "avg_gas_usd": 0.001,  # Stellar fees are ~0.00001 XLM
+        "bridge_method": "htlc",
+    },
 }
 
 # Circle CCTP addresses

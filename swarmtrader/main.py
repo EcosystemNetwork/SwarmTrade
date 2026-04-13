@@ -156,10 +156,13 @@ from .arb_executor import ArbScanner, ArbExecutor
 from .dex_quotes import DEXQuoteProvider
 from .dex_multi import MultiDEXScanner
 from .hermes_brain import HermesBrain, CommanderGate
+from .lieutenants import create_lieutenants
 from .alerts import AlertRouter
 # Stellar blockchain
 from .stellar_payments import StellarPaymentGateway, create_stellar_gateway
 from .stellar_agent import StellarDEXAgent
+from .stellar_dex_agg import StellarDEXAggregator
+from .stellar_bridge import StellarEVMBridge
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -1039,6 +1042,28 @@ async def run(args: argparse.Namespace):
                         stale_after=30.0, stoppable=stellar_dex)
     log.info("Stellar DEX agent: assets=%s network=%s", stellar_assets, stellar_network)
 
+    # ── Stellar Multi-DEX Aggregator (SDEX + StellarX + Lumenswap + Soroswap)
+    stellar_agg = StellarDEXAggregator(
+        bus, network=stellar_network, interval=15.0, assets=stellar_assets,
+    )
+    supervisor.register("stellar_dex_agg", stellar_agg.run,
+                        stale_after=45.0, stoppable=stellar_agg)
+    log.info("Stellar DEX aggregator: venues=%s assets=%s",
+             [q.name for q in stellar_agg.quoters], stellar_assets)
+
+    # ── Stellar ↔ EVM Bridge (HTLC atomic swaps + Dutch auctions) ──
+    evm_bridge_chain = os.getenv("BRIDGE_EVM_CHAIN", "base")
+    stellar_bridge = StellarEVMBridge(
+        bus, network=stellar_network, evm_chain=evm_bridge_chain,
+        scan_interval=15.0,
+    )
+    supervisor.register("stellar_evm_bridge", stellar_bridge.run,
+                        stale_after=45.0, stoppable=stellar_bridge)
+    log.info("Stellar↔EVM bridge: network=%s evm=%s htlc=%s auctions=%s",
+             stellar_network, evm_bridge_chain,
+             "live" if os.getenv("BRIDGE_EVM_HTLC_ADDRESS") else "sim",
+             "live" if os.getenv("STELLAR_HTLC_CONTRACT") else "sim")
+
     # ── Hyperliquid DEX (perps data + execution) ────────────────
     hl_agent = HyperliquidAgent(bus, assets=assets, interval=15.0)
     supervisor.register("hyperliquid", hl_agent.run, stale_after=45.0, stoppable=hl_agent)
@@ -1089,6 +1114,17 @@ async def run(args: argparse.Namespace):
     supervisor.register("learning", learning.run, stale_after=600.0, stoppable=learning)
     log.info("Learning coordinator: exploration=%.0f%%, analysis every 5min",
              learning.exploration_rate * 100)
+
+    # ── Lieutenant Hierarchy (sector aggregators) ────────────────
+    # Lieutenants compress 122 raw agent signals into 7 sector briefings.
+    # They run whether Hermes is active or not — the Strategist can also
+    # benefit from sector-level awareness in future iterations.
+    lieutenants = create_lieutenants(bus)
+    for lt in lieutenants:
+        supervisor.register(f"lieutenant_{lt.SECTOR}", lt.run,
+                            stale_after=30.0, stoppable=lt)
+    log.info("Lieutenant hierarchy: %d sector aggregators online",
+             len(lieutenants))
 
     # ── Strategy ────────────────────────────────────────────────
     tokens = set(assets) | {"USD", "USDC", "USDT"}
@@ -1286,10 +1322,14 @@ async def run(args: argparse.Namespace):
             bus, strategist=strategist, portfolio=portfolio,
             master_key=master_key,
         )
+        # Wire Stellar x402 payments to gateway
+        gateway.link_stellar(stellar_gw)
         # Wire gateway to HermesBrain so it pushes briefs to connected agents
         if hermes:
             hermes.gateway = gateway
         log.info("Agent Gateway enabled — external agents can connect")
+        log.info("  x402 catalog: /api/x402/catalog (%d paid services)",
+                 len(stellar_gw.services))
         log.info("  master_key configured (length=%d)", len(gateway.master_key))
         if not args.web:
             # Launch standalone gateway server
@@ -1534,6 +1574,8 @@ async def run(args: argparse.Namespace):
         log.info("X402 %s", _json.dumps(x402.status(), indent=2))
     log.info("STELLAR %s", _json.dumps(stellar_gw.status(), indent=2))
     log.info("STELLAR_DEX %s", _json.dumps(stellar_dex.status(), indent=2))
+    log.info("STELLAR_AGG %s", _json.dumps(stellar_agg.status(), indent=2))
+    log.info("STELLAR_BRIDGE %s", _json.dumps(stellar_bridge.status(), indent=2))
     log.info("ALPHA_SWARM %s", _json.dumps(alpha_components["coordinator"].summary(), indent=2))
     log.info("POLYMARKET %s", _json.dumps(polymarket.summary(), indent=2))
 

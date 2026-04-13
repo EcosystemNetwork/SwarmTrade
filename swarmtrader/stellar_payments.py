@@ -1,26 +1,36 @@
-"""Stellar Payment Rails — x402-style agent micropayments on Stellar.
+"""Stellar Payment Rails — x402 + MPP agent micropayments on Stellar.
 
-Brings agent-to-agent commerce to Stellar using USDC (Circle) on Stellar
-network with Soroban smart contract authorization. Agents can buy signals,
-pay for execution, and settle micropayments natively on Stellar.
+Implements the x402 protocol (Coinbase/Linux Foundation) and MPP (Machine
+Payments Protocol by Stripe/Tempo) on Stellar for agent-to-agent commerce.
 
-Protocol: x402 on Stellar
-  - HTTP request includes X-402-Payment header with Stellar transaction hash
-  - Server validates payment via Horizon API, delivers content
-  - Micropayments as low as $0.001 (Stellar's sub-cent fees make this viable)
+x402 Protocol Flow (HTTP 402):
+  1. Client requests a paid endpoint (e.g. GET /api/signal/realtime)
+  2. Server returns HTTP 402 with challenge:
+     - X-Payment-Required: {"amount": "10000", "asset": "<USDC_SAC>",
+       "recipient": "G...", "network": "stellar:testnet", "scheme": "exact-v2"}
+  3. Client builds Soroban SAC transfer auth entry, signs it
+  4. Client retries with Authorization header containing signed payment
+  5. Facilitator verifies + settles on-chain, server returns content
 
-Why Stellar:
-  - Sub-second finality (~5s)
-  - Near-zero fees (~0.00001 XLM per tx)
-  - Native USDC support via Circle
-  - Soroban smart contracts for programmable spending policies
-  - Built-in DEX with orderbook (SDEX)
+MPP Protocol Flow (Machine Payments Protocol):
+  - Charge Intent: one-time Soroban SAC transfer per request
+  - Session Intent: payment channel with cumulative off-chain commitments
+  - Pull mode: client signs auth entries, server broadcasts tx
+  - Push mode: client broadcasts tx, sends hash for verification
+
+References:
+  - x402 spec: https://developers.stellar.org/docs/build/agentic-payments/x402
+  - MPP spec: https://mpp.dev/overview
+  - Built on Stellar facilitator: @x402/stellar npm, OpenZeppelin Relayer
+  - Soroban USDC SAC: Stellar Asset Contract wrappers for native USDC
+  - Facilitator endpoints: /verify, /settle, /supported
 
 Environment variables:
   STELLAR_SECRET_KEY       — Stellar secret key (starts with S...)
   STELLAR_NETWORK          — "testnet" or "public" (default: testnet)
   STELLAR_USDC_ISSUER      — USDC issuer on Stellar (Circle's address)
   STELLAR_HORIZON_URL      — Horizon API endpoint (auto-set from network)
+  STELLAR_FACILITATOR_URL  — x402 facilitator (default: OpenZeppelin testnet)
 """
 from __future__ import annotations
 
@@ -625,9 +635,196 @@ class StellarPaymentGateway:
             "rate_limit": rate_limit,
         }
 
+    # ── x402 HTTP 402 Protocol (challenge/response) ──────────────
+
+    def create_402_challenge(self, service_id: str) -> dict:
+        """Create an HTTP 402 Payment Required challenge for a service.
+
+        Returns the challenge payload that goes in the X-Payment-Required
+        header when a client requests a paid endpoint without payment.
+
+        This follows the x402 spec: the client must respond with a signed
+        Soroban SAC transfer authorization entry.
+        """
+        svc = self.services.get(service_id)
+        if not svc:
+            return {}
+
+        # Amount in base units (USDC has 7 decimal places on Stellar)
+        amount_stroops = int(svc["price_usdc"] * 10_000_000)
+
+        return {
+            "x402Version": 2,
+            "scheme": "exact-v2",
+            "network": f"stellar:{self._network}",
+            "amount": str(amount_stroops),
+            "asset": self._soroban_usdc,
+            "recipient": self._public_key,
+            "service": service_id,
+            "description": svc["description"],
+            "price_human": f"${svc['price_usdc']:.4f} USDC",
+            "facilitator": os.getenv(
+                "STELLAR_FACILITATOR_URL",
+                "https://channels.openzeppelin.com/x402/testnet",
+            ),
+        }
+
+    async def verify_stellar_payment(self, tx_hash: str, expected_amount: float,
+                                     expected_recipient: str = "") -> dict:
+        """Verify a Stellar payment on-chain via Horizon API.
+
+        Checks that the transaction:
+        1. Exists and was successful
+        2. Contains a payment operation
+        3. Pays the correct amount to the correct recipient
+        4. Uses USDC (or native XLM)
+        """
+        if not self._server or not tx_hash:
+            return {"verified": False, "error": "no server or tx_hash"}
+
+        recipient = expected_recipient or self._public_key
+
+        try:
+            # Fetch transaction from Horizon
+            tx = self._server.transactions().transaction(tx_hash).call()
+
+            if not tx.get("successful", False):
+                return {"verified": False, "error": "transaction failed on-chain"}
+
+            # Fetch operations for this transaction
+            ops = self._server.operations().for_transaction(tx_hash).call()
+            records = ops.get("_embedded", {}).get("records", [])
+
+            for op in records:
+                if op.get("type") != "payment":
+                    continue
+
+                op_to = op.get("to", "")
+                op_amount = float(op.get("amount", "0"))
+                op_asset = op.get("asset_code", "XLM")
+
+                if (op_to == recipient and
+                    op_amount >= expected_amount * 0.99 and  # 1% tolerance
+                    op_asset in ("USDC", "XLM")):
+                    return {
+                        "verified": True,
+                        "tx_hash": tx_hash,
+                        "from": op.get("from", ""),
+                        "to": op_to,
+                        "amount": op_amount,
+                        "asset": op_asset,
+                        "ledger": tx.get("ledger"),
+                        "created_at": tx.get("created_at"),
+                    }
+
+            return {"verified": False, "error": "no matching payment operation found"}
+
+        except Exception as e:
+            return {"verified": False, "error": str(e)}
+
+    async def handle_x402_request(
+        self, service_id: str, authorization: str = "", tx_hash: str = "",
+    ) -> tuple[int, dict]:
+        """Handle an incoming HTTP request that may require x402 payment.
+
+        Returns (status_code, response_body):
+        - (402, challenge) if no payment provided
+        - (200, {"paid": True, ...}) if payment verified
+        - (403, {"error": ...}) if payment invalid
+        """
+        svc = self.services.get(service_id)
+        if not svc:
+            return 404, {"error": f"unknown service: {service_id}"}
+
+        # No payment provided → return 402 challenge
+        if not authorization and not tx_hash:
+            challenge = self.create_402_challenge(service_id)
+            return 402, {
+                "type": "https://paymentauth.org/problems/payment-required",
+                "title": "Payment Required",
+                "status": 402,
+                "detail": f"This endpoint requires ${svc['price_usdc']:.4f} USDC per request",
+                "challenge": challenge,
+            }
+
+        # Payment provided → verify on-chain
+        payment_hash = tx_hash or authorization
+        result = await self.verify_stellar_payment(
+            payment_hash, svc["price_usdc"]
+        )
+
+        if result.get("verified"):
+            self._stats["total_payments"] += 1
+            self._stats["total_volume_usdc"] += svc["price_usdc"]
+            self._stats["on_chain_settlements"] += 1
+            return 200, {
+                "paid": True,
+                "receipt": result,
+                "service": service_id,
+            }
+        else:
+            return 403, {
+                "error": "payment verification failed",
+                "detail": result.get("error", "unknown"),
+            }
+
+    # ── MPP (Machine Payments Protocol) ────────────────────────
+
+    def create_mpp_charge(self, service_id: str) -> dict:
+        """Create an MPP charge intent for a service.
+
+        MPP charge intents use Soroban SAC transfer for one-time payments.
+        The client signs auth entries and the server broadcasts the tx.
+        """
+        svc = self.services.get(service_id)
+        if not svc:
+            return {}
+
+        amount_stroops = int(svc["price_usdc"] * 10_000_000)
+
+        return {
+            "protocol": "mpp",
+            "version": "1.0",
+            "intent": "charge",
+            "mode": "pull",  # client signs, server broadcasts
+            "network": f"stellar:{self._network}",
+            "payment": {
+                "asset": self._soroban_usdc,
+                "amount": str(amount_stroops),
+                "recipient": self._public_key,
+            },
+            "service": {
+                "id": service_id,
+                "description": svc["description"],
+                "price_human": f"${svc['price_usdc']:.4f} USDC",
+            },
+        }
+
     def get_service_catalog(self) -> list[dict]:
-        """Return the service catalog for external agents."""
-        return list(self.services.values())
+        """Return the service catalog for external agents.
+
+        Each service includes both x402 and MPP pricing info so
+        clients can choose their preferred payment protocol.
+        """
+        catalog = []
+        for svc in self.services.values():
+            amount_stroops = int(svc["price_usdc"] * 10_000_000)
+            catalog.append({
+                **svc,
+                "x402": {
+                    "scheme": "exact-v2",
+                    "asset": self._soroban_usdc,
+                    "amount": str(amount_stroops),
+                    "recipient": self._public_key,
+                    "network": f"stellar:{self._network}",
+                },
+                "mpp": {
+                    "intent": "charge",
+                    "asset": self._soroban_usdc,
+                    "amount": str(amount_stroops),
+                },
+            })
+        return catalog
 
     def status(self) -> dict:
         return {

@@ -59,7 +59,7 @@ echo "  Max trade:\$$MAX_SIZE"
 echo "  Max DD:   \$$MAX_DD"
 echo "  Pairs:    $PAIRS"
 echo "  Dashboard: http://localhost:$WEB_PORT"
-echo "  Gateway:   ws://localhost:$((WEB_PORT + 1))"
+echo "  Gateway:   ws://localhost:$WEB_PORT/ws/agent"
 echo "============================================"
 echo ""
 
@@ -90,12 +90,18 @@ python -m swarmtrader.main "$MODE" "$DURATION" \
     --dashboard &
 
 SWARM_PID=$!
+trap 'kill $SWARM_PID 2>/dev/null; echo "SwarmTrader stopped."' EXIT INT TERM
 echo "  SwarmTrader PID: $SWARM_PID"
+
+# Determine gateway port: when --web is used, gateway is on the same port as the
+# dashboard.  A standalone gateway (no --web) would be on WEB_PORT+1, but connect.sh
+# always passes --web so the gateway lives on WEB_PORT.
+GW_PORT="$WEB_PORT"
 
 # Wait for gateway to be ready
 echo "  Waiting for gateway..."
 for i in $(seq 1 30); do
-    if curl -s "http://localhost:$((WEB_PORT + 1))/api/gateway/agents" > /dev/null 2>&1; then
+    if curl -s "http://localhost:$GW_PORT/api/gateway/status" > /dev/null 2>&1; then
         echo "  Gateway ready!"
         break
     fi
@@ -109,11 +115,7 @@ echo "  Gateway key: ${GATEWAY_KEY:0:8}..."
 echo ""
 
 python3 "$SCRIPT_DIR/scripts/swarm_bridge.py" \
-    --gateway "ws://localhost:$((WEB_PORT + 1))" \
+    --gateway "ws://localhost:$GW_PORT" \
     --key "$GATEWAY_KEY" \
     --register \
     $AUTO
-
-# Cleanup on exit
-kill $SWARM_PID 2>/dev/null || true
-echo "SwarmTrader stopped."

@@ -1065,12 +1065,98 @@ tailwind.config = {
         <pre id="gw-done-ws-example" class="text-[8px] font-mono text-slate-400 p-2.5 bg-void rounded border border-border overflow-x-auto whitespace-pre leading-relaxed max-h-[160px]"></pre>
       </div>
 
-      <button onclick="gwGoStep('pick')" class="gw-btn w-full" style="background:rgba(59,130,246,0.1);color:#60a5fa;border-color:rgba(59,130,246,0.2)">
-        <span class="flex items-center justify-center gap-2">
-          <span class="material-symbols-outlined text-xs">add</span>
-          Register Another Agent
-        </span>
-      </button>
+      <div class="flex gap-2">
+        <button onclick="gwGoStep('pick')" class="gw-btn flex-1" style="background:rgba(59,130,246,0.1);color:#60a5fa;border-color:rgba(59,130,246,0.2)">
+          <span class="flex items-center justify-center gap-2">
+            <span class="material-symbols-outlined text-xs">add</span>
+            Register Another
+          </span>
+        </button>
+        <button onclick="gwGoLive()" class="gw-btn gw-btn-primary flex-1">
+          <span class="flex items-center justify-center gap-2">
+            <span class="material-symbols-outlined text-xs" style="font-variation-settings:'FILL' 1">play_arrow</span>
+            Go Live
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ══ STEP 4: LIVE — brief viewer + decision panel ══ -->
+    <div id="gw-step-live" class="hidden" style="display:flex;flex-direction:column;height:calc(100vh - 60px)">
+      <!-- Live header -->
+      <div style="padding:12px 16px;border-bottom:1px solid #1e293b;background:linear-gradient(180deg,rgba(16,185,129,0.06) 0%,transparent 100%);flex-shrink:0">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-accent status-pulse"></div>
+            <span class="font-mono text-[10px] text-accent font-bold uppercase tracking-wider">Brain Mode</span>
+            <span id="gw-live-agent-name" class="font-mono text-[9px] text-muted"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="gw-live-brief-count" class="font-mono text-[9px] text-muted">0 briefs</span>
+            <button onclick="gwGoStep('pick')" class="gw-btn" style="padding:3px 8px;font-size:9px">
+              <span class="material-symbols-outlined text-[10px]">settings</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Brief display -->
+      <div id="gw-live-brief-area" style="flex:1;overflow-y:auto;padding:12px 16px;font-family:'JetBrains Mono',monospace">
+        <div class="text-center text-muted text-[10px] py-8">
+          <span class="material-symbols-outlined text-2xl text-muted-dim mb-2" style="display:block;font-variation-settings:'FILL' 1">satellite_alt</span>
+          Waiting for market brief...
+          <div class="text-[8px] text-muted-dim mt-1">Briefs arrive every ~15 seconds from 120+ agents</div>
+        </div>
+      </div>
+
+      <!-- Execution feed -->
+      <div id="gw-live-exec-feed" style="max-height:80px;overflow-y:auto;border-top:1px solid #1e293b;padding:6px 16px;flex-shrink:0;display:none">
+      </div>
+
+      <!-- Decision panel -->
+      <div style="border-top:1px solid #1e293b;padding:12px 16px;flex-shrink:0;background:rgba(15,23,42,0.6)">
+        <!-- Quick actions -->
+        <div class="flex gap-2 mb-2">
+          <button onclick="gwQuickDecision('buy')" class="gw-btn flex-1" style="background:rgba(34,197,94,0.12);color:#4ade80;border-color:rgba(34,197,94,0.25);font-size:10px;padding:8px">
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-sm" style="font-variation-settings:'FILL' 1">trending_up</span>
+              BUY
+            </span>
+          </button>
+          <button onclick="gwQuickDecision('hold')" class="gw-btn flex-1" style="background:rgba(148,163,184,0.08);color:#94a3b8;border-color:rgba(148,163,184,0.2);font-size:10px;padding:8px">
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-sm">pause</span>
+              HOLD
+            </span>
+          </button>
+          <button onclick="gwQuickDecision('sell')" class="gw-btn flex-1" style="background:rgba(239,68,68,0.12);color:#f87171;border-color:rgba(239,68,68,0.25);font-size:10px;padding:8px">
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-sm" style="font-variation-settings:'FILL' 1">trending_down</span>
+              SELL
+            </span>
+          </button>
+        </div>
+
+        <!-- Advanced: asset, size, confidence -->
+        <div class="flex gap-2 mb-2">
+          <select id="gw-live-asset" class="gw-input" style="flex:1;padding:5px 8px;font-size:9px">
+            <option value="ETH">ETH</option>
+            <option value="BTC">BTC</option>
+            <option value="SOL">SOL</option>
+          </select>
+          <input id="gw-live-size" type="number" class="gw-input" placeholder="Size $" value="50" min="1" max="500" style="flex:1;padding:5px 8px;font-size:9px">
+          <div class="flex items-center gap-1" style="flex:1">
+            <input id="gw-live-confidence" type="range" min="0.1" max="1.0" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:#3b82f6" oninput="document.getElementById('gw-live-conf-val').textContent=this.value">
+            <span id="gw-live-conf-val" class="font-mono text-[8px] text-muted" style="width:24px;text-align:right">0.7</span>
+          </div>
+        </div>
+
+        <!-- Reasoning -->
+        <div class="flex gap-2">
+          <input id="gw-live-reasoning" type="text" class="gw-input" placeholder="Reasoning (optional)" style="flex:1;padding:5px 8px;font-size:9px">
+          <span id="gw-live-decision-count" class="font-mono text-[8px] text-muted self-center" style="min-width:50px;text-align:right">0 sent</span>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -1596,7 +1682,12 @@ function handleMessage(msg) {
       renderGatewayAgents(); updateGatewayStatus(); break;
     case "gateway_agent_disconnected":
       gwState.agents = gwState.agents.filter(a => a.agent_id !== msg.data.agent_id);
+      gwBriefAgentId = null;
       renderGatewayAgents(); updateGatewayStatus(); break;
+    case "brain_brief":
+      gwHandleBrief(msg.data); break;
+    case "gateway_decision_ack":
+      gwHandleDecisionAck(msg.data); break;
     case "agents_update":
       S.agents = msg.data.agents || S.agents; renderAgents(); break;
     case "thought": handleThought(msg.data); break;
@@ -1995,6 +2086,13 @@ let gwSelectedProtocol = "openclaw";
 let gwSelectedType = "signal-custom";
 let gwSelectedCaps = new Set();
 
+// Brain mode state
+let gwBriefAgentId = null;   // agent_id of the UI-bridged agent in brain mode
+let gwBriefCount = 0;
+let gwDecisionCount = 0;
+let gwLatestPrices = {};
+let gwLastRegisteredData = null;  // stash registration data for "Go Live"
+
 const GW_PROTO_META = {
   openclaw:  { name: "OpenClaw",  icon: "precision_manufacturing", color: "#22c55e" },
   hermes:    { name: "Hermes",    icon: "chat",                    color: "#3b82f6" },
@@ -2024,7 +2122,7 @@ curl ${location.origin}/api/gateway/market \\
 
 function gwWsExample(proto, key) {
   const wsp = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${wsp}//${location.host}/ws/agent?api_key=${key}`;
+  const wsUrl = `${wsp}//${location.host}/ws/agent`;
   const payloads = {
     openclaw: `{
       "type": "decision",
@@ -2069,9 +2167,14 @@ function gwWsExample(proto, key) {
 
 import asyncio, json, websockets
 
+API_KEY = "${key}"
+
 async def brain():
     uri = "${wsUrl}"
-    async with websockets.connect(uri) as ws:
+    headers = {"X-API-Key": API_KEY}
+    async with websockets.connect(
+        uri, additional_headers=headers
+    ) as ws:
         welcome = json.loads(await ws.recv())
         print(f"Connected: {welcome}")
 
@@ -2113,13 +2216,16 @@ function toggleGatewayPanel() {
 }
 
 function gwGoStep(step) {
-  ["pick", "config", "done"].forEach(s => {
+  ["pick", "config", "done", "live"].forEach(s => {
     document.getElementById(`gw-step-${s}`).classList.toggle("hidden", s !== step);
   });
-  // Update step indicators
-  const stepNum = { pick: 1, config: 2, done: 3 }[step];
+  // Update step indicators (live mode hides the step bar)
+  const stepBar = document.getElementById("gw-steps-bar");
+  if (stepBar) stepBar.style.display = step === "live" ? "none" : "";
+  const stepNum = { pick: 1, config: 2, done: 3, live: 3 }[step];
   for (let i = 1; i <= 3; i++) {
     const el = document.getElementById(`gw-step-ind-${i}`);
+    if (!el) continue;
     if (i <= stepNum) {
       el.style.opacity = "1";
       const dot = el.querySelector("div");
@@ -2295,6 +2401,9 @@ function renderGatewayAgents() {
               <span class="font-mono text-[7px] text-muted">w:${a.weight} | ${a.signal_count || 0}sig</span>
             </div>
           </div>
+          <button onclick="gwGoLiveWith('${a.agent_id}','${esc(a.name)}')" class="gw-btn shrink-0" style="background:rgba(16,185,129,0.1);color:#34d399;border-color:rgba(16,185,129,0.25);padding:3px 6px" title="Go Live">
+            <span class="material-symbols-outlined text-[10px]" style="font-variation-settings:'FILL' 1">play_arrow</span>
+          </button>
           <button onclick="gwDisconnectAgent('${a.agent_id}')" class="gw-btn gw-btn-danger shrink-0" title="Disconnect">
             <span class="material-symbols-outlined text-[10px]">close</span>
           </button>
@@ -2336,14 +2445,151 @@ function gwDisconnectAgent(agentId) {
 }
 
 function gwShowRegistered(data) {
+  gwLastRegisteredData = data;
   const proto = GW_PROTO_META[data.protocol] || GW_PROTO_META.raw;
   document.getElementById("gw-done-name").textContent = `${data.name} — ${data.agent_type_label || data.agent_type} — ${proto.name}`;
   document.getElementById("gw-done-asn").textContent = data.asn || "—";
   document.getElementById("gw-done-key").textContent = data.api_key;
-  document.getElementById("gw-done-ws").textContent = `/ws/agent?api_key=${data.api_key.slice(0, 12)}...`;
+  document.getElementById("gw-done-ws").textContent = `/ws/agent (X-API-Key header)`;
   document.getElementById("gw-done-curl").textContent = gwCurlExample(data.protocol, data.api_key);
   document.getElementById("gw-done-ws-example").textContent = gwWsExample(data.protocol, data.api_key);
   gwGoStep("done");
+}
+
+// ── Brain Mode (live brief viewer + decision interface) ──────────
+
+function gwGoLiveWith(agentId, agentName) {
+  gwBriefAgentId = agentId;
+  gwBriefCount = 0;
+  gwDecisionCount = 0;
+  document.getElementById("gw-live-agent-name").textContent = agentName || agentId;
+  document.getElementById("gw-live-brief-count").textContent = "0 briefs";
+  document.getElementById("gw-live-decision-count").textContent = "0 sent";
+  document.getElementById("gw-live-brief-area").innerHTML = `
+    <div class="text-center text-muted text-[10px] py-8">
+      <span class="material-symbols-outlined text-2xl text-muted-dim mb-2" style="display:block;font-variation-settings:'FILL' 1">satellite_alt</span>
+      Waiting for market brief...
+      <div class="text-[8px] text-muted-dim mt-1">Briefs arrive every ~15 seconds from 120+ agents</div>
+    </div>`;
+  document.getElementById("gw-live-exec-feed").style.display = "none";
+  document.getElementById("gw-live-exec-feed").innerHTML = "";
+  gwGoStep("live");
+}
+
+function gwGoLive() {
+  // Use the most recently registered agent, or the first available
+  const agent = gwLastRegisteredData
+    || (gwState.agents.length > 0 ? gwState.agents[gwState.agents.length - 1] : null);
+  if (!agent) return;
+
+  gwBriefAgentId = agent.agent_id;
+  gwBriefCount = 0;
+  gwDecisionCount = 0;
+
+  document.getElementById("gw-live-agent-name").textContent = agent.name || agent.agent_id;
+  document.getElementById("gw-live-brief-count").textContent = "0 briefs";
+  document.getElementById("gw-live-decision-count").textContent = "0 sent";
+  document.getElementById("gw-live-brief-area").innerHTML = `
+    <div class="text-center text-muted text-[10px] py-8">
+      <span class="material-symbols-outlined text-2xl text-muted-dim mb-2" style="display:block;font-variation-settings:'FILL' 1">satellite_alt</span>
+      Waiting for market brief...
+      <div class="text-[8px] text-muted-dim mt-1">Briefs arrive every ~15 seconds from 120+ agents</div>
+    </div>`;
+  document.getElementById("gw-live-exec-feed").style.display = "none";
+  document.getElementById("gw-live-exec-feed").innerHTML = "";
+
+  gwGoStep("live");
+}
+
+function gwHandleBrief(data) {
+  if (!gwBriefAgentId) return;
+  gwBriefCount++;
+  document.getElementById("gw-live-brief-count").textContent = `${gwBriefCount} brief${gwBriefCount !== 1 ? "s" : ""}`;
+
+  const brief = data.brief || "";
+  const area = document.getElementById("gw-live-brief-area");
+
+  // Parse the brief into sections for better display
+  const lines = brief.split("\n");
+  let html = `<div class="text-[8px] text-muted-dim mb-2">${new Date().toLocaleTimeString()} — Brief #${gwBriefCount}</div>`;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) { html += '<div style="height:6px"></div>'; continue; }
+
+    // Section headers (PRICES, REGIME, PORTFOLIO, SIGNALS, CONSENSUS)
+    if (/^(PRICES|REGIME|FEAR|PORTFOLIO|---|\*\*\*)/.test(trimmed)) {
+      html += `<div class="text-[9px] font-bold text-electric mt-1">${esc(trimmed)}</div>`;
+    } else if (/^CONSENSUS/.test(trimmed)) {
+      html += `<div class="text-[9px] font-bold text-amber mt-0.5">${esc(trimmed)}</div>`;
+    } else if (/^\[/.test(trimmed)) {
+      // Signal lines [agent] direction str=... conf=...
+      const isLong = /long/i.test(trimmed);
+      const isShort = /short/i.test(trimmed);
+      const color = isLong ? "#4ade80" : isShort ? "#f87171" : "#94a3b8";
+      html += `<div class="text-[8px]" style="color:${color};padding-left:8px">${esc(trimmed)}</div>`;
+    } else {
+      html += `<div class="text-[8px] text-slate-400">${esc(trimmed)}</div>`;
+    }
+  }
+
+  area.innerHTML = html;
+  area.scrollTop = area.scrollHeight;
+}
+
+function gwHandleExecution(data) {
+  const feed = document.getElementById("gw-live-exec-feed");
+  feed.style.display = "";
+  const status = data.status || "?";
+  const color = status === "filled" ? "#4ade80" : status === "rejected" ? "#f87171" : "#f59e0b";
+  const line = document.createElement("div");
+  line.className = "font-mono text-[8px] py-0.5";
+  line.style.color = color;
+  const price = data.fill_price ? `@ $${Number(data.fill_price).toFixed(2)}` : "";
+  const pnl = data.pnl_estimate != null ? ` PnL: $${Number(data.pnl_estimate).toFixed(2)}` : "";
+  line.textContent = `${status.toUpperCase()} ${data.side || ""} ${data.asset || ""} ${price}${pnl}`;
+  feed.appendChild(line);
+  // Keep only last 10
+  while (feed.children.length > 10) feed.removeChild(feed.firstChild);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function gwHandleDecisionAck(data) {
+  // Briefly flash the decision count
+  const el = document.getElementById("gw-live-decision-count");
+  if (el) {
+    el.style.color = "#4ade80";
+    setTimeout(() => el.style.color = "", 500);
+  }
+}
+
+function gwQuickDecision(action) {
+  if (!gwBriefAgentId) return;
+
+  const asset = document.getElementById("gw-live-asset").value;
+  const size = parseFloat(document.getElementById("gw-live-size").value) || 50;
+  const confidence = parseFloat(document.getElementById("gw-live-confidence").value) || 0.7;
+  const reasoning = document.getElementById("gw-live-reasoning").value.trim();
+
+  const decision = {
+    action,
+    asset,
+    size_usd: size,
+    confidence,
+    reasoning: reasoning || `Manual ${action} from dashboard`,
+  };
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      action: "gateway_decision",
+      agent_id: gwBriefAgentId,
+      data: [decision],
+    }));
+  }
+
+  gwDecisionCount++;
+  document.getElementById("gw-live-decision-count").textContent = `${gwDecisionCount} sent`;
+  document.getElementById("gw-live-reasoning").value = "";
 }
 
 function handleGatewaySnapshot(data) {

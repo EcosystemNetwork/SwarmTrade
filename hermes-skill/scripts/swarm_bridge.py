@@ -126,14 +126,16 @@ async def run_bridge(ws_url: str, api_key: str, hermes_cmd: str | None = None):
 async def _run_aiohttp(ws_url: str, api_key: str, hermes_cmd: str | None):
     import aiohttp
 
-    connect_url = f"{ws_url.rstrip('/')}/ws/agent?api_key={api_key}"
+    connect_url = f"{ws_url.rstrip('/')}/ws/agent"
+    headers = {"X-API-Key": api_key}
     retry_delay = 2.0
 
     while True:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.ws_connect(
-                    connect_url, heartbeat=30.0, timeout=aiohttp.ClientTimeout(total=15)
+                    connect_url, headers=headers,
+                    heartbeat=30.0, timeout=aiohttp.ClientTimeout(total=15)
                 ) as ws:
                     # Read welcome
                     welcome = await asyncio.wait_for(ws.receive_json(), timeout=10.0)
@@ -179,13 +181,15 @@ async def _run_aiohttp(ws_url: str, api_key: str, hermes_cmd: str | None):
 async def _run_websockets(ws_url: str, api_key: str, hermes_cmd: str | None):
     import websockets
 
-    connect_url = f"{ws_url.rstrip('/')}/ws/agent?api_key={api_key}"
+    connect_url = f"{ws_url.rstrip('/')}/ws/agent"
+    headers = {"X-API-Key": api_key}
     retry_delay = 2.0
 
     while True:
         try:
             async with websockets.connect(
-                connect_url, ping_interval=30, open_timeout=10
+                connect_url, additional_headers=headers,
+                ping_interval=30, open_timeout=10
             ) as ws:
                 welcome_raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
                 welcome = json.loads(welcome_raw)

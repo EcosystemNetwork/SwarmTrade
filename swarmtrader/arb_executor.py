@@ -225,24 +225,46 @@ class ArbScanner:
             "jupiter": 0.002,   # ~0.20% Solana DEX
             "sushiswap": 0.003,
             "curve": 0.0004,    # 0.04% stablecoin pools
+            # Stellar DEX venues
+            "sdex": 0.0,        # SDEX has no protocol fee (only ~0.00001 XLM network fee)
+            "stellarx": 0.001,  # StellarX AMM pools ~0.1%
+            "lumenswap": 0.003, # Stellar native AMM 0.3%
+            "soroswap": 0.003,  # Soroswap AMM 0.3%
+            "stellar_agg": 0.002,  # Stellar DEX aggregator (blended)
         }
         return rates.get(exchange, 0.002)
 
     def _estimate_gas_pct(self, buy_exchange: str, sell_exchange: str, price: float) -> float:
         """Estimate gas/transfer cost as % of trade size."""
-        dex_venues = {"uniswap", "1inch", "jupiter", "sushiswap", "curve"}
+        evm_dex_venues = {"uniswap", "1inch", "sushiswap", "curve"}
+        stellar_venues = {"sdex", "stellarx", "lumenswap", "soroswap", "stellar_agg"}
+        sol_venues = {"jupiter"}
+        dex_venues = evm_dex_venues | stellar_venues | sol_venues
         gas_cost_usd = 0.0
 
         # DEX execution costs gas
-        if buy_exchange in dex_venues:
+        if buy_exchange in stellar_venues:
+            gas_cost_usd += 0.01  # Stellar tx fee ~$0.001, margin for safety
+        elif buy_exchange in evm_dex_venues:
             gas_cost_usd += 5.0   # ~$5 on L2, more on mainnet
-        if sell_exchange in dex_venues:
+        elif buy_exchange in sol_venues:
+            gas_cost_usd += 0.5
+        if sell_exchange in stellar_venues:
+            gas_cost_usd += 0.01
+        elif sell_exchange in evm_dex_venues:
             gas_cost_usd += 5.0
+        elif sell_exchange in sol_venues:
+            gas_cost_usd += 0.5
 
-        # Cross-venue transfer costs (if not same-chain)
+        # Cross-venue transfer costs
         if buy_exchange != sell_exchange:
-            if buy_exchange in dex_venues or sell_exchange in dex_venues:
-                gas_cost_usd += 2.0  # bridge/transfer estimate
+            # Cross-chain bridge cost (EVM↔Stellar HTLC swap overhead)
+            buy_is_stellar = buy_exchange in stellar_venues
+            sell_is_stellar = sell_exchange in stellar_venues
+            if buy_is_stellar != sell_is_stellar:
+                gas_cost_usd += 3.0  # HTLC bridge gas on EVM side
+            elif buy_exchange in dex_venues or sell_exchange in dex_venues:
+                gas_cost_usd += 2.0  # same-ecosystem transfer
 
         if gas_cost_usd <= 0:
             return 0.0

@@ -52,8 +52,8 @@ Connect Hermes Agent to a running SwarmTrader instance as its **trading brain**.
 3. **Bridge script** running — connects Hermes to SwarmTrader's WebSocket gateway:
    ```bash
    python3 hermes-skill/scripts/swarm_bridge.py \
-     --gateway ws://localhost:8081 \
-     --key YOUR_GATEWAY_KEY
+     --gateway ws://localhost:8080 \
+     --key YOUR_GATEWAY_KEY --register
    ```
 
 ## How It Works

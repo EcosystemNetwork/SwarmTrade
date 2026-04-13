@@ -214,6 +214,11 @@ class WebDashboard:
         # Per-client rate limit tracking: ws -> list of timestamps
         self._cmd_times: dict[web.WebSocketResponse, list[float]] = {}
 
+        # UI-bridged agents: dashboard WS acts as the agent's WS connection
+        # so brain_brief messages flow to the frontend without an external bridge.
+        # Maps agent_id -> dashboard WS that registered it.
+        self._ui_bridges: dict[str, web.WebSocketResponse] = {}
+
         # Cached state for new clients
         self.prices: dict[str, float] = {}
         self.signals: dict[str, dict] = {}
@@ -632,6 +637,13 @@ class WebDashboard:
         finally:
             self._clients.discard(ws)
             self._cmd_times.pop(ws, None)
+            # Clean up any UI-bridged agents tied to this WS
+            dead_bridges = [aid for aid, w in self._ui_bridges.items() if w is ws]
+            for aid in dead_bridges:
+                self._ui_bridges.pop(aid, None)
+                if self.gateway:
+                    self.gateway._ws_clients.pop(aid, None)
+                log.info("UI bridge cleaned up: %s", aid)
             log.info("WebSocket client disconnected (%d remaining)", len(self._clients))
 
         return ws
@@ -673,6 +685,9 @@ class WebDashboard:
 
         elif action == "gateway_disconnect" and self.gateway:
             await self._ws_gateway_disconnect(cmd)
+
+        elif action == "gateway_decision" and self.gateway:
+            await self._ws_gateway_decision(cmd, ws)
 
         elif action == "wallet_set_allocation" and self.wallet:
             asset = cmd.get("asset", "")
@@ -778,7 +793,12 @@ class WebDashboard:
         return agent
 
     async def _ws_gateway_connect(self, cmd: dict, ws: web.WebSocketResponse):
-        """Handle gateway_connect command from a WebSocket client."""
+        """Handle gateway_connect command from a WebSocket client.
+
+        After registration the dashboard WS is added to the gateway's
+        _ws_clients so brain_brief messages flow directly to the frontend
+        without needing an external bridge script.
+        """
         name = cmd.get("name", "").strip()
         protocol = cmd.get("protocol", "openclaw")
         if not name or protocol not in ("openclaw", "hermes", "ironclaw", "raw"):
@@ -799,6 +819,14 @@ class WebDashboard:
             description=description,
         )
 
+        agent_id = reg["agent_id"]
+
+        # Auto-bridge: register this dashboard WS as the agent's live
+        # connection so it receives brain_brief, market, and execution msgs.
+        self.gateway._ws_clients[agent_id] = ws
+        self._ui_bridges[agent_id] = ws
+        log.info("UI bridge active: %s -> dashboard WS", agent_id)
+
         # Send full registration (with API key) only to the requesting client
         await self._send_to(ws, "gateway_agent_registered", reg)
         # Broadcast agent list update (no secrets) to all clients
@@ -809,10 +837,70 @@ class WebDashboard:
     async def _ws_gateway_disconnect(self, cmd: dict):
         """Handle gateway_disconnect command from a WebSocket client."""
         agent_id = cmd.get("agent_id", "")
+        # Clean up UI bridge
+        self._ui_bridges.pop(agent_id, None)
+        self.gateway._ws_clients.pop(agent_id, None)
         agent = self._disconnect_external_agent(agent_id)
         if agent:
             await self._broadcast("gateway_agent_disconnected", {"agent_id": agent_id})
             await self._broadcast("agents_update", {"agents": self.agents})
+
+    async def _ws_gateway_decision(self, cmd: dict, ws: web.WebSocketResponse):
+        """Handle gateway_decision from a UI-bridged agent.
+
+        The dashboard user is acting as the brain — they see the brief and
+        send back a trading decision which gets routed through the gateway's
+        normal signal processing pipeline.
+        """
+        agent_id = cmd.get("agent_id", "")
+        decisions = cmd.get("data", cmd.get("decisions", []))
+
+        if not agent_id or agent_id not in self.gateway.agents:
+            await self._send_to(ws, "error", {"message": f"unknown agent: {agent_id}"})
+            return
+
+        agent = self.gateway.agents[agent_id]
+
+        # Route each decision through the gateway as a signal
+        if isinstance(decisions, dict):
+            decisions = [decisions]
+        if not isinstance(decisions, list):
+            return
+
+        for decision in decisions:
+            action = str(decision.get("action", "hold")).lower()
+            if action == "hold":
+                log.info("UI decision from %s: HOLD — %s",
+                         agent_id, decision.get("reasoning", ""))
+                continue
+
+            # Map buy/sell action to signal direction
+            direction = "long" if action == "buy" else "short" if action == "sell" else "flat"
+            confidence = max(0.0, min(1.0, float(decision.get("confidence", 0.5))))
+            strength = confidence if direction == "long" else -confidence if direction == "short" else 0.0
+
+            signal = Signal(
+                agent_id=agent.agent_id,
+                asset=str(decision.get("asset", "ETH")).upper().replace("USD", ""),
+                direction=direction,
+                strength=strength,
+                confidence=confidence,
+                rationale=f"[{agent.name}/UI] {str(decision.get('reasoning', ''))[:150]}",
+            )
+            await self.bus.publish(f"signal.{agent.agent_id}", signal)
+            agent.last_signal_at = time.time()
+            agent.signal_count += 1
+
+            log.info("UI decision from %s: %s %s $%.0f conf=%.2f — %s",
+                     agent_id, action, decision.get("asset", "ETH"),
+                     float(decision.get("size_usd", 0)),
+                     confidence, decision.get("reasoning", ""))
+
+        await self._send_to(ws, "gateway_decision_ack", {
+            "agent_id": agent_id,
+            "count": len(decisions),
+            "ts": time.time(),
+        })
 
     # ── HTTP Handlers ───────────────────────────────────────────────
 

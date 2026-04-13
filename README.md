@@ -102,54 +102,117 @@ Most AI agents hit a wall when they need to pay for something. SwarmTrader's age
 
 ## Stellar Integration
 
-### x402 Agent Payments on Stellar (`stellar_payments.py`)
-Agents pay each other for signals, data, and execution using **USDC micropayments on Stellar**. The x402 protocol turns HTTP requests into paid interactions:
+SwarmTrader implements both major agentic payment protocols on Stellar:
+- **[x402](https://developers.stellar.org/docs/build/agentic-payments/x402)** — Coinbase/Linux Foundation open protocol for per-request payments via Soroban authorization entries
+- **[MPP](https://mpp.dev/overview)** — Machine Payments Protocol by Stripe/Tempo for charge intents and payment channels
+
+### x402 Payment Flow (`stellar_payments.py` + `gateway.py`)
+
+The gateway exposes **x402 payment-gated endpoints** following the official protocol spec. Any agent (AI or human) can discover services via `/api/x402/catalog` and pay per-request:
 
 ```
-External Agent                        SwarmTrader
+Agent Client                          SwarmTrader Gateway
      |                                     |
-     |  POST /api/signal/realtime          |
-     |  X-402-Payment: <stellar_tx_hash>   |
-     |  X-402-Amount: 0.01                 |
-     |  X-402-Chain: stellar               |
+     |  GET /api/x402/signal.realtime      |
      | ----------------------------------> |
-     |                                     | verify tx on Horizon
-     |  200 OK                             | debit sender, credit receiver
-     |  { signal: "BUY ETH", ... }         |
+     |                                     |
+     |  HTTP 402 Payment Required          |
+     |  X-Payment-Required: {              |
+     |    "scheme": "exact-v2",            |
+     |    "network": "stellar:testnet",    |
+     |    "amount": "100000",              |  (0.01 USDC in base units)
+     |    "asset": "CBIELTK6...",          |  (Soroban USDC SAC contract)
+     |    "recipient": "GABCD...",         |
+     |    "facilitator": "https://..."     |  (OpenZeppelin relayer)
+     |  }                                  |
+     | <---------------------------------- |
+     |                                     |
+     |  [Agent builds Soroban SAC transfer |
+     |   auth entry, signs with wallet]    |
+     |                                     |
+     |  GET /api/x402/signal.realtime      |
+     |  X-402-Payment: <tx_hash>           |
+     | ----------------------------------> |
+     |                                     | verify on Horizon
+     |  HTTP 200 OK                        | check payment op matches
+     |  { "paid": true,                    |
+     |    "data": { signals... } }         |
      | <---------------------------------- |
 ```
 
-- **11 paid services**: real-time signals ($0.01), smart money tracking ($0.02), VaR analysis ($0.05), stress tests ($0.10), SDEX quotes ($0.003), and more
-- **Sub-cent settlement**: Stellar fees < $0.001 per tx — viable for $0.001 micropayments
-- **Soroban contract calls**: programmable spending policies, multi-sig agent wallets
-- **USDC trustline management**: automatic setup of Circle USDC trustlines on Stellar
-- **Testnet + mainnet**: works on both networks, auto-funds via Friendbot on testnet
+### MPP (Machine Payments Protocol)
+
+MPP support adds two payment intents via Soroban SAC transfers:
+
+- **Charge Intent** (one-time): each request triggers a Soroban SAC `transfer` settled on-chain. Pull mode (client signs auth entries, server broadcasts) or push mode (client broadcasts, sends hash).
+- **Session Intent** (streaming): unidirectional payment channel — agent deposits once, makes many off-chain payments by signing cumulative commitments.
+
+### Paid Service Catalog (11 services)
+
+| Service | Price | Rate Limit |
+|---------|-------|------------|
+| `signal.realtime` | $0.010 USDC | 60/hr |
+| `signal.smart_money` | $0.020 USDC | 30/hr |
+| `signal.confluence` | $0.015 USDC | 30/hr |
+| `data.market_snapshot` | $0.001 USDC | 300/hr |
+| `data.sdex_orderbook` | $0.002 USDC | 120/hr |
+| `data.portfolio` | $0.005 USDC | 60/hr |
+| `analysis.var` | $0.050 USDC | 10/hr |
+| `analysis.stress_test` | $0.100 USDC | 5/hr |
+| `execution.sdex_quote` | $0.003 USDC | 60/hr |
+| `intelligence.alpha` | $0.100 USDC | 10/hr |
+| `stellar.pathfinding` | $0.005 USDC | 30/hr |
+
+All prices use the Soroban USDC SAC contract (`CBIELTK6...` on testnet). Settlement via [OpenZeppelin x402 Facilitator](https://channels.openzeppelin.com/x402/testnet) or self-hosted relayer.
 
 ### Stellar DEX Agent (`stellar_agent.py`)
 Monitors the **Stellar Decentralized Exchange (SDEX)** and publishes XLM/USDC market data to the 120+ agent swarm:
 
 - **SDEX orderbook monitoring** — real-time bids/asks/spread/depth via Horizon API
-- **XLM price feed** — publishes to the same bus as CEX scouts (Kraken, Binance, etc.)
-- **Path payment optimization** — finds multi-hop swap routes for optimal execution
-- **SDEX trade execution** — limit orders directly on Stellar's native orderbook
-- **Spread alerts** — flags wide spreads for cross-venue arbitrage opportunities
+- **XLM price feed** — publishes `MarketSnapshot` to the same bus as CEX scouts
+- **Path payment optimization** — finds multi-hop swap routes via `strict_receive_paths`
+- **SDEX trade execution** — `manage_sell_offer` limit orders on Stellar's native orderbook
+- **Spread alerts** — flags wide spreads (>50bps) for cross-venue arbitrage
+- **Mock mode** — simulates SDEX prices for demo/testing without Stellar keys
 
-### Settlement Architecture
+### On-Chain Settlement Architecture
 ```
 Agent A wants signal from Agent B
     |
     v
-Internal ledger (instant, off-chain)
+Internal ledger (instant, off-chain tracking)
     |
     | batch threshold reached ($10)
     v
-Settle on Stellar (USDC payment via Horizon)
+Settle on Stellar via Horizon API
+    |  - USDC payment (Soroban SAC transfer)
+    |  - XLM payment (native asset)
+    |  - Memo: "x402:{amount}"
+    v
+Tx hash recorded, receipt published to bus
     |
     v
-Tx hash recorded, receipts published to bus
+Verifiable on Stellar Expert: stellar.expert/explorer/testnet/tx/{hash}
 ```
 
-Payments accumulate in an internal ledger for speed, then batch-settle on Stellar when the threshold is reached. This gives agents instant confirmation while still anchoring to on-chain settlement.
+### Soroban Smart Contract Integration
+
+- **Soroban USDC SAC** (`CBIELTK6...`): Stellar Asset Contract wrapper for USDC — enables Soroban-native `transfer` calls
+- **Programmable spending policies**: invoke Soroban contracts for multi-sig agent wallets, spending caps, time-locked budgets
+- **On-chain reputation**: record agent attestations via contract calls (pattern from [StellarPay402](https://dorahacks.io/buidl/42449))
+
+### Tech Stack (Stellar-specific)
+
+| Component | Technology |
+|-----------|------------|
+| SDK | `stellar-sdk` 10.0.0 (Python) |
+| Network | Stellar testnet / pubnet |
+| Payments | x402 (exact-v2 scheme) + MPP (charge intent) |
+| Smart Contracts | Soroban (SAC transfers, contract invocation) |
+| DEX | SDEX native orderbook via Horizon API |
+| Facilitator | OpenZeppelin x402 Relayer Plugin |
+| Asset | USDC (Circle) via Stellar Asset Contract |
+| Explorer | [Stellar Expert](https://stellar.expert/explorer/testnet) |
 
 ## Key Features
 
@@ -225,14 +288,22 @@ Payments accumulate in an internal ledger for speed, then batch-settle on Stella
 git clone https://github.com/EcosystemNetwork/swarmtrader.git
 cd swarmtrader
 
-# Install
+# Install (includes stellar-sdk)
 pip install -e ".[dev]"
 
 # Copy environment config
 cp .env.example .env
 
-# Run in mock mode (no API keys needed)
+# Run in mock mode (no API keys needed — Stellar SDEX runs in mock mode)
 python -m swarmtrader.main mock 120
+
+# Run with Stellar testnet (auto-funds via Friendbot)
+export STELLAR_SECRET_KEY=S...your_testnet_secret_key...
+export STELLAR_NETWORK=testnet
+python -m swarmtrader.main mock 300 --web --dashboard
+
+# Run with XLM trading pairs
+python -m swarmtrader.main mock 300 --pairs XLMUSD --web --dashboard
 
 # Run with web dashboard
 python -m swarmtrader.main mock 300 --web --dashboard
@@ -246,6 +317,23 @@ python -m swarmtrader.main paper 600 --pairs ETHUSD BTCUSD --ws --web
 
 # Run tests
 pytest tests/ -v
+```
+
+### Stellar Testnet Setup
+
+```bash
+# 1. Generate a Stellar keypair
+python -c "from stellar_sdk import Keypair; kp = Keypair.random(); print(f'Public: {kp.public_key}\nSecret: {kp.secret}')"
+
+# 2. Fund via Friendbot (automatic when STELLAR_NETWORK=testnet)
+#    Or manually: curl "https://friendbot.stellar.org?addr=YOUR_PUBLIC_KEY"
+
+# 3. Set in .env
+echo "STELLAR_SECRET_KEY=S...your_secret..." >> .env
+echo "STELLAR_NETWORK=testnet" >> .env
+
+# 4. Run — agents will pay each other on Stellar testnet
+python -m swarmtrader.main mock 300 --web --dashboard
 ```
 
 ## Docker

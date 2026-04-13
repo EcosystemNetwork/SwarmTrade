@@ -982,6 +982,85 @@ class AgentGateway:
 
         return web.json_response({"sent": True, "agent_id": agent_id})
 
+    # ── x402 Paid Endpoints (Stellar micropayments) ──────────────
+
+    _stellar_gateway = None  # set via link_stellar()
+
+    def link_stellar(self, stellar_gw):
+        """Link the Stellar payment gateway for x402 paid endpoints."""
+        self._stellar_gateway = stellar_gw
+        log.info("Gateway: Stellar x402 payment endpoints enabled")
+
+    async def handle_x402_catalog(self, request: web.Request) -> web.Response:
+        """GET /api/x402/catalog — list all paid services with pricing."""
+        if not self._stellar_gateway:
+            return web.json_response({"error": "stellar payments not configured"}, status=503)
+        catalog = self._stellar_gateway.get_service_catalog()
+        return web.json_response({
+            "protocol": "x402",
+            "version": 2,
+            "network": f"stellar:{self._stellar_gateway._network}",
+            "services": catalog,
+        })
+
+    async def handle_x402_service(self, request: web.Request) -> web.Response:
+        """GET /api/x402/{service_id} — x402 payment-gated service endpoint.
+
+        Without payment: returns HTTP 402 with challenge.
+        With payment (tx hash in Authorization header): verifies and returns data.
+        """
+        if not self._stellar_gateway:
+            return web.json_response({"error": "stellar payments not configured"}, status=503)
+
+        service_id = request.match_info.get("service_id", "")
+
+        # Extract payment proof from headers
+        auth = request.headers.get("Authorization", "")
+        tx_hash = request.headers.get("X-402-Payment", "")
+
+        status_code, body = await self._stellar_gateway.handle_x402_request(
+            service_id=service_id,
+            authorization=auth,
+            tx_hash=tx_hash,
+        )
+
+        if status_code == 402:
+            resp = web.json_response(body, status=402)
+            # Set the standard x402 header
+            resp.headers["X-Payment-Required"] = json.dumps(body.get("challenge", {}))
+            return resp
+
+        if status_code == 200:
+            # Payment verified — deliver the actual service data
+            service_data = await self._get_service_data(service_id)
+            body["data"] = service_data
+            return web.json_response(body)
+
+        return web.json_response(body, status=status_code)
+
+    async def _get_service_data(self, service_id: str) -> dict:
+        """Return actual data for a paid service."""
+        if service_id == "signal.realtime":
+            return {"signals": self._latest_signals, "ts": time.time()}
+        elif service_id == "data.market_snapshot":
+            data = {"prices": self._prices, "ts": time.time()}
+            if self.portfolio:
+                data["portfolio"] = self.portfolio.summary()
+            return data
+        elif service_id == "data.portfolio":
+            return {"portfolio": self.portfolio.summary() if self.portfolio else {},
+                    "ts": time.time()}
+        elif service_id == "data.sdex_orderbook":
+            ob = await self._stellar_gateway.query_sdex_orderbook()
+            return ob
+        elif service_id.startswith("signal."):
+            return {"signals": self._latest_signals, "ts": time.time()}
+        elif service_id.startswith("intelligence."):
+            return {"signals": self._latest_signals,
+                    "prices": self._prices, "ts": time.time()}
+        else:
+            return {"service": service_id, "ts": time.time()}
+
     def register_routes(self, app: web.Application):
         """Add gateway routes to an aiohttp Application."""
         app.router.add_post("/api/gateway/connect", self.handle_connect)
@@ -993,6 +1072,9 @@ class AgentGateway:
         app.router.add_get("/api/gateway/registry", self.handle_registry)
         app.router.add_delete("/api/gateway/disconnect", self.handle_disconnect)
         app.router.add_get("/ws/agent", self.handle_ws_agent)
+        # x402 payment-gated endpoints (Stellar)
+        app.router.add_get("/api/x402/catalog", self.handle_x402_catalog)
+        app.router.add_get("/api/x402/{service_id}", self.handle_x402_service)
 
     def summary(self) -> dict:
         return {

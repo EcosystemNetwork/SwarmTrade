@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 import aiohttp
 
 from .core import Bus, Signal, TradeIntent, MarketSnapshot, OrderSpec, PortfolioTracker
+from .lieutenants import SectorBriefing, Escalation, SECTOR_NAMES
 
 log = logging.getLogger("swarm.hermes")
 
@@ -62,6 +63,10 @@ class MarketState:
     fear_greed: str = ""
     last_intent_ts: float = 0.0
     recent_executions: list[str] = field(default_factory=list)
+    # Lieutenant briefings — compressed sector intelligence
+    briefings: dict[str, SectorBriefing] = field(default_factory=dict)
+    escalations: list[Escalation] = field(default_factory=list)
+    _escalation_consumed: bool = False
 
 
 SIGNAL_TOPICS = [
@@ -498,15 +503,23 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
         self._last_call_ts: float = 0.0
         self._call_count: int = 0
         self._error_count: int = 0
+        self._skipped_cycles: int = 0  # cycles where LLM was not called
 
-        # Subscribe to everything
+        # Subscribe to lieutenant briefings (compressed sector intelligence)
         bus.subscribe("market.snapshot", self._on_snapshot)
         bus.subscribe("exec.report", self._on_exec_report)
-        for topic in SIGNAL_TOPICS:
-            bus.subscribe(topic, self._on_signal)
+        for sector in SECTOR_NAMES:
+            bus.subscribe(f"briefing.{sector}", self._on_briefing)
+            bus.subscribe(f"escalation.{sector}", self._on_escalation)
 
-        log.info("HermesBrain initialized: provider=%s interval=%.0fs",
-                 self.provider.name, self.interval)
+        # Keep raw signal subscription for regime/fear_greed extraction
+        # (these are metadata, not trading signals — negligible cost)
+        bus.subscribe("signal.regime", self._on_signal)
+        bus.subscribe("signal.fear_greed", self._on_signal)
+
+        log.info("HermesBrain initialized: provider=%s interval=%.0fs "
+                 "(lieutenant mode — consuming %d sector briefings)",
+                 self.provider.name, self.interval, len(SECTOR_NAMES))
 
     # ── Bus handlers ──────────────────────────────────────────────────────
 
@@ -535,10 +548,67 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
         if len(self.state.recent_executions) > 10:
             self.state.recent_executions = self.state.recent_executions[-10:]
 
+    async def _on_briefing(self, briefing: SectorBriefing):
+        """Receive compressed sector intelligence from a lieutenant."""
+        self.state.briefings[briefing.sector] = briefing
+
+    async def _on_escalation(self, esc: Escalation):
+        """Receive urgent event from a lieutenant — triggers immediate LLM query."""
+        self.state.escalations.append(esc)
+        if len(self.state.escalations) > 20:
+            self.state.escalations = self.state.escalations[-10:]
+        log.warning("BRAIN ESCALATION from [%s]: %s — %s",
+                    esc.sector, esc.event_type, esc.message)
+
+    # ── Actionability gate — should we bother calling the LLM? ───────────
+
+    def _is_actionable(self) -> tuple[bool, str]:
+        """Determine if current briefings warrant an LLM call.
+
+        Returns (should_call, reason).  Skipping saves an API hit.
+        """
+        briefings = self.state.briefings
+        if not briefings:
+            return False, "no briefings received yet"
+
+        # Unconsumed escalations always trigger
+        if self.state.escalations and not self.state._escalation_consumed:
+            return True, f"escalation: {self.state.escalations[-1].event_type}"
+
+        active = [b for b in briefings.values()
+                  if time.time() - b.ts < 30]  # briefing must be recent
+        if len(active) < 2:
+            return False, f"only {len(active)} recent briefings"
+
+        # Any sector with high conviction + clear direction?
+        strong = [b for b in active
+                  if abs(b.score) > 0.3 and b.confidence > 0.5
+                  and b.direction in ("bullish", "bearish")]
+        if strong:
+            return True, f"{len(strong)} sector(s) show strong signal"
+
+        # Multiple sectors aligned in same direction?
+        bullish = sum(1 for b in active if b.direction == "bullish")
+        bearish = sum(1 for b in active if b.direction == "bearish")
+        if bullish >= 3 or bearish >= 3:
+            return True, f"multi-sector alignment ({bullish}B/{bearish}S)"
+
+        # Any sector flagging conflict or anomalies worth reviewing?
+        conflicts = [b for b in active if b.conflict]
+        anomalies = [b for b in active if b.anomalies]
+        if conflicts or anomalies:
+            return True, f"{len(conflicts)} conflicts, {len(anomalies)} anomalies"
+
+        return False, "no actionable conditions"
+
     # ── Market brief compiler ─────────────────────────────────────────────
 
     def _compile_brief(self) -> str:
-        """Build a concise market brief from all collected signals."""
+        """Build a concise market brief from lieutenant sector briefings.
+
+        Old approach: dump 122 raw signals (~4K tokens).
+        New approach: 7 sector one-liners + anomalies (~400-600 tokens).
+        """
         now = time.time()
         lines = []
 
@@ -569,38 +639,36 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
             lines.append(f"TOTAL PnL: realized={summary['total_realized_pnl']:+.4f} "
                          f"fees={summary['total_fees']:.4f}")
 
-        # Agent signals grouped by asset
-        stale_cutoff = now - 120
-        active_signals = [s for s in self.state.signals.values() if s.ts > stale_cutoff]
+        # ── Sector briefings (the core change) ──
+        briefings = self.state.briefings
+        if briefings:
+            lines.append(f"\n--- SECTOR INTELLIGENCE ({len(briefings)} sectors) ---")
+            total_agents = 0
+            for sector in sorted(briefings.keys()):
+                b = briefings[sector]
+                if now - b.ts > 60:
+                    continue  # stale briefing
+                lines.append(b.one_liner())
+                total_agents += b.n_agents
 
-        if active_signals:
-            by_asset: dict[str, list[SignalSnapshot]] = {}
-            for s in active_signals:
-                by_asset.setdefault(s.asset, []).append(s)
+                # Include top signals only for strong/conflicted sectors
+                if abs(b.score) > 0.3 or b.conflict:
+                    for ts in b.top_signals[:2]:
+                        lines.append(f"    {ts}")
 
-            for asset in sorted(by_asset.keys()):
-                signals = sorted(by_asset[asset], key=lambda s: -s.confidence)
-                lines.append(f"\n--- {asset} SIGNALS ({len(signals)} agents) ---")
-
-                longs = [s for s in signals if s.direction == "long"]
-                shorts = [s for s in signals if s.direction == "short"]
-                flats = [s for s in signals if s.direction == "flat"]
-                lines.append(
-                    f"CONSENSUS: {len(longs)} LONG, {len(shorts)} SHORT, {len(flats)} FLAT"
-                )
-
-                for s in signals[:12]:
-                    age = int(now - s.ts)
-                    # Sanitize rationale: strip newlines, cap length, prevent
-                    # prompt injection from external agent signals
-                    safe_rationale = s.rationale.replace('\n', ' ').replace('\r', ' ')[:120]
-                    lines.append(
-                        f"  [{s.agent_id}] {s.direction} "
-                        f"str={s.strength:+.2f} conf={s.confidence:.2f} "
-                        f"({age}s ago) — {safe_rationale}"
-                    )
+            lines.append(f"TOTAL AGENTS REPORTING: {total_agents}")
         else:
-            lines.append("\nNO ACTIVE SIGNALS (waiting for agents to report)")
+            lines.append("\nNO SECTOR BRIEFINGS (waiting for lieutenants)")
+
+        # ── Escalations (urgent events that triggered this call) ──
+        if self.state.escalations:
+            recent_esc = [e for e in self.state.escalations if now - e.ts < 60]
+            if recent_esc:
+                lines.append(f"\n--- ESCALATIONS ({len(recent_esc)}) ---")
+                for esc in recent_esc[-3:]:
+                    lines.append(f"  [{esc.sector}] {esc.severity.upper()}: "
+                                 f"{esc.event_type} — {esc.message[:100]}")
+            self.state._escalation_consumed = True
 
         if self.state.recent_executions:
             lines.append(f"\nRECENT TRADES: {', '.join(self.state.recent_executions[-5:])}")
@@ -899,27 +967,38 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
                     await asyncio.sleep(1.0)
                     continue
 
-                brief = self._compile_brief()
-                n_signals = len([s for s in self.state.signals.values()
-                                 if now - s.ts < 120])
+                # ── Actionability gate: skip LLM if nothing worth asking ──
+                actionable, reason = self._is_actionable()
+                n_briefings = len(self.state.briefings)
+                n_agents = sum(b.n_agents for b in self.state.briefings.values()
+                               if now - b.ts < 60)
 
-                if n_signals < 2:
-                    log.debug("BRAIN: only %d active signals, waiting...", n_signals)
-                    await asyncio.sleep(5.0)
+                if not actionable:
+                    self._skipped_cycles += 1
+                    if self._skipped_cycles % 10 == 1:
+                        log.debug("BRAIN: skipping LLM call — %s "
+                                  "(saved %d API calls so far)",
+                                  reason, self._skipped_cycles)
+                    await asyncio.sleep(self.interval)
                     continue
+
+                brief = self._compile_brief()
 
                 # Also push brief to any agents connected via gateway
                 if self.gateway:
                     system = self.SYSTEM_PROMPT.format(
-                        n_agents=n_signals, interval=self.interval,
+                        n_agents=n_agents, interval=self.interval,
                         capital=self.capital, max_size=self.max_size,
                     )
                     await self.gateway.broadcast_brain_brief(system, brief, self.max_tokens)
 
-                log.info("BRAIN: querying %s with %d signals, regime=%s",
-                         self.provider.name, n_signals, self.state.regime)
+                log.info("BRAIN: querying %s — %s (%d sectors, %d agents, regime=%s)",
+                         self.provider.name, reason, n_briefings,
+                         n_agents, self.state.regime)
                 decisions = await self._query_llm(brief)
                 self._last_call_ts = time.time()
+                # Reset escalation consumed flag after successful query
+                self.state._escalation_consumed = False
 
                 if not decisions:
                     log.info("BRAIN: HOLD (no trades)")
@@ -943,7 +1022,8 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
                     rationale=(
                         f"provider={self.provider.name} "
                         f"calls={self._call_count} errors={self._error_count} "
-                        f"signals={n_signals} decisions={len(decisions)}"
+                        f"agents={n_agents} skipped={self._skipped_cycles} "
+                        f"decisions={len(decisions)}"
                     ),
                 ))
 
@@ -964,7 +1044,9 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
 
     def status(self) -> dict:
         now = time.time()
-        n_active = len([s for s in self.state.signals.values() if now - s.ts < 120])
+        active_briefings = {k: v for k, v in self.state.briefings.items()
+                           if now - v.ts < 60}
+        total_agents = sum(b.n_agents for b in active_briefings.values())
         return {
             "provider": self.provider.name,
             "provider_detail": self.provider.describe(),
@@ -973,8 +1055,13 @@ RESPONSE FORMAT (JSON array — empty array [] means HOLD):
             "ready": self._ready,
             "call_count": self._call_count,
             "error_count": self._error_count,
-            "active_signals": n_active,
-            "total_tracked": len(self.state.signals),
+            "skipped_cycles": self._skipped_cycles,
+            "api_calls_saved": self._skipped_cycles,
+            "active_sectors": len(active_briefings),
+            "total_agents_reporting": total_agents,
+            "sector_scores": {k: {"score": v.score, "dir": v.direction}
+                              for k, v in active_briefings.items()},
+            "pending_escalations": len(self.state.escalations),
             "regime": self.state.regime,
             "prices": dict(self.state.prices),
         }
@@ -1021,7 +1108,7 @@ class CommanderGate:
         self._rejected: list[dict] = []
         self._stats = {
             "intercepted": 0, "approved": 0, "rejected": 0,
-            "modified": 0, "fallback": 0, "timeout": 0,
+            "modified": 0, "fallback": 0, "timeout": 0, "fast_path": 0,
         }
 
         # Intercept ALL intents
@@ -1052,7 +1139,22 @@ class CommanderGate:
             await self._handle_fallback(intent)
             return
 
-        # Ask the commander
+        # ── Fast-path: skip LLM call if sector consensus is overwhelming ──
+        fast_verdict = self._fast_path_verdict(intent)
+        if fast_verdict:
+            self._stats["fast_path"] += 1
+            if fast_verdict == "approve":
+                self._stats["approved"] += 1
+                self._approved.append(intent.id)
+                log.info("COMMANDER FAST-PATH APPROVED: %s — sector consensus strong",
+                         intent.id)
+                await self.bus.publish("exec.go", intent)
+            else:
+                self._stats["rejected"] += 1
+                log.info("COMMANDER FAST-PATH REJECTED: %s — sectors oppose", intent.id)
+            return
+
+        # Ask the commander LLM (slow path — only when sectors are ambiguous)
         verdict = await self._ask_commander(intent)
 
         if verdict == "approve":
@@ -1085,6 +1187,55 @@ class CommanderGate:
                 self._rejected = self._rejected[-100:]
             log.info("COMMANDER REJECTED: %s (%s -> %s $%.0f) — not approved",
                      intent.id, intent.asset_in, intent.asset_out, intent.amount_in)
+
+    def _fast_path_verdict(self, intent: TradeIntent) -> str | None:
+        """Check if sector briefings make the verdict obvious — skip LLM.
+
+        Returns "approve", "reject", or None (= need LLM).
+        Only fast-paths when confidence is very high to avoid bad trades.
+        """
+        briefings = self.brain.state.briefings
+        now = time.time()
+        active = {k: v for k, v in briefings.items() if now - v.ts < 30}
+
+        if len(active) < 3:
+            return None  # not enough data, ask LLM
+
+        # Determine intent direction
+        from .core import QUOTE_ASSETS
+        is_buy = intent.asset_in.upper() in QUOTE_ASSETS
+
+        # Count sectors aligned with intent direction
+        aligned = 0
+        opposed = 0
+        for b in active.values():
+            if is_buy and b.direction == "bullish" and b.score > 0.2:
+                aligned += 1
+            elif not is_buy and b.direction == "bearish" and b.score < -0.2:
+                aligned += 1
+            elif is_buy and b.direction == "bearish" and b.score < -0.2:
+                opposed += 1
+            elif not is_buy and b.direction == "bullish" and b.score > 0.2:
+                opposed += 1
+
+        # Any escalation active? Don't fast-path — let LLM reason about it
+        if self.brain.state.escalations:
+            recent_esc = [e for e in self.brain.state.escalations if now - e.ts < 60]
+            if recent_esc:
+                return None
+
+        # Strong consensus FOR: 4+ sectors aligned, 0 opposed, high avg confidence
+        if aligned >= 4 and opposed == 0:
+            avg_conf = sum(b.confidence for b in active.values()) / len(active)
+            if avg_conf >= 0.6:
+                return "approve"
+
+        # Strong consensus AGAINST: 4+ sectors opposed, intent is clearly wrong
+        if opposed >= 4 and aligned == 0:
+            return "reject"
+
+        # Ambiguous — need LLM
+        return None
 
     async def _ask_commander(self, intent: TradeIntent) -> str:
         """Ask HermesBrain to evaluate an intent.
