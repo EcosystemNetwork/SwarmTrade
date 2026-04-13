@@ -184,6 +184,9 @@ from .dex_multi import (
     MultiDEXScanner, SushiSwapQuoter, AerodromeQuoter, CurveQuoter,
     PancakeSwapQuoter, RaydiumQuoter, OrcaQuoter, DEXQuote,
 )
+# Stellar blockchain integration — x402 payments, SDEX trading, Soroban
+from .stellar_payments import StellarPaymentGateway, create_stellar_gateway
+from .stellar_agent import StellarDEXAgent
 
 __all__ = [
     "Bus", "MarketSnapshot", "Signal", "TradeIntent", "RiskVerdict", "ExecutionReport",
@@ -276,4 +279,6 @@ __all__ = [
     "LearningCoordinator",
     # Hermes LLM brain
     "HermesBrain",
+    # Stellar blockchain
+    "StellarPaymentGateway", "create_stellar_gateway", "StellarDEXAgent",
 ]

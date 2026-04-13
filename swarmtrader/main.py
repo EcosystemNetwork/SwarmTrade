@@ -90,6 +90,7 @@ from .database import Database
 from .demo import DemoScout, MultiAssetDemoScout
 from .memory import AgentMemory
 from .erc8004 import ERC8004Pipeline
+from .thirdweb_wallet import ThirdwebWallet
 from .uniswap import UniswapExecutor, uniswap_venue_config
 # Moon Dev tech
 from .hyperliquid import HyperliquidAgent, HyperliquidExecutor
@@ -156,6 +157,9 @@ from .dex_quotes import DEXQuoteProvider
 from .dex_multi import MultiDEXScanner
 from .hermes_brain import HermesBrain, CommanderGate
 from .alerts import AlertRouter
+# Stellar blockchain
+from .stellar_payments import StellarPaymentGateway, create_stellar_gateway
+from .stellar_agent import StellarDEXAgent
 
 
 # Mapping of simple asset names to Kraken pair + futures symbol
@@ -168,6 +172,7 @@ ASSET_CONFIG = {
     "DOT": {"pair": "DOTUSD", "futures": "PF_DOTUSD"},
     "LINK": {"pair": "LINKUSD", "futures": "PF_LINKUSD"},
     "AVAX": {"pair": "AVAXUSD", "futures": "PF_AVAXUSD"},
+    "XLM":  {"pair": "XLMUSD",  "futures": ""},
 }
 
 
@@ -974,8 +979,18 @@ async def run(args: argparse.Namespace):
     log.info("Agent registry: %d agents registered on %s",
              len(agent_registry.agents), agent_registry._domain_base)
 
-    # ── Private Key (used by hardware signer, x402, ERC-8004) ──
+    # ── Private Key + Thirdweb Wallet Provider ─────────────────
     private_key = os.getenv("PRIVATE_KEY", "")
+    default_chain = int(os.getenv("THIRDWEB_CHAIN_ID", os.getenv("UNISWAP_CHAIN_ID", "8453")))
+    tw_wallet = ThirdwebWallet(
+        private_key=private_key,
+        chain_id=default_chain,
+    ) if private_key else None
+    if tw_wallet:
+        log.info("Thirdweb wallet: chain=%d address=%s rpc=%s",
+                 tw_wallet.chain_id, tw_wallet.address, tw_wallet.rpc_url[:60])
+    else:
+        log.info("No PRIVATE_KEY set — on-chain features disabled")
 
     # ── Hardware Signing Pipeline (Maki/LeAgent pattern) ──────
     hw_signer = HardwareSigningPipeline(
@@ -983,6 +998,8 @@ async def run(args: argparse.Namespace):
         auto_approve_usd=float(os.getenv("HARDWARE_APPROVE_USD", "500")),
         signer_mode=os.getenv("HARDWARE_SIGNER_MODE", "hot_wallet"),
         private_key=private_key,
+        kill_switch=kill_switch,
+        wallet=tw_wallet,
     )
     log.info("Hardware signer: mode=%s auto_approve=$%.0f",
              hw_signer.signer_mode, hw_signer.auto_approve_usd)
@@ -994,6 +1011,33 @@ async def run(args: argparse.Namespace):
         await x402.start()
         log.info("x402 payment gateway: %d services, address=%s",
                  len(x402.ledger.services), x402._address or "sim-mode")
+
+    # ── Stellar Payment Gateway (x402 on Stellar) ──────────────
+    stellar_network = os.getenv("STELLAR_NETWORK", "testnet")
+    stellar_gw = create_stellar_gateway(
+        bus,
+        secret_key=os.getenv("STELLAR_SECRET_KEY", ""),
+        network=stellar_network,
+        deposit_amount=args.capital * 0.01,
+    )
+    await stellar_gw.start()
+    stellar_addr = stellar_gw._public_key[:16] + "..." if stellar_gw._public_key else "sim"
+    log.info("Stellar payment gateway: network=%s address=%s services=%d",
+             stellar_network, stellar_addr, len(stellar_gw.services))
+
+    # Link Stellar to x402 for cross-chain settlement
+    if x402:
+        x402.link_stellar(stellar_gw)
+        log.info("x402 → Stellar settlement linked")
+
+    # ── Stellar DEX Agent (SDEX orderbook + XLM price feed) ──
+    stellar_assets = os.getenv("STELLAR_ASSETS", "XLM").split(",")
+    stellar_dex = StellarDEXAgent(
+        bus, assets=stellar_assets, interval=10.0, network=stellar_network,
+    )
+    supervisor.register("stellar_dex", stellar_dex.run,
+                        stale_after=30.0, stoppable=stellar_dex)
+    log.info("Stellar DEX agent: assets=%s network=%s", stellar_assets, stellar_network)
 
     # ── Hyperliquid DEX (perps data + execution) ────────────────
     hl_agent = HyperliquidAgent(bus, assets=assets, interval=15.0)
@@ -1267,6 +1311,7 @@ async def run(args: argparse.Namespace):
             erc8004 = ERC8004Pipeline(
                 bus, private_key=private_key,
                 network=getattr(args, "erc8004_network", "sepolia"),
+                wallet=tw_wallet,
             )
             try:
                 await erc8004.start()
@@ -1290,6 +1335,7 @@ async def run(args: argparse.Namespace):
             bus, private_key=private_key,
             api_key=uniswap_api_key,
             chain_id=int(os.getenv("UNISWAP_CHAIN_ID", "8453")),
+            wallet=tw_wallet,
         )
         # Add Uniswap as a real venue in the SOR
         from .sor import VenueConfig as _VC
@@ -1486,6 +1532,8 @@ async def run(args: argparse.Namespace):
     log.info("SIGNER %s", _json.dumps(hw_signer.status(), indent=2))
     if x402:
         log.info("X402 %s", _json.dumps(x402.status(), indent=2))
+    log.info("STELLAR %s", _json.dumps(stellar_gw.status(), indent=2))
+    log.info("STELLAR_DEX %s", _json.dumps(stellar_dex.status(), indent=2))
     log.info("ALPHA_SWARM %s", _json.dumps(alpha_components["coordinator"].summary(), indent=2))
     log.info("POLYMARKET %s", _json.dumps(polymarket.summary(), indent=2))
 

@@ -66,39 +66,37 @@ class SignerStats:
 
 
 class HotWalletSigner:
-    """Software-based signer using in-memory private key.
+    """Software-based signer using ThirdwebWallet.
 
     Used for trades within the auto-approve threshold.
+    Accepts either a ThirdwebWallet instance or a raw private key
+    (which gets wrapped in a ThirdwebWallet automatically).
     """
 
-    def __init__(self, private_key: str = ""):
-        self._private_key = private_key or os.getenv("PRIVATE_KEY", "")
-        self._address = ""
+    def __init__(self, private_key: str = "", wallet=None):
         self._stats = SignerStats()
+        self._wallet = wallet
 
-        if self._private_key:
-            try:
-                from eth_account import Account
-                acct = Account.from_key(self._private_key)
-                self._address = acct.address
-            except ImportError:
-                log.warning("eth_account not installed — hot wallet signing disabled")
+        if self._wallet is None:
+            pk = private_key or os.getenv("PRIVATE_KEY", "")
+            if pk:
+                from .thirdweb_wallet import ThirdwebWallet
+                self._wallet = ThirdwebWallet(private_key=pk)
 
     @property
     def address(self) -> str:
-        return self._address
+        return self._wallet.address if self._wallet else ""
 
     async def sign_transaction(self, tx_data: dict) -> tuple[bool, str, str]:
         """Sign a transaction with the hot wallet.
 
         Returns (success, signed_tx_hex, error_message).
         """
-        if not self._private_key:
+        if not self._wallet or not self._wallet.connected:
             return False, "", "no private key configured"
 
         try:
-            from eth_account import Account
-            signed = Account.from_key(self._private_key).sign_transaction(tx_data)
+            signed = self._wallet.sign_transaction(tx_data)
             self._stats.total_signed += 1
             self._stats.total_requests += 1
             return True, signed.raw_transaction.hex(), ""
@@ -108,14 +106,13 @@ class HotWalletSigner:
 
     async def sign_message(self, message: str) -> tuple[bool, str, str]:
         """Sign a message (EIP-191)."""
-        if not self._private_key:
+        if not self._wallet or not self._wallet.connected:
             return False, "", "no private key configured"
 
         try:
-            from eth_account import Account
             from eth_account.messages import encode_defunct
             msg = encode_defunct(text=message)
-            signed = Account.from_key(self._private_key).sign_message(msg)
+            signed = self._wallet.sign_message(msg)
             return True, signed.signature.hex(), ""
         except Exception as e:
             return False, "", str(e)
@@ -332,18 +329,22 @@ class HardwareSigningPipeline:
         emergency_usd: float = 10_000.0,
         signer_mode: str = "hot_wallet",
         private_key: str = "",
+        kill_switch=None,
+        wallet=None,
     ):
         self.bus = bus
+        self.kill_switch = kill_switch
         self.auto_approve_usd = auto_approve_usd
         self.emergency_usd = emergency_usd
         self.signer_mode = signer_mode or os.getenv("HARDWARE_SIGNER_MODE", "hot_wallet")
 
-        # Initialize signers
-        self.hot_wallet = HotWalletSigner(private_key)
+        # Initialize signers — prefer ThirdwebWallet if provided
+        self.hot_wallet = HotWalletSigner(private_key, wallet=wallet)
         self.ledger = LedgerSigner(
             os.getenv("LEDGER_DERIVATION_PATH", "m/44'/60'/0'/0/0")
         )
-        self.simulator = TransactionSimulator()
+        rpc_url = wallet.rpc_url if wallet else ""
+        self.simulator = TransactionSimulator(rpc_url=rpc_url)
 
         # Pending signing requests (for hardware approval flow)
         self._pending: dict[str, SigningRequest] = {}
@@ -368,6 +369,8 @@ class HardwareSigningPipeline:
         before the executor submits.  CEX intents (Kraken API key auth)
         pass through without signing.
         """
+        if self.kill_switch and self.kill_switch.active:
+            return  # Kill switch engaged — do not sign or forward
         # Only gate intents that carry on-chain metadata
         meta = getattr(intent, "metadata", None) or {}
         venue = meta.get("venue", "")

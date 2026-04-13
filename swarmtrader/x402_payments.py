@@ -9,13 +9,19 @@ Protocol: x402 (Circle's HTTP-native payment standard)
   - Server validates payment, delivers content
   - Micropayments as low as $0.001
 
-Settlement chains: Base (primary, low fees), Ethereum (fallback)
+Settlement chains: Stellar (primary, sub-cent fees), Base (secondary), Ethereum (fallback)
+
+The x402 protocol on Stellar uses Soroban authorization and Stellar's native
+USDC for near-instant settlement at negligible cost, making high-frequency
+agent micropayments economically viable.
 
 Environment variables:
-  X402_PRIVATE_KEY       — wallet key for receiving/sending payments
+  X402_PRIVATE_KEY       — wallet key for receiving/sending payments (EVM)
+  STELLAR_SECRET_KEY     — Stellar secret key for Stellar settlement
   X402_USDC_ADDRESS      — USDC contract (default: Base USDC)
   X402_MIN_BALANCE       — minimum USDC balance to maintain
   X402_FACILITATOR       — payment facilitator address (optional)
+  X402_SETTLEMENT_CHAIN  — preferred settlement: "stellar", "base", "ethereum"
 """
 from __future__ import annotations
 
@@ -194,12 +200,13 @@ class X402PaymentGateway:
     1. Accept payments from external agents for our signals/data
     2. Pay external agents for their intelligence
     3. Track revenue and expenses per agent
-    4. Settle on-chain via USDC on Base
+    4. Settle on-chain via USDC on Stellar (primary) or Base (fallback)
 
     HTTP headers used:
       X-402-Payment: <signed USDC authorization>
       X-402-Amount: <amount in USDC>
       X-402-Service: <service_id being requested>
+      X-402-Chain: <settlement chain: "stellar", "base", "ethereum">
     """
 
     name = "x402_payments"
@@ -210,15 +217,20 @@ class X402PaymentGateway:
         private_key: str = "",
         chain_id: int = 8453,
         deposit_amount: float = 100.0,
+        settlement_chain: str = "",
     ):
         self.bus = bus
         self._private_key = private_key or os.getenv("X402_PRIVATE_KEY", "")
         self._chain_id = chain_id
         self._usdc_address = USDC_CONTRACTS.get(chain_id, USDC_CONTRACTS[8453])
+        self._settlement_chain = settlement_chain or os.getenv(
+            "X402_SETTLEMENT_CHAIN", "stellar"
+        )
         self.ledger = PaymentLedger()
         self._deposit_amount = deposit_amount
         self._address = ""
         self._stop = False
+        self._stellar_gateway = None  # set via link_stellar()
 
         # Register default services
         for svc in DEFAULT_SERVICES:
@@ -236,11 +248,14 @@ class X402PaymentGateway:
         """Initialize wallet and verify on-chain USDC balance."""
         if self._private_key:
             try:
-                from eth_account import Account
-                acct = Account.from_key(self._private_key)
-                self._address = acct.address
+                from .thirdweb_wallet import ThirdwebWallet
+                self._wallet = ThirdwebWallet(
+                    private_key=self._private_key, chain_id=self._chain_id,
+                )
+                self._address = self._wallet.address
                 self.ledger.accounts["swarm_treasury"].address = self._address
-                log.info("x402 payment gateway: address=%s chain=%d", self._address, self._chain_id)
+                log.info("x402 payment gateway: address=%s chain=%d (thirdweb)",
+                         self._address, self._chain_id)
             except Exception as e:
                 log.warning("x402 wallet init failed (running in simulation mode): %s", e)
 
@@ -322,10 +337,33 @@ class X402PaymentGateway:
             for t in self.ledger.services.values()
         ]
 
+    def link_stellar(self, stellar_gateway):
+        """Link the Stellar payment gateway for on-chain settlement."""
+        self._stellar_gateway = stellar_gateway
+        log.info("x402: linked Stellar gateway for settlement")
+
+    async def settle_on_stellar(
+        self, to_agent: str, amount: float, service: str
+    ) -> str:
+        """Settle a payment on Stellar instead of EVM."""
+        if not self._stellar_gateway:
+            log.warning("x402: Stellar gateway not linked, cannot settle")
+            return ""
+        receipt = await self._stellar_gateway.pay(
+            from_agent="swarm_treasury",
+            to_agent=to_agent,
+            amount=amount,
+            service=service,
+            settle_on_chain=True,
+        )
+        return receipt.tx_hash if receipt else ""
+
     def status(self) -> dict:
         return {
             "address": self._address,
             "chain_id": self._chain_id,
+            "settlement_chain": self._settlement_chain,
+            "stellar_linked": self._stellar_gateway is not None,
             "usdc_contract": self._usdc_address,
             "services_offered": len(self.ledger.services),
             "ledger": self.ledger.summary(),

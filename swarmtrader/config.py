@@ -87,6 +87,14 @@ class StrategyConfig:
 
 
 @dataclass
+class ThirdwebConfig:
+    """Thirdweb wallet provider configuration."""
+    client_id: str = ""                      # Thirdweb project client ID
+    secret_key: str = ""                     # Thirdweb project secret key (server-side)
+    default_chain_id: int = 8453             # Default chain (Base)
+
+
+@dataclass
 class DatabaseConfig:
     """Database connection parameters."""
     url: str = ""                            # DATABASE_URL (Neon Postgres)
@@ -115,6 +123,7 @@ class TradingConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     kraken: KrakenAPIConfig = field(default_factory=KrakenAPIConfig)
+    thirdweb: ThirdwebConfig = field(default_factory=ThirdwebConfig)
 
     @classmethod
     def from_env(cls) -> TradingConfig:
@@ -173,6 +182,12 @@ class TradingConfig:
         # Dashboard
         cfg.dashboard.port = int(os.getenv("SWARM_DASHBOARD_PORT", cfg.dashboard.port))
         cfg.dashboard.token = os.getenv("SWARM_DASHBOARD_TOKEN", cfg.dashboard.token)
+
+        # Thirdweb
+        cfg.thirdweb.client_id = os.getenv("THIRDWEB_CLIENT_ID", cfg.thirdweb.client_id)
+        cfg.thirdweb.secret_key = os.getenv("THIRDWEB_SECRET_KEY", cfg.thirdweb.secret_key)
+        cfg.thirdweb.default_chain_id = int(
+            os.getenv("THIRDWEB_CHAIN_ID", cfg.thirdweb.default_chain_id))
 
         return cfg
 

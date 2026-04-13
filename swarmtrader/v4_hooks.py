@@ -154,15 +154,13 @@ class V4HookManager:
 
     def _init_web3(self):
         try:
-            from web3 import Web3
-            rpc = os.getenv("V4_RPC_URL", "https://mainnet.base.org")
-            self._w3 = Web3(Web3.HTTPProvider(rpc))
+            from .thirdweb_wallet import ThirdwebWallet
+            chain_id = int(os.getenv("VAULT_CHAIN_ID", "8453"))
+            self._wallet = ThirdwebWallet(chain_id=chain_id)
+            self._w3 = self._wallet.w3
             pm_addr = os.getenv("V4_POOL_MANAGER", "")
-            if pm_addr and self._w3:
-                self._pool_manager = self._w3.eth.contract(
-                    address=Web3.to_checksum_address(pm_addr),
-                    abi=POOL_MANAGER_ABI,
-                )
+            if pm_addr:
+                self._pool_manager = self._wallet.contract(pm_addr, POOL_MANAGER_ABI)
         except ImportError:
             log.warning("web3 not installed — v4 hooks in simulate mode")
             self.mode = "simulate"

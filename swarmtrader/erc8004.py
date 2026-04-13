@@ -15,11 +15,10 @@ import asyncio, hashlib, json, logging, os, time
 from dataclasses import asdict
 from typing import Any
 
-from eth_account import Account
-from eth_account.messages import encode_typed_data
 from web3 import Web3
 
 from .core import Bus, TradeIntent, ExecutionReport, RiskVerdict, Signal
+from .thirdweb_wallet import ThirdwebWallet
 
 log = logging.getLogger("swarm.erc8004")
 
@@ -192,33 +191,34 @@ class ERC8004Agent:
     def __init__(
         self,
         bus: Bus,
-        private_key: str,
+        private_key: str = "",
         network: str = "sepolia",
         agent_uri: str = "",
         auto_register: bool = True,
+        wallet: ThirdwebWallet | None = None,
     ):
         self.bus = bus
         self.network = network
         self.config = NETWORKS[network]
 
-        # Web3 setup
-        self.w3 = Web3(Web3.HTTPProvider(self.config["rpc"]))
-        self.account = Account.from_key(private_key)
-        self.address = self.account.address
+        # Wallet setup — prefer ThirdwebWallet if provided
+        chain_id = self.config["chain_id"]
+        if wallet:
+            self._wallet = wallet if wallet.chain_id == chain_id else wallet.for_chain(chain_id)
+        else:
+            self._wallet = ThirdwebWallet(private_key=private_key, chain_id=chain_id)
+        self.address = self._wallet.address
 
-        # Contracts
-        self.identity = self.w3.eth.contract(
-            address=Web3.to_checksum_address(self.config["identity_registry"]),
-            abi=IDENTITY_ABI,
+        # Contracts via ThirdwebWallet (uses Thirdweb RPC)
+        self.identity = self._wallet.contract(
+            self.config["identity_registry"], IDENTITY_ABI,
         )
-        self.reputation = self.w3.eth.contract(
-            address=Web3.to_checksum_address(self.config["reputation_registry"]),
-            abi=REPUTATION_ABI,
+        self.reputation = self._wallet.contract(
+            self.config["reputation_registry"], REPUTATION_ABI,
         )
         if self.config.get("validation_registry"):
-            self.validation = self.w3.eth.contract(
-                address=Web3.to_checksum_address(self.config["validation_registry"]),
-                abi=VALIDATION_ABI,
+            self.validation = self._wallet.contract(
+                self.config["validation_registry"], VALIDATION_ABI,
             )
         else:
             self.validation = None
@@ -259,23 +259,17 @@ class ERC8004Agent:
         log.info("  Address: %s", self.address)
 
         try:
-            nonce = self.w3.eth.get_transaction_count(self.address)
-            tx = self.identity.functions.register(self.agent_uri).build_transaction({
-                "from": self.address,
-                "nonce": nonce,
-                "gas": 200_000,
-                "gasPrice": self.w3.eth.gas_price,
-                "chainId": self.config["chain_id"],
-            })
-            signed = self.account.sign_transaction(tx)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-            log.info("  Registration tx: %s", tx_hash.hex())
+            tx_hash_hex, _ = self._wallet.build_and_sign(
+                self.identity.functions.register(self.agent_uri), gas=200_000,
+            )
+            log.info("  Registration tx: %s", tx_hash_hex)
 
             receipt = await asyncio.to_thread(
-                self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=120
+                self._wallet.w3.eth.wait_for_transaction_receipt,
+                bytes.fromhex(tx_hash_hex.removeprefix("0x")), timeout=120,
             )
             if receipt["status"] != 1:
-                raise RuntimeError(f"Registration failed: tx {tx_hash.hex()}")
+                raise RuntimeError(f"Registration failed: tx {tx_hash_hex}")
 
             # Extract agent ID from Transfer event
             transfer_logs = self.identity.events.Transfer().process_receipt(receipt)
@@ -303,20 +297,14 @@ class ERC8004Agent:
         if self.agent_id is None:
             return
         try:
-            nonce = self.w3.eth.get_transaction_count(self.address)
-            tx = self.identity.functions.setMetadata(
-                self.agent_id, key, value.encode("utf-8")
-            ).build_transaction({
-                "from": self.address,
-                "nonce": nonce,
-                "gas": 100_000,
-                "gasPrice": self.w3.eth.gas_price,
-                "chainId": self.config["chain_id"],
-            })
-            signed = self.account.sign_transaction(tx)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            tx_hash_hex, _ = self._wallet.build_and_sign(
+                self.identity.functions.setMetadata(
+                    self.agent_id, key, value.encode("utf-8")
+                ), gas=100_000,
+            )
             await asyncio.to_thread(
-                self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
+                self._wallet.w3.eth.wait_for_transaction_receipt,
+                bytes.fromhex(tx_hash_hex.removeprefix("0x")), timeout=60,
             )
             log.debug("  Metadata set: %s=%s", key, value)
         except Exception as e:
@@ -351,26 +339,21 @@ class ERC8004Agent:
                 ["uint256", "uint8", "bytes32", "bytes32"],
                 [self.agent_id, score, tag1, tag2],
             )
-            sig = self.account.signHash(msg_hash)
+            from eth_account.messages import encode_defunct
+            msg = encode_defunct(primitive=msg_hash)
+            sig = self._wallet.sign_message(msg)
             feedback_auth = sig.signature
 
-            nonce = self.w3.eth.get_transaction_count(self.address)
-            tx = self.reputation.functions.giveFeedback(
-                self.agent_id, score, tag1, tag2,
-                "",  # No external URI for now
-                feedback_hash,
-                feedback_auth,
-            ).build_transaction({
-                "from": self.address,
-                "nonce": nonce,
-                "gas": 300_000,
-                "gasPrice": self.w3.eth.gas_price,
-                "chainId": self.config["chain_id"],
-            })
-            signed = self.account.sign_transaction(tx)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            tx_hash_hex, _ = self._wallet.build_and_sign(
+                self.reputation.functions.giveFeedback(
+                    self.agent_id, score, tag1, tag2,
+                    "",  # No external URI for now
+                    feedback_hash,
+                    feedback_auth,
+                ), gas=300_000,
+            )
             log.info("REPUTATION posted: score=%d pnl=%+.4f tx=%s",
-                     score, pnl, tx_hash.hex()[:16])
+                     score, pnl, tx_hash_hex[:16])
             self._feedback_count += 1
 
         except Exception as e:
@@ -395,46 +378,33 @@ class ERC8004Agent:
             })
             request_hash = _hash(request_data)
 
-            nonce = self.w3.eth.get_transaction_count(self.address)
-            tx = self.validation.functions.validationRequest(
-                self.address,  # self-validation
-                self.agent_id,
-                "",  # No external URI
-                request_hash,
-            ).build_transaction({
-                "from": self.address,
-                "nonce": nonce,
-                "gas": 350_000,
-                "gasPrice": self.w3.eth.gas_price,
-                "chainId": self.config["chain_id"],
-            })
-            signed = self.account.sign_transaction(tx)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            tx_hash_hex, _ = self._wallet.build_and_sign(
+                self.validation.functions.validationRequest(
+                    self.address,  # self-validation
+                    self.agent_id,
+                    "",  # No external URI
+                    request_hash,
+                ), gas=350_000,
+            )
 
             # Post the validation response (risk check result)
             await asyncio.to_thread(
-                self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
+                self._wallet.w3.eth.wait_for_transaction_receipt,
+                bytes.fromhex(tx_hash_hex.removeprefix("0x")), timeout=60,
             )
 
             response_score = 0 if not verdict.approve else 100
-            nonce = self.w3.eth.get_transaction_count(self.address)
-            tx2 = self.validation.functions.validationResponse(
-                request_hash,
-                response_score,
-                "",
-                _hash(request_data + f"_response_{response_score}"),
-                _bytes32(f"risk-{verdict.agent_id}"),
-            ).build_transaction({
-                "from": self.address,
-                "nonce": nonce,
-                "gas": 450_000,
-                "gasPrice": self.w3.eth.gas_price,
-                "chainId": self.config["chain_id"],
-            })
-            signed2 = self.account.sign_transaction(tx2)
-            tx_hash2 = self.w3.eth.send_raw_transaction(signed2.raw_transaction)
+            tx_hash2_hex, _ = self._wallet.build_and_sign(
+                self.validation.functions.validationResponse(
+                    request_hash,
+                    response_score,
+                    "",
+                    _hash(request_data + f"_response_{response_score}"),
+                    _bytes32(f"risk-{verdict.agent_id}"),
+                ), gas=450_000,
+            )
             log.info("VALIDATION recorded: %s rejected by %s tx=%s",
-                     verdict.intent_id, verdict.agent_id, tx_hash2.hex()[:16])
+                     verdict.intent_id, verdict.agent_id, tx_hash2_hex[:16])
 
         except Exception as e:
             log.debug("Validation recording failed (non-critical): %s", e)
@@ -460,9 +430,13 @@ class TradeIntentSigner:
     DOMAIN_NAME = "SwarmTrader"
     DOMAIN_VERSION = "1"
 
-    def __init__(self, private_key: str, chain_id: int = 11155111,
-                 verifying_contract: str = "0x0000000000000000000000000000000000000000"):
-        self.account = Account.from_key(private_key)
+    def __init__(self, private_key: str = "", chain_id: int = 11155111,
+                 verifying_contract: str = "0x0000000000000000000000000000000000000000",
+                 wallet: ThirdwebWallet | None = None):
+        if wallet:
+            self._wallet = wallet if wallet.chain_id == chain_id else wallet.for_chain(chain_id)
+        else:
+            self._wallet = ThirdwebWallet(private_key=private_key, chain_id=chain_id)
         self.chain_id = chain_id
         self.verifying_contract = verifying_contract
 
@@ -495,17 +469,14 @@ class TradeIntentSigner:
             "deadline": int(intent.ttl),
         }
 
-        # Sign using EIP-712
-        signable = encode_typed_data(
-            domain_data, message_types, message_data,
-        )
-        signed = self.account.sign_message(signable)
+        # Sign using EIP-712 via ThirdwebWallet
+        signed = self._wallet.sign_typed_data(domain_data, message_types, message_data)
 
         return {
             "intent": message_data,
             "domain": domain_data,
             "signature": signed.signature.hex(),
-            "signer": self.account.address,
+            "signer": self._wallet.address,
             "v": signed.v,
             "r": hex(signed.r),
             "s": hex(signed.s),
@@ -523,13 +494,15 @@ class ERC8004Pipeline:
     4. On intent: sign with EIP-712
     """
 
-    def __init__(self, bus: Bus, private_key: str, network: str = "sepolia",
-                 agent_uri: str = ""):
+    def __init__(self, bus: Bus, private_key: str = "", network: str = "sepolia",
+                 agent_uri: str = "", wallet: ThirdwebWallet | None = None):
         self.bus = bus
-        self.agent = ERC8004Agent(bus, private_key, network, agent_uri)
+        self.agent = ERC8004Agent(bus, private_key=private_key, network=network,
+                                  agent_uri=agent_uri, wallet=wallet)
         self.signer = TradeIntentSigner(
-            private_key,
+            private_key=private_key,
             chain_id=NETWORKS[network]["chain_id"],
+            wallet=wallet,
         )
 
         # Sign intents before they go to risk

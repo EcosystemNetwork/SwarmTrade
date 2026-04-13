@@ -357,11 +357,9 @@ class FlashLoanExecutor:
           - Flashbots Protect RPC for MEV protection
         """
         try:
-            from web3 import Web3
-            from eth_account import Account
+            from .thirdweb_wallet import ThirdwebWallet
 
-            rpc = os.getenv("FLASHBOTS_RPC", "https://mainnet.base.org")
-            w3 = Web3(Web3.HTTPProvider(rpc))
+            chain_id = int(os.getenv("VAULT_CHAIN_ID", "8453"))
             pk = os.getenv("PRIVATE_KEY", "")
             if not pk:
                 return FlashLoanResult(
@@ -370,8 +368,7 @@ class FlashLoanExecutor:
                     gas_cost_usd=0, error="no private key",
                 )
 
-            account = Account.from_key(pk)
-            chain_id = int(os.getenv("VAULT_CHAIN_ID", "8453"))
+            wallet = ThirdwebWallet(private_key=pk, chain_id=chain_id)
             pool_addr = AAVE_V3_POOLS.get(chain_id)
 
             if not pool_addr:

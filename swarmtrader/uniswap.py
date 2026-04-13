@@ -168,17 +168,21 @@ class UniswapExecutor:
     settled on-chain through Uniswap's Universal Router.
     """
 
-    def __init__(self, bus: Bus, private_key: str,
+    def __init__(self, bus: Bus, private_key: str = "",
                  api_key: str | None = None,
-                 chain_id: int = 8453):
+                 chain_id: int = 8453,
+                 wallet=None):
         self.bus = bus
         self._api_key = api_key or os.getenv("UNISWAP_API_KEY", "")
         self._chain_id = chain_id
 
-        # Wallet setup
-        from eth_account import Account
-        self._account = Account.from_key(private_key)
-        self._address = self._account.address
+        # Wallet setup — prefer ThirdwebWallet if provided
+        if wallet:
+            self._wallet = wallet if wallet.chain_id == chain_id else wallet.for_chain(chain_id)
+        else:
+            from .thirdweb_wallet import ThirdwebWallet
+            self._wallet = ThirdwebWallet(private_key=private_key, chain_id=chain_id)
+        self._address = self._wallet.address
 
         self._client = UniswapClient(self._api_key, chain_id) if self._api_key else None
         self._trade_count = 0
@@ -282,15 +286,19 @@ class UniswapExecutor:
         tx_data = swap_tx.get("data", "")
         tx_value = swap_tx.get("value", "0")
 
-        # Sign and submit transaction
+        # Sign and submit transaction via ThirdwebWallet
         # Use Flashbots Protect RPC when configured — sends tx to private
         # mempool, preventing sandwich attacks and other MEV extraction.
         from web3 import Web3
-        default_rpc = "https://mainnet.base.org"
         flashbots_rpc = os.getenv("FLASHBOTS_RPC", "")
-        rpc_url = flashbots_rpc or default_rpc
-        w3 = Web3(Web3.HTTPProvider(rpc_url))
         using_private_mempool = bool(flashbots_rpc)
+
+        # If Flashbots is configured, create a temporary web3 for that RPC;
+        # otherwise use the ThirdwebWallet's built-in RPC.
+        if flashbots_rpc:
+            w3 = Web3(Web3.HTTPProvider(flashbots_rpc))
+        else:
+            w3 = self._wallet.w3
 
         # Cap gas price to prevent runaway costs during spikes
         MAX_GAS_GWEI = int(os.getenv("MAX_GAS_PRICE_GWEI", "100"))
@@ -314,7 +322,7 @@ class UniswapExecutor:
             "type": 2,  # EIP-1559
         }
 
-        signed = self._account.sign_transaction(tx)
+        signed = self._wallet.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         tx_hash_hex = tx_hash.hex()
 

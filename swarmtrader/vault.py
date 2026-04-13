@@ -145,26 +145,22 @@ class VaultManager:
         bus.subscribe("market.snapshot", self._on_snapshot)
 
     def _init_web3(self):
-        """Initialize web3 connection for live mode."""
+        """Initialize web3 connection for live mode via ThirdwebWallet."""
         try:
-            from web3 import Web3
-            from eth_account import Account
+            from .thirdweb_wallet import ThirdwebWallet
 
-            rpc = os.getenv("VAULT_RPC_URL", "https://mainnet.base.org")
-            self._w3 = Web3(Web3.HTTPProvider(rpc))
+            chain_id = int(os.getenv("VAULT_CHAIN_ID", "8453"))
             pk = os.getenv("VAULT_PRIVATE_KEY") or os.getenv("PRIVATE_KEY", "")
-            if pk:
-                self._account = Account.from_key(pk)
+            self._wallet = ThirdwebWallet(private_key=pk, chain_id=chain_id)
+            self._w3 = self._wallet.w3
+            self._account = self._wallet.account
 
             vault_addr = os.getenv("VAULT_ADDRESS", "")
-            if vault_addr and self._w3:
+            if vault_addr:
                 combined_abi = ERC4626_ABI + SWARM_VAULT_ABI
-                self._contract = self._w3.eth.contract(
-                    address=Web3.to_checksum_address(vault_addr),
-                    abi=combined_abi,
-                )
-                log.info("Vault connected: %s on chain %s",
-                         vault_addr, os.getenv("VAULT_CHAIN_ID", "8453"))
+                self._contract = self._wallet.contract(vault_addr, combined_abi)
+                log.info("Vault connected: %s on chain %d (thirdweb)",
+                         vault_addr, chain_id)
         except ImportError:
             log.warning("web3 not installed — vault running in simulate mode")
             self.mode = "simulate"
@@ -323,25 +319,20 @@ class VaultManager:
 
     async def on_chain_deposit(self, amount_wei: int, receiver: str) -> str | None:
         """Execute deposit on-chain. Returns tx hash."""
-        if self.mode != "live" or not self._contract or not self._account:
+        if self.mode != "live" or not self._contract or not self._wallet:
             return None
 
         try:
             from web3 import Web3
-            tx = self._contract.functions.deposit(
-                amount_wei,
-                Web3.to_checksum_address(receiver),
-            ).build_transaction({
-                "from": self._account.address,
-                "nonce": self._w3.eth.get_transaction_count(self._account.address),
-                "gas": 300_000,
-                "gasPrice": self._w3.eth.gas_price,
-                "chainId": int(os.getenv("VAULT_CHAIN_ID", "8453")),
-            })
-            signed = self._account.sign_transaction(tx)
-            tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)
+            tx_hash_hex, _ = self._wallet.build_and_sign(
+                self._contract.functions.deposit(
+                    amount_wei,
+                    Web3.to_checksum_address(receiver),
+                ), gas=300_000,
+            )
             receipt = await asyncio.to_thread(
-                self._w3.eth.wait_for_transaction_receipt, tx_hash, timeout=120
+                self._wallet.w3.eth.wait_for_transaction_receipt,
+                bytes.fromhex(tx_hash_hex.removeprefix("0x")), timeout=120,
             )
             return receipt["transactionHash"].hex()
         except Exception as e:

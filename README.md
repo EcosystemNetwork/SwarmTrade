@@ -1,6 +1,14 @@
-# SWARM TRADE
+# SWARM TRADE — Agents That Pay on Stellar
 
-**Autonomous AI trading platform** — 122 modules, 120+ cooperative agents, an AI commander that approves every trade.
+**Autonomous AI trading platform** — 120+ cooperative agents that reason, trade, and **pay each other** using x402 micropayments on Stellar.
+
+> Built for the [Stellar Agents Hackathon](https://www.stellarhacks.com/) — when agents don't just talk, they buy, sell, coordinate, and earn.
+
+### What makes this different
+
+Most AI agents hit a wall when they need to pay for something. SwarmTrader's agents transact natively: they buy signals from each other, pay for execution, and settle micropayments on Stellar — all without human intervention. Stellar's sub-cent fees and ~5s finality make high-frequency agent-to-agent commerce economically viable for the first time.
+
+**x402 on Stellar**: Every agent service (signals, data, analysis, execution quotes) is priced in USDC and settled via Stellar transactions. External agents connect via HTTP, include an `X-402-Payment` header with a Stellar tx hash, and get paid content back. The protocol turns ordinary API calls into paid interactions using stablecoin micropayments and Soroban authorization.
 
 ```
                     ┌──────────────────────────────────────────────────────────┐
@@ -10,14 +18,14 @@
  ┌──────────────────────┐     ┌──────────────────────────────────────────────────┐
  │     DATA LAYER       │     │            SIGNAL AGENTS (120+)                  │
  │                      │     │                                                  │
- │  Kraken (REST+WS v2) │     │  Core: Momentum, MeanRev, Volatility             │
- │  Hyperliquid (perps)  │     │  TA:   RSI, MACD, Bollinger, VWAP, Ichimoku     │
- │  Jupiter (Solana DEX) │────>│  Adv:  OrderBook, Funding, Spread, Regime       │
- │  BirdEye + Pyth       │     │  ML:   GradientBoosted (stdlib), Kalman Filter  │
+ │  Stellar SDEX (native)│     │  Core: Momentum, MeanRev, Volatility             │
+ │  Kraken (REST+WS v2) │     │  TA:   RSI, MACD, Bollinger, VWAP, Ichimoku     │
+ │  Hyperliquid (perps)  │────>│  Adv:  OrderBook, Funding, Spread, Regime       │
+ │  Jupiter (Solana DEX) │     │  ML:   GradientBoosted (stdlib), Kalman Filter  │
  │  6 DEXs + 5 CEXs      │     │  Intel: Whale, SmartMoney, OnChain, FearGreed   │
- │  CoinGecko, FRED      │     │  Social: News, RSS, Twitter, Telegram, Discord  │
- │  Etherscan, Basescan   │     │  Feeds: Options, Macro, Stablecoin, TokenUnlock │
- │  DeFi Llama, Deribit   │     │  Alpha: Swarm, Fusion, Debate, Consensus        │
+ │  BirdEye + Pyth       │     │  Social: News, RSS, Twitter, Telegram, Discord  │
+ │  CoinGecko, FRED      │     │  Feeds: Options, Macro, Stablecoin, TokenUnlock │
+ │  Etherscan, Basescan   │     │  Alpha: Swarm, Fusion, Debate, Consensus        │
  └──────────────────────┘     │  New:  MEV, Grid, Sniper, Sentiment Derivatives  │
                               └────────────────────┬─────────────────────────────┘
                                                    │ 59 signal topics
@@ -63,14 +71,14 @@
                                               v
  ┌──────────────────────────────────────────────────────────────────────────────┐
  │                        EXECUTION LAYER                                      │
- │  SmartOrderRouter (5 CEX + 10 DEX) | TWAP | Iceberg | Almgren-Chriss       │
- │  Intent Solver Network (5 competing solvers for best execution)             │
- │  ERC-4626 Vault (standard fund custody) | Flash Loan Arb (zero-capital)    │
+ │  Stellar SDEX (native DEX) | SmartOrderRouter (5 CEX + 10 DEX)            │
+ │  TWAP | Iceberg | Almgren-Chriss | Intent Solver (5 solvers)               │
+ │  x402 Stellar Payments | Soroban Contracts | Flash Loan Arb               │
  └────────────────────────────────────────────┬─────────────────────────────────┘
                                               v
  ┌──────────────────────────────────────────────────────────────────────────────┐
  │                     POST-TRADE (31 consumers)                               │
- │  PnL | ELO | Memory DAG | Treasury | Marketplace Fees | Agent Payments      │
+ │  PnL | ELO | Memory DAG | Treasury | Stellar Micropayments                │
  │  Portfolio Insurance | Strategy NFT | Social Trading | Observability        │
  │  VaR | Compliance | TCA | Dashboard | Telegram | Voice Response             │
  └──────────────────────────────────────────────────────────────────────────────┘
@@ -87,9 +95,61 @@
 | Strategist weighted inputs | 48 |
 | Pre-trade safety checks | 15 |
 | Post-trade consumers | 31 |
-| Supported exchanges | 5 CEX + 10 DEX |
-| Supported chains | Ethereum, Base, Solana |
+| Supported exchanges | 5 CEX + 11 DEX (incl. Stellar SDEX) |
+| Supported chains | **Stellar**, Ethereum, Base, Solana |
+| Agent payments | x402 on Stellar (USDC micropayments) |
 | AI Commander | Every trade requires LLM approval |
+
+## Stellar Integration
+
+### x402 Agent Payments on Stellar (`stellar_payments.py`)
+Agents pay each other for signals, data, and execution using **USDC micropayments on Stellar**. The x402 protocol turns HTTP requests into paid interactions:
+
+```
+External Agent                        SwarmTrader
+     |                                     |
+     |  POST /api/signal/realtime          |
+     |  X-402-Payment: <stellar_tx_hash>   |
+     |  X-402-Amount: 0.01                 |
+     |  X-402-Chain: stellar               |
+     | ----------------------------------> |
+     |                                     | verify tx on Horizon
+     |  200 OK                             | debit sender, credit receiver
+     |  { signal: "BUY ETH", ... }         |
+     | <---------------------------------- |
+```
+
+- **11 paid services**: real-time signals ($0.01), smart money tracking ($0.02), VaR analysis ($0.05), stress tests ($0.10), SDEX quotes ($0.003), and more
+- **Sub-cent settlement**: Stellar fees < $0.001 per tx — viable for $0.001 micropayments
+- **Soroban contract calls**: programmable spending policies, multi-sig agent wallets
+- **USDC trustline management**: automatic setup of Circle USDC trustlines on Stellar
+- **Testnet + mainnet**: works on both networks, auto-funds via Friendbot on testnet
+
+### Stellar DEX Agent (`stellar_agent.py`)
+Monitors the **Stellar Decentralized Exchange (SDEX)** and publishes XLM/USDC market data to the 120+ agent swarm:
+
+- **SDEX orderbook monitoring** — real-time bids/asks/spread/depth via Horizon API
+- **XLM price feed** — publishes to the same bus as CEX scouts (Kraken, Binance, etc.)
+- **Path payment optimization** — finds multi-hop swap routes for optimal execution
+- **SDEX trade execution** — limit orders directly on Stellar's native orderbook
+- **Spread alerts** — flags wide spreads for cross-venue arbitrage opportunities
+
+### Settlement Architecture
+```
+Agent A wants signal from Agent B
+    |
+    v
+Internal ledger (instant, off-chain)
+    |
+    | batch threshold reached ($10)
+    v
+Settle on Stellar (USDC payment via Horizon)
+    |
+    v
+Tx hash recorded, receipts published to bus
+```
+
+Payments accumulate in an internal ledger for speed, then batch-settle on Stellar when the threshold is reached. This gives agents instant confirmation while still anchoring to on-chain settlement.
 
 ## Key Features
 
@@ -294,6 +354,8 @@ Every trade intent passes ALL checks before execution:
 
 | Chain | Venue | Type | Execution |
 |-------|-------|------|-----------|
+| **Stellar** | **SDEX** | **DEX** | **Native orderbook + path payments** |
+| **Stellar** | **x402 Gateway** | **Payments** | **USDC micropayments via Soroban** |
 | — | Kraken | CEX | REST + WS v2 (paper/live) |
 | — | Binance, Coinbase, OKX, Bybit | CEX | SOR routing |
 | Ethereum/Base | Uniswap v3/v4 | DEX | Swaps via Trading API |
@@ -351,6 +413,8 @@ swarmtrader/                          # 122 modules, 48,612 lines
 ├── v4_hooks.py                       # Uniswap v4 hook integration
 ├── cross_chain.py                    # Circle CCTP + multi-chain yield
 ├── zk_trading.py                     # Commit-reveal dark pool
+├── stellar_payments.py                # x402 on Stellar — USDC micropayments
+├── stellar_agent.py                   # SDEX orderbook + XLM price feed
 ├── erc8004.py, x402_payments.py, lp_manager.py
 │
 ├── ── ADVANCED TRADING (Phases 12-20) ─────────────────
@@ -408,10 +472,11 @@ swarmtrader/                          # 122 modules, 48,612 lines
 - **LLM**: Ollama, OpenAI, Anthropic, Groq, DeepSeek (all optional)
 - **CEX**: Kraken, Binance, Coinbase, OKX, Bybit
 - **DEX**: Uniswap v3/v4, Jupiter, Hyperliquid, SushiSwap, Aerodrome, Curve, PancakeSwap, Raydium, Orca
-- **Blockchain**: ERC-4626, ERC-8004, ERC-7857, x402, Circle CCTP
+- **Stellar**: `stellar-sdk` — SDEX trading, USDC payments, Soroban contracts, path payments
+- **Blockchain**: Stellar (x402 payments), ERC-4626, ERC-8004, x402, Circle CCTP
 - **Storage**: Postgres (Neon) primary, SQLite fallback
 - **Deployment**: Docker, Railway, Vercel (Neon)
-- **Dependencies**: Minimal — `aiohttp`, `python-dotenv`, `web3`, `eth-account`, `psycopg`
+- **Dependencies**: Minimal — `aiohttp`, `python-dotenv`, `web3`, `eth-account`, `stellar-sdk`, `psycopg`
 
 ## Documentation
 
